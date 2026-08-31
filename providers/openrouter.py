@@ -61,17 +61,12 @@ class OpenRouterProviderImpl(llm.AIProvider):
 
         return body
 
-
-    def chat(self, content: str, max_tokens: int = 6000, reasoning: str = "medium", **kwargs) -> str:
+    def prepare_args(self, content: str, max_tokens: int = 6000,
+                                reasoning: str = "medium", **kwargs) -> Dict[str, Any]:
         extra_body = llm._merge_dicts(
             self._openrouter_extra_body(content, max_tokens),
             kwargs.pop("extra_body", None),
         )
 
-        return super().chat(
-            content=content,
-            max_tokens=max_tokens,
-            reasoning=reasoning,
-            extra_body=extra_body,
-            **kwargs,
-        )
+        return super().prepare_args(content, max_tokens, reasoning,
+                                    extra_body=extra_body, **kwargs)

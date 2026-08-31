@@ -113,6 +113,18 @@ class AIProvider(AbstractAIProvider):
 
         return [{"role": "user", "content": usermsg}]
 
+    def prepare_args(self, content: str, max_tokens: int = 6000,
+                                reasoning: str = "medium", **kwargs) -> Dict[str, Any]:
+        return {
+            "model": self._model_name,
+            "messages": self._build_messages(content),
+            "max_tokens": max_tokens,
+            **kwargs
+        }
+
+    def extract_raw_response(self, response):
+        return response.choices[0].message.content or ""
+
     def chat(self, content: str, max_tokens: int = 6000, reasoning: str = "medium", **kwargs) -> str:
         """Send chat request, initializing client if needed."""
         self._ensure_client()
@@ -121,14 +133,9 @@ class AIProvider(AbstractAIProvider):
             raise RuntimeError(f"{self.name} not configured (set {self._var_name})")
 
         try:
-            response = self._client.chat.completions.create(
-                model=self._model_name,
-                messages=self._build_messages(content),
-                max_tokens=max_tokens,
-                **kwargs
-            )
-
-            raw = response.choices[0].message.content or ""
+            kwargs = self.prepare_args(content, max_tokens, reasoning, **kwargs)
+            response = self._client.chat.completions.create(**kwargs)
+            raw = self.extract_raw_response(response)
             _log_raw(self._name, self._model_name, raw)
             resp = self._clean_text(raw)
             return resp
