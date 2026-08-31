@@ -31,21 +31,6 @@ def loadOmegaPlugin():
 class OpenRouterProviderImpl(llm.AIProvider):
     """OpenRouter provider with reasoning mode enabled (reasoning tokens excluded from the response)."""
 
-    def _create_client(self) -> Optional[openai.OpenAI]:
-        """Create OpenRouter client from environment."""
-        proxy_url = config_get_by_key("GATEWAY_URL")
-        if proxy_url:
-            base_url = f"{proxy_url.rstrip('/')}/openrouter/"
-            logger.info(f"[OpenRouterProviderImpl._create_client]: Connecting via proxy: {base_url}")
-            return openai.OpenAI(
-                    api_key="proxy",
-                    base_url=base_url,
-                    )
-        if self._var_name in os.environ:
-            return openai.OpenAI(api_key=os.environ.get(self._var_name), base_url=self._base_url)
-
-        return None
-
     def _openrouter_extra_body(self, content: str, max_tokens: int) -> Dict[str, Any]:
         sysmsg, _ = llm._split_system_user(content)
         body = {

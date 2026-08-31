@@ -28,9 +28,6 @@ def loadOmegaPlugin():
 class ASIOneProviderImpl(llm.AIProvider):
     """Lazy AI provider with on-demand initialization."""
 
-    def __init__(self, name: str, var_name: str, model_name: str, base_url: str):
-        super().__init__(name, var_name, model_name, base_url)
-
     def chat(self, content: str, max_tokens: int = 6000, reasoning: str = "medium", **kwargs) -> str:
         """Send chat request, initializing client if needed."""
         self._ensure_client()
