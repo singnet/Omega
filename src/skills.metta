@@ -8,9 +8,15 @@
 (= (getStaticSkills)
    (;INTERNAL:
     "- Remember a particular string such as skills and memories: remember string"
+    "- Forget a particular LTM item via its timestamp: forget %Y-%m-%d %H:%M:%S"
     "- Query long-term embedding memory for skills and memories with short phrases only: query string"
-    "- Episodes searches history for episodes around a time stamp, time format is same as in TIME: episodes time_string"
+    "- Episodes searches history for episodes around a time stamp, time format is same as in TIME: episodes %Y-%m-%d %H:%M:%S"
     "- Pin a certain string as short-term working memory item to keep track of task state: pin string"
+    "- Update the label and embedding of a memory, linked episodes and promotion will transfer over, here with underline: update %Y-%m-%d_%H:%M:%S new_memory_string"
+    "- Link episode to LTM item, has no promotion effect, both times with %Y-%m-%d_%H:%M:%S format: link $ltm_time $episode_time"
+    "- Unlink episode from LTM, both times with %Y-%m-%d_%H:%M:%S format: unlink $ltm_time $episode_time"
+    "- When an episode supports LTM item, linking it to the episode time, and positively updating its truth value, bot times in %Y-%m-%d_%H:%M:%S format: support $ltm_time $episode_time"
+    "- When an episode contradicts LTM item, linking it to the episode time, and negatively updating its truth value, both times in %Y-%m-%d_%H:%M:%S format: contradict $ltm_time $$episode_time"
     ;SHELL AND FILE I/O:
     "- Execute shell command without apostrophe in string, it returns the command output to you: shell string"
     "- Read file to string: read-file filename"
