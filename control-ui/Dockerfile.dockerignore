@@ -1,0 +1,11 @@
+*
+!compose.yaml
+!control-ui/
+!control-ui/Dockerfile
+!control-ui/package.json
+!control-ui/package-lock.json
+!control-ui/index.html
+!control-ui/vite.config.js
+!control-ui/server.mjs
+!control-ui/src/
+!control-ui/src/**

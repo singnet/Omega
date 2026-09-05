@@ -114,6 +114,46 @@ scripts/omega start -d singularitynet/omega:<tag> -p OpenAI -t telegram \
   --memory-mode overwrite
 ```
 
+### Run with the visual control panel
+
+The included Compose application starts a local React control panel first and
+keeps the OmegaClaw agent stopped until it has a channel and LLM configuration.
+
+In Docker Desktop, open [`compose.yaml`](./compose.yaml), start the `control`
+service, and use the published `3210:3210` port link. The page is also available
+at [http://localhost:3210](http://localhost:3210).
+
+For a one-command start that also opens the default browser, use the launcher
+for your operating system:
+
+```sh
+# macOS, Linux, or WSL
+./scripts/start-control-ui
+```
+
+```powershell
+# Windows PowerShell
+.\scripts\start-control-ui.ps1
+```
+
+Select a communication channel and LLM provider in the page, enter their
+credentials, accept the safety notice, and press **Start OmegaClaw**. Pressing
+**Stop** stops the agent container without deleting its memory volume. Starting
+again recreates only the agent container with the new settings.
+
+The control page is bound to `127.0.0.1` by default. It mounts the Docker socket
+so it can manage the `omegaclaw` service declared in the same Compose file; do
+not expose the control port to other machines. API credentials are not stored
+in browser storage, but Docker necessarily places them in the agent container's
+environment while it runs.
+
+Optional environment overrides:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `OMEGACLAW_CONTROL_PORT` | `3210` | Host port for the control page. |
+| `OMEGACLAW_IMAGE` | `singularitynet/omegaclaw:latest` | OmegaClaw image started by the panel. |
+
 ---
 
 ## Usage

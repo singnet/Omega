@@ -1,0 +1,81 @@
+name: omegaclaw
+
+services:
+  control:
+    build:
+      context: .
+      dockerfile: control-ui/Dockerfile
+    image: omegaclaw-control-ui:local
+    container_name: omegaclaw-control
+    restart: unless-stopped
+    environment:
+      COMPOSE_PROJECT_NAME: omegaclaw
+      OMEGACLAW_CONTAINER_NAME: omegaclaw
+      OMEGACLAW_IMAGE: ${OMEGACLAW_IMAGE:-singularitynet/omegaclaw:latest}
+    ports:
+      - "127.0.0.1:${OMEGACLAW_CONTROL_PORT:-3210}:3210"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    labels:
+      org.opencontainers.image.title: OmegaClaw Control
+      org.opencontainers.image.description: Local configuration and lifecycle control for OmegaClaw
+
+  omegaclaw:
+    profiles: [agent]
+    image: ${OMEGACLAW_IMAGE:-singularitynet/omegaclaw:latest}
+    pull_policy: missing
+    container_name: omegaclaw
+    restart: "no"
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /var/tmp:size=64m,mode=1777
+      - /run:size=16m,mode=755
+    volumes:
+      - omegaclaw-memory:/PeTTa/repos/OmegaClaw-Core/memory
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ASI_API_KEY: ${ASI_API_KEY:-}
+      ASIONE_API_KEY: ${ASIONE_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAIAPI_API_KEY: ${OPENAIAPI_API_KEY:-}
+      TG_BOT_TOKEN: ${TG_BOT_TOKEN:-}
+      SL_BOT_TOKEN: ${SL_BOT_TOKEN:-}
+      MM_BOT_TOKEN: ${MM_BOT_TOKEN:-}
+      MM_UPSTREAM_URL: ${OMEGACLAW_MM_URL:-https://chat.singularitynet.io}
+      OMEGACLAW_AUTH_SECRET: ${OMEGACLAW_AUTH_SECRET:-}
+      IMPORT_KB_ON_START: ${IMPORT_KB_ON_START:-0}
+    command:
+      - commchannel=${OMEGACLAW_CHANNEL:-irc}
+      - provider=${OMEGACLAW_PROVIDER:-Anthropic}
+      - embeddingprovider=${OMEGACLAW_EMBEDDING_PROVIDER:-Local}
+      - model=${OMEGACLAW_MODEL:-claude-opus-4-8}
+      - maxOutputToken=${OMEGACLAW_MAX_OUTPUT_TOKEN:-6000}
+      - reasoningMode=${OMEGACLAW_REASONING_MODE:-medium}
+      - openaiapi_url=${OMEGACLAW_OPENAIAPI_URL:-http://host.docker.internal:11434/v1}
+      - IRC_channel=${OMEGACLAW_IRC_CHANNEL:-##omegaclaw}
+      - IRC_server=${OMEGACLAW_IRC_SERVER:-irc.quakenet.org}
+      - IRC_port=${OMEGACLAW_IRC_PORT:-6667}
+      - IRC_user=${OMEGACLAW_IRC_USER:-omegaclaw}
+      - TG_CHAT_ID=${OMEGACLAW_TG_CHAT_ID:-}
+      - SL_CHANNEL_ID=${OMEGACLAW_SL_CHANNEL_ID:-}
+      - WS_URL=${OMEGACLAW_WS_URL:-}
+      - WS_TOKEN=${OMEGACLAW_WS_TOKEN:-}
+      - MM_URL=${OMEGACLAW_MM_URL:-https://chat.singularitynet.io}
+      - MM_CHANNEL_ID=${OMEGACLAW_MM_CHANNEL_ID:-}
+      - securityPolicyPath=/PeTTa/repos/OmegaClaw-Core/profile/policy.yaml
+      - memoryDirectory=$$MEMORY_DIR
+    labels:
+      io.omegaclaw.control.managed: "true"
+      io.omegaclaw.control.channel: ${OMEGACLAW_CHANNEL:-irc}
+      io.omegaclaw.control.provider: ${OMEGACLAW_PROVIDER:-Anthropic}
+      io.omegaclaw.control.model: ${OMEGACLAW_MODEL:-claude-opus-4-8}
+
+volumes:
+  omegaclaw-memory:
+    name: omegaclaw-memory

@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+project_dir="$(cd -- "${script_dir}/.." && pwd)"
+control_port="${OMEGACLAW_CONTROL_PORT:-3210}"
+control_url="http://localhost:${control_port}"
+
+cd -- "$project_dir"
+docker compose up --detach --build control
+
+echo "Waiting for Omega Control at ${control_url} ..."
+for _ in $(seq 1 60); do
+    health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' omegaclaw-control 2>/dev/null || true)"
+    if [ "$health" = "healthy" ]; then
+        break
+    fi
+    sleep 1
+done
+
+health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' omegaclaw-control 2>/dev/null || true)"
+if [ "$health" != "healthy" ]; then
+    echo "Omega Control did not become healthy. Run: docker compose logs control" >&2
+    exit 1
+fi
+
+echo "Opening ${control_url}"
+if command -v open >/dev/null 2>&1; then
+    open "$control_url"
+elif command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$control_url" >/dev/null 2>&1 &
+elif command -v cmd.exe >/dev/null 2>&1; then
+    cmd.exe /c start "" "$control_url" >/dev/null 2>&1
+else
+    echo "Open ${control_url} in your browser."
+fi

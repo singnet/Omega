@@ -27,6 +27,8 @@ __pycache__/
 # Container metadata
 Dockerfile
 docker-compose.yml
+compose.yaml
+control-ui/
 
 # Docs and license (not required at runtime)
 README.md

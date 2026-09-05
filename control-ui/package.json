@@ -1,0 +1,21 @@
+{
+  "name": "omegaclaw-control-ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "check:server": "node --check server.mjs",
+    "test": "node --test server.test.mjs"
+  },
+  "dependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "6.0.5",
+    "vite": "8.2.1"
+  }
+}
