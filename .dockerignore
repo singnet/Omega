@@ -31,3 +31,6 @@ docker-compose.yml
 # Docs and license (not required at runtime)
 README.md
 LICENSE
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+docs/assets/*
