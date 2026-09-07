@@ -38,5 +38,6 @@ test_prompt_grounding.py
 test_websearch_smoke.py
 test_wschat.py
 unit/test_fileio_verified_writes.py
+unit/test_fileio_verified_deletes.py
 unit/test_helper_parsing.py
 unit/test_openclaw_unit.py

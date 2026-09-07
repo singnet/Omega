@@ -94,3 +94,23 @@ def write_file_b64(path, content_b64):
         logger.error(f"[FILE_IO] write failed file={path} err=invalid base64")
         return f"WRITE-FAILED file={path}: invalid base64 ({e})"
     return _write(path, data, append=False)
+
+
+def delete_file(path):
+    path = str(path)
+    if not os.path.lexists(path):
+        logger.error(f"[FILE_IO] delete failed file={path} err=file does not exist")
+        return f"DELETE-FAILED file={path}: file does not exist"
+    if os.path.isdir(path):
+        logger.error(f"[FILE_IO] delete failed file={path} err=path is a directory")
+        return f"DELETE-FAILED file={path}: path is a directory"
+    try:
+        os.remove(path)
+    except Exception as e:  # the skill must return a result, never raise into the loop
+        logger.error(f"[FILE_IO] delete failed file={path} err={e}")
+        return f"DELETE-FAILED file={path}: {e}"
+    if os.path.exists(path):  # race: something recreated it between remove() and here
+        logger.error(f"[FILE_IO] delete verification failed file={path} still exists after remove")
+        return f"DELETE-FAILED file={path}: file still exists after removal"
+    logger.info(f"[FILE_IO] delete ok file={path}")
+    return f"DELETE-VERIFIED file={path}"
