@@ -18,6 +18,7 @@
     "- Write base64-encoded content to file as a single line, prefer it when the content contains quotes, backslashes or multiple lines: write-file-b64 filename base64string"
     "- Append line to existing file, result read back from disk like write-file: append-file filename string"
     "- Get a list of allowed base paths for reading, writing, and updating files: get-io-policy"
+    "- Delete a file, the result is read back and verified afterward (DELETE-VERIFIED or DELETE-FAILED with reason) - relay it, never claim a deletion succeeded without it: delete-file filename"
     ;COMMUNICATION CHANNELS:
     "- Send message to user: send string"
     "- Search the web: websearch string"
@@ -118,6 +119,9 @@
 
 (= (append-file $file $str)
    (py-call (fileio.append_file $file $str)))
+
+(= (delete-file $path)
+   (py-call (fileio.delete_file $path)))
 
 ; Prolog-backed append used by the harness itself (memory.metta appendToHistory):
 ; it receives a (library ...) file-spec term that only the Prolog open/4 path
