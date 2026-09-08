@@ -26,9 +26,9 @@
 
 (= (initKnowledge)
    (progn (log INFO "loop" "Initializing knowledge base")
-          (if (== (embeddingprovider) OpenAI)
-               (log INFO "loop" (py-call (rag.init_knowledge "OpenAI")))
-               (log INFO "loop" (py-call (rag.init_knowledge "Local"))))))
+          (if (== (embeddingprovider) Local)
+               (log INFO "loop" (py-call (rag.init_knowledge "Local")))
+               (log INFO "loop" (py-call (rag.init_knowledge "OpenAI"))))))
 
 (= (getContext)
    (string-safe (py-str ("PROMPT: " (getPrompt (provider)) " SKILLS: " (getSkills)

@@ -33,7 +33,8 @@ This reads a command-line override via `argk` (`name=value` on the MeTTa command
 | `maxHistory` | 30000 (chars) | Tail of `memory/history.metta` included in the prompt. |
 | `memoryDirectory` | `./repos/Omega/memory` | Directory containing persistent memory files such as `history.metta`. |
 | `chromaDbPath` | `./chroma_db` | ChromaDB persistence directory used for memory backup and restore. |
-| `embeddingprovider` | `Local` | `Local` (Python-side model) or `OpenAI`. |
+| `embeddingprovider` | `Local` | `Local` (Python-side model), or the id of a provider that serves an OpenAI-compatible `/embeddings` endpoint — `OpenAI` and `ASICloud` are known to. The gateway supplies that provider's key. |
+| `embeddingModel` | `text-embedding-3-large` | Model asked of a non-`Local` `embeddingprovider`. |
 
 ## Channels (`src/channels.metta`, `initChannels`)
 

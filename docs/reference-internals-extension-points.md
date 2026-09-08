@@ -53,10 +53,14 @@ In `src/memory.metta`, the `embed` function dispatches on `embeddingprovider`:
 (= (embed $str)
    (if (== (embeddingprovider) Local)
        (py-call (lib_llm_ext.useLocalEmbedding (string-safe $str)))
-       (useGPTEmbedding (string-safe $str))))
+       (py-call (rag.openai_embed (string-safe $str)))))
 ```
 
-To add a new backend, add a branch and implement the Python function.
+Any value other than `Local` is a provider id: the remote branch posts
+`embeddingModel` to `<GATEWAY_URL>/<embeddingprovider lowercased>/`, the
+location that already injects that provider's key. Switching vendor is
+configuration, not code — provided the vendor serves embeddings at all. It
+changes the vector space, so reset the ChromaDB store when you do.
 
 ## Change the reasoning library
 

@@ -139,14 +139,16 @@ def _chunk_markdown(text, filename):
 # --- Embedding -----------------------------------------------------------
 
 def openai_embed_batch(texts):
-    """Embed a list of texts via OpenAI. Returns list of float vectors."""
+    """Embed a list of texts via an OpenAI-compatible API. Returns list of float vectors."""
+    model = config_get_by_key("embeddingModel", EMBEDDING_MODEL)
+    provider = str(config_get_by_key("embeddingprovider", "OpenAI"))
     proxy_url = config_get_by_key("GATEWAY_URL")
     if proxy_url:
-        client = openai.OpenAI(base_url=f"{proxy_url.rstrip('/')}/openai/", api_key="unused")
+        client = openai.OpenAI(base_url=f"{proxy_url.rstrip('/')}/{provider.lower()}/", api_key="unused")
     else:
         client = openai.OpenAI()
     try:
-        resp = client.embeddings.create(model=EMBEDDING_MODEL, input=texts)
+        resp = client.embeddings.create(model=model, input=texts)
     except Exception as e:
         raise RuntimeError(f"Embedding request failed: {e}") from e
     return [item.embedding for item in resp.data]
