@@ -9,12 +9,13 @@ RAG_MODULE_PATH = REPO_ROOT / "src" / "rag.py"
 MEMORY_METTA_PATH = REPO_ROOT / "src" / "memory.metta"
 
 
-def load_rag_module(monkeypatch):
+def load_rag_module(monkeypatch, config=None, expected_model="text-embedding-3-large"):
     created_clients = []
+    settings = {"GATEWAY_URL": "http://gateway:8080", **(config or {})}
 
     class FakeEmbeddings:
         def create(self, *, model, input):
-            assert model == "text-embedding-3-large"
+            assert model == expected_model
             assert input == ["runtime probe"]
             return types.SimpleNamespace(
                 data=[types.SimpleNamespace(embedding=[0.1, 0.2, 0.3])]
@@ -32,7 +33,7 @@ def load_rag_module(monkeypatch):
     chromadb_module = types.ModuleType("chromadb")
     config_module = types.ModuleType("config")
     config_module.config_get_by_key = (
-        lambda key, default=None: "http://gateway:8080" if key == "GATEWAY_URL" else default
+        lambda key, default=None: settings.get(key, default)
     )
     llm_module = types.ModuleType("lib_llm_ext")
     llm_module.initLocalEmbedding = lambda: None
@@ -57,6 +58,18 @@ def test_runtime_openai_embedding_uses_proxy_and_returns_single_vector(monkeypat
     assert len(clients) == 1
     assert clients[0].base_url == "http://gateway:8080/openai/"
     assert clients[0].api_key == "unused"
+
+
+def test_runtime_embedding_uses_the_configured_provider_and_model(monkeypatch):
+    rag, clients = load_rag_module(
+        monkeypatch,
+        config={"embeddingprovider": "ASICloud",
+                "embeddingModel": "WhereIsAI/UAE-Large-V1"},
+        expected_model="WhereIsAI/UAE-Large-V1",
+    )
+
+    assert rag.openai_embed("runtime probe") == [0.1, 0.2, 0.3]
+    assert clients[0].base_url == "http://gateway:8080/asicloud/"
 
 
 def test_memory_metta_routes_openai_embeddings_to_rag_wrapper():
