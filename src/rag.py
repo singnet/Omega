@@ -138,7 +138,7 @@ def _chunk_markdown(text, filename):
 
 # --- Embedding -----------------------------------------------------------
 
-def openai_embed_batch(texts):
+def cloud_embed_batch(texts):
     """Embed a list of texts via an OpenAI-compatible API. Returns list of float vectors."""
     model = config_get_by_key("embeddingModel", EMBEDDING_MODEL)
     provider = str(config_get_by_key("embeddingprovider", "OpenAI"))
@@ -154,9 +154,9 @@ def openai_embed_batch(texts):
     return [item.embedding for item in resp.data]
 
 
-def openai_embed(text):
+def cloud_embed(text):
     """Embed one runtime memory string via the configured OpenAI route."""
-    return openai_embed_batch([text])[0]
+    return cloud_embed_batch([text])[0]
 
 
 def local_embed_batch(texts):
@@ -255,13 +255,10 @@ def init_knowledge(embedding_selection):
             texts = [c["text"] for c in chunks]
             if embedding_selection == "Local":
                 embeddings = local_embed_batch(texts)
-            elif embedding_selection == "OpenAI":
-                embeddings = openai_embed_batch(texts)
+            elif embedding_selection.lower() in ("asicloud", "openai"):
+                embeddings = cloud_embed_batch(texts)
             else:
-                raise ValueError(
-                      f"Invalid embedding_selection={embedding_selection!r}. "
-                      "Expected 'Local' or 'OpenAI'.")
-                 
+                raise NotImplementedError(f"Unsupported embedding provider: {embedding_selection}")
             if not embeddings:
                 logger.warning(f"{filename}: embedding failed, skipping")
                 continue

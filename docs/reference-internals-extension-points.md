@@ -53,7 +53,7 @@ In `src/memory.metta`, the `embed` function dispatches on `embeddingprovider`:
 (= (embed $str)
    (if (== (embeddingprovider) Local)
        (py-call (lib_llm_ext.useLocalEmbedding (string-safe $str)))
-       (py-call (rag.openai_embed (string-safe $str)))))
+       (py-call (rag.cloud_embed (string-safe $str)))))
 ```
 
 Any value other than `Local` is a provider id: the remote branch posts

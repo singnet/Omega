@@ -54,7 +54,7 @@ def load_rag_module(monkeypatch, config=None, expected_model="text-embedding-3-l
 def test_runtime_openai_embedding_uses_proxy_and_returns_single_vector(monkeypatch):
     rag, clients = load_rag_module(monkeypatch)
 
-    assert rag.openai_embed("runtime probe") == [0.1, 0.2, 0.3]
+    assert rag.cloud_embed("runtime probe") == [0.1, 0.2, 0.3]
     assert len(clients) == 1
     assert clients[0].base_url == "http://gateway:8080/openai/"
     assert clients[0].api_key == "unused"
@@ -68,12 +68,12 @@ def test_runtime_embedding_uses_the_configured_provider_and_model(monkeypatch):
         expected_model="WhereIsAI/UAE-Large-V1",
     )
 
-    assert rag.openai_embed("runtime probe") == [0.1, 0.2, 0.3]
+    assert rag.cloud_embed("runtime probe") == [0.1, 0.2, 0.3]
     assert clients[0].base_url == "http://gateway:8080/asicloud/"
 
 
 def test_memory_metta_routes_openai_embeddings_to_rag_wrapper():
     memory_metta = MEMORY_METTA_PATH.read_text(encoding="utf-8")
 
-    assert "(py-call (rag.openai_embed (string-safe $str)))" in memory_metta
+    assert "(py-call (rag.cloud_embed (string-safe $str)))" in memory_metta
     assert "useGPTEmbedding" not in memory_metta
