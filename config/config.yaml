@@ -6,6 +6,8 @@ maxNewInputLoops: 50
 maxWakeLoops: 1
 # (deprecated)
 spamShield: False
+# Put HISTORY before LAST_SKILL_USE_RESULTS in the prompt so providers can reuse more of the cached prefix
+stableContextOrder: False
 # Delay between loop iterations (seconds)
 sleepInterval: 1
 # LLM model to load overrides *_model parameters see below
