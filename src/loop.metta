@@ -26,7 +26,8 @@
 
 (= (initKnowledge)
    (progn (log INFO "loop" "Initializing knowledge base")
-          (log INFO "loop" (py-call (rag.init_knowledge (embeddingprovider))))))
+          (log INFO "loop" (py-call (rag.init_knowledge (embeddingprovider))))
+          ()))
 
 (= (getContext)
    (string-safe (py-str ("PROMPT: " (getPrompt (provider)) " SKILLS: " (getSkills)
