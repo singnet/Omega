@@ -1,5 +1,6 @@
 import os
 import enum
+import glob
 import yaml
 import json
 from py_landlock import Landlock, AccessFs
@@ -72,11 +73,13 @@ class FileSystemPolicy:
                              | AccessFs.MAKE_SOCK)
     READ_WRITE_FILE_ACCESS = (AccessFs.READ_FILE | AccessFs.WRITE_FILE |
                               AccessFs.TRUNCATE)
+    DEVICE_ACCESS = AccessFs.READ_FILE | AccessFs.WRITE_FILE | AccessFs.IOCTL_DEV
 
     def __init__(self):
         self._compatibility = LandLockCompatibility.BEST_EFFORT
         self._read_only = []
         self._read_write = []
+        self._device_access = []
 
     def load_file(self, path: str|Path):
         logger.info(f"Loading policy from file {path}")
@@ -115,22 +118,43 @@ class FileSystemPolicy:
                 rw.append(os.getcwd())
         self._read_only = [Path(f'{p}') for p in ro]
         self._read_write = [Path(f'{p}') for p in rw]
+        self._device_access = list(fs.get('device_access', []) or []) if fs else []
+
+    def _resolve_device_paths(self) -> list[Path]:
+        """Expand device_access glob patterns to existing device files.
+
+        Patterns that match nothing on the current platform (e.g. NVIDIA
+        device nodes on WSL2, or /dev/dxg on bare Linux) are skipped, so the
+        same policy file works unmodified on both.
+
+        Returns:
+            Resolved, deduplicated paths of device files that actually exist.
+        """
+        resolved = set()
+        for pattern in self._device_access:
+            resolved.update(Path(match).resolve() for match in glob.glob(pattern))
+        return list(resolved)
 
     def apply(self):
         rod = list(filter(lambda p: p.is_dir(), self._read_only))
         rof = list(filter(lambda p: not p.is_dir(), self._read_only))
         rwd = list(filter(lambda p: p.is_dir(), self._read_write))
         rwf = list(filter(lambda p: not p.is_dir(), self._read_write))
+        devices = self._resolve_device_paths()
 
         strict = self._compatibility == LandLockCompatibility.HARD_REQUIREMENT
-        Landlock(strict=strict) \
+        sandbox = Landlock(strict=strict) \
             .allow_all_scope() \
             .allow_all_network() \
             .add_path_rule('/', access=AccessFs.EXECUTE) \
             .add_path_rule(*rwd, access=FileSystemPolicy.READ_WRITE_DIR_ACCESS) \
             .add_path_rule(*rwf, access=FileSystemPolicy.READ_WRITE_FILE_ACCESS) \
             .add_path_rule(*rod, access=FileSystemPolicy.READ_ONLY_DIR_ACCESS) \
-            .add_path_rule(*rof, access=FileSystemPolicy.READ_ONLY_FILE_ACCESS) \
-            .apply()
+            .add_path_rule(*rof, access=FileSystemPolicy.READ_ONLY_FILE_ACCESS)
+
+        if devices:
+            sandbox.add_path_rule(*devices, access=FileSystemPolicy.DEVICE_ACCESS)
+
+        sandbox.apply()
 
         logger.info("Policy applied")

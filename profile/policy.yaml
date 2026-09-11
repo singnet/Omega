@@ -21,5 +21,12 @@ filesystem_policy:
   - /opt/sentence_transformers
   - /var/tmp
   - /dev/shm
+  device_access:
+  - /dev/dxg
+  - /dev/nvidiactl
+  - /dev/nvidia[0-9]*
+  - /dev/nvidia-uvm
+  - /dev/nvidia-uvm-tools
+  - /dev/nvidia-caps
 landlock:
   compatibility: best_effort
