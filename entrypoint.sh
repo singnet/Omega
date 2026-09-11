@@ -11,12 +11,16 @@ nginx_url() {
 cd /PeTTa
 
 EMBEDDING_PROVIDER="${EMBEDDING_PROVIDER:-Local}"
+EMBEDDING_MODEL="${EMBEDDING_MODEL:-}"
 OPENAIAPI_URL="http://localhost:8080/" # dummy value
 MM_URL="http://localhost:8080/" # dummy value
 OPENCLAW_URL="http://localhost:8080/" # dummy value
 for arg in "$@"; do
   if [[ "$arg" == embeddingprovider=* ]]; then
     EMBEDDING_PROVIDER="${arg#*=}"
+  fi
+  if [[ "$arg" == embeddingModel=* ]]; then
+    EMBEDDING_MODEL="${arg#*=}"
   fi
   # URL to redirect OpenAIAPI provider requests
   if [[ "$arg" == openaiapi_url=* ]]; then
@@ -31,7 +35,7 @@ for arg in "$@"; do
     OPENCLAW_URL=$(nginx_url "${arg#*=}")
   fi
 done
-export EMBEDDING_PROVIDER OPENAIAPI_URL MM_URL OPENCLAW_URL
+export EMBEDDING_PROVIDER EMBEDDING_MODEL OPENAIAPI_URL MM_URL OPENCLAW_URL
 
 su www-data -s /bin/sh -c "sh /opt/nginx/nginx.sh"
 

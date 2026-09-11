@@ -30,7 +30,7 @@ The result of the ChromaDB write (internally). The agent treats a successful cal
 
 ### Notes / Limits
 - Text is passed through `string-safe` before embedding, which escapes newlines, quotes, and apostrophes.
-- Embedding provider is selected by `embeddingprovider` (`Local` or `OpenAI`).
+- Embedding provider is selected by `embeddingprovider`, the model by `embeddingModel`.
 - Nothing deduplicates automatically — repeated `remember` calls store multiple items.
 
 ---

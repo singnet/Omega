@@ -11,7 +11,7 @@
           (configure maxRecallItems 20)
           (configure maxEpisodeRecallLines 20)
           (configure maxHistory 30000)
-          (configure embeddingprovider Local) ;OpenAI or Local
+          (configure embeddingprovider Local) ;OpenAI, ASICloud or Local
           (if (== (embeddingprovider) Local)
               (py-call (lib_llm_ext.initLocalEmbedding)) _)))
 
@@ -45,7 +45,7 @@
 (= (embed $str)
    (if (== (embeddingprovider) Local)
        (py-call (lib_llm_ext.useLocalEmbedding (string-safe $str)))
-       (py-call (rag.openai_embed (string-safe $str)))))
+       (py-call (rag.cloud_embed (string-safe $str)))))
 
 (= (appendToHistory $addition)
    (append-file-raw (library Omega ./memory/history.metta) (swrite $addition)))
