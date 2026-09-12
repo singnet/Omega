@@ -55,22 +55,12 @@ class OpenAIProviderImpl(llm.AIProvider):
 
             response = self._client.responses.create(**create_kwargs)
 
-            usage = getattr(response, "usage", None)
-            if usage:
-                input_tokens = getattr(usage, "input_tokens", None)
-                output_tokens = getattr(usage, "output_tokens", None)
-                total_tokens = getattr(usage, "total_tokens", None)
-                details = getattr(usage, "input_tokens_details", None)
-                cached_tokens = getattr(details, "cached_tokens", None) if details else None
-
-                logger.info(
-                    f"[LLM_USAGE] provider={self._name} model={self._model_name} "
-                    f"input_tokens={input_tokens} output_tokens={output_tokens} "
-                    f"total_tokens={total_tokens} cached_tokens={cached_tokens}"
-                )
-
             raw = response.output_text or ""
             llm._log_raw(self._name, self._model_name, raw)
+            llm._log_responses_completion(self._name, self._model_name, response)
+            if not raw:
+                logger.warning("LLM returned an empty response")
+                raw = llm._llm_empty_response_command()
             return self._clean_text(raw)
         except Exception as e:
             logger.exception(f"[OpenAIProviderImpl.chat]: Exception while communicating with LLM: {e}")
