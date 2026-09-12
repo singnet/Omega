@@ -6,8 +6,18 @@ from src.helper import quote_arg
 
 PROMPT_DELIMITER = ":-:-:-:"
 LLM_EMPTY_RESPONSE_MESSAGE = (
-    'The entire configured "maxOutputTokens" budget was consumed by thinking, '
-    "leaving no tokens available to generate the final answer."
+    "The agent didn\'t return an answer: reasoning exceeded the token limit for "
+    "this response before it could produce one."
+    "\n\n"
+    "If you are not an administrator: ask the Omega administrator to lower "
+    "the reasoning level or raise the response token budget - or try breaking "
+    "your request into smaller, simpler steps."
+    "\n\n"
+    "If you are the Omega administrator: check whether the model supports a "
+    "lower reasoning level and set it via 'reasoningMode' "
+    "(e.g. high → medium → low). Alternatively, raise 'maxOutputToken' - "
+    "reasoning and the final answer draw from the same token limit, so higher "
+    "reasoning levels need a higher token limit."
 )
 
 from src.logger import get_logger
