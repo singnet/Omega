@@ -80,6 +80,7 @@ class FileSystemPolicy:
         self._read_only = []
         self._read_write = []
         self._device_access = []
+        self._read_write_files = []
 
     def load_file(self, path: str|Path):
         logger.info(f"Loading policy from file {path}")
@@ -119,6 +120,7 @@ class FileSystemPolicy:
         self._read_only = [Path(f'{p}') for p in ro]
         self._read_write = [Path(f'{p}') for p in rw]
         self._device_access = list(fs.get('device_access', []) or []) if fs else []
+        self._read_write_files = [Path(p) for p in (fs.get('read_write_files') or [])] if fs else []
 
     def _resolve_device_paths(self) -> list[Path]:
         """Expand device_access glob patterns to existing device files.
@@ -150,7 +152,8 @@ class FileSystemPolicy:
             .add_path_rule(*rwd, access=FileSystemPolicy.READ_WRITE_DIR_ACCESS) \
             .add_path_rule(*rwf, access=FileSystemPolicy.READ_WRITE_FILE_ACCESS) \
             .add_path_rule(*rod, access=FileSystemPolicy.READ_ONLY_DIR_ACCESS) \
-            .add_path_rule(*rof, access=FileSystemPolicy.READ_ONLY_FILE_ACCESS)
+            .add_path_rule(*rof, access=FileSystemPolicy.READ_ONLY_FILE_ACCESS) \
+            .add_path_rule(*self._read_write_files, access=FileSystemPolicy.READ_WRITE_FILE_ACCESS)
 
         if devices:
             sandbox.add_path_rule(*devices, access=FileSystemPolicy.DEVICE_ACCESS)
