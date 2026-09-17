@@ -90,30 +90,12 @@ class OpenAIProviderImpl(llm.AIProvider):
 
         return result
 
-    def log_usage_statistics(self, response):
-        usage = getattr(response, "usage", None)
-        if usage:
-            input_tokens = getattr(usage, "input_tokens", None)
-            output_tokens = getattr(usage, "output_tokens", None)
-            total_tokens = getattr(usage, "total_tokens", None)
-            details = getattr(usage, "input_tokens_details", None)
-            cached_tokens = getattr(details, "cached_tokens", None) if details else None
-
-            logger.info(
-                f"[LLM_USAGE] provider={self._name} model={self._model_name} "
-                f"input_tokens={input_tokens} output_tokens={output_tokens} "
-                f"total_tokens={total_tokens} cached_tokens={cached_tokens}"
-            )
-
     def convert_response(self, raw):
-        self.log_usage_statistics(raw)
+        llm._log_responses_completion(self._name, self._model_name, raw)
 
         response =  LLMResponse()
-        output = raw.output
-        if not output:
-            return response
-
-        for item in output:
+        exhausted = getattr(raw.incomplete_details, "reason", None) == "max_output_tokens"
+        for item in raw.output or []:
             if item.type != "function_call":
                 continue
             tool_call = item
@@ -121,12 +103,20 @@ class OpenAIProviderImpl(llm.AIProvider):
             try:
                 arguments = json.loads(tool_call.arguments)
             except json.JSONDecodeError as error:
-                response.add_tool_call(tc.with_error(f"Invalid tool arguments from model: {error}"))
+                error_text = f"Invalid tool arguments from model: {error}"
+                if exhausted:
+                    error_text = f"{error_text}. {llm.LLM_TRUNCATED_CALL_HINT}"
+                response.add_tool_call(tc.with_error(error_text))
             else:
                 if isinstance(arguments, dict):
                     response.add_tool_call(tc.with_arguments(arguments))
                 else:
                     response.add_tool_call(tc.with_error("Tool arguments must be a JSON object"))
+
+        if not response.calls:
+            logger.warning("LLM returned an empty response")
+            if exhausted:
+                response.add_tool_call(llm._llm_empty_response_call(raw.id))
 
         return response
 
