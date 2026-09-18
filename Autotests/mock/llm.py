@@ -7,6 +7,7 @@ except ImportError:
     from rpc import Rpc, IPCClient, IPCServer
 from contextlib import contextmanager
 import threading
+from providers import *
 
 LLM_MOCK_PORT = 9765
 
@@ -23,53 +24,47 @@ class LlmMockAgent:
     def stop(self, timeout=None):
         self._rpc.stop(timeout)
 
-    def chat(self, content):
-        user = content.rsplit(":-:-:-:", 1)
-        if len(user) < 2:
-            return ""
+    def chat(self, request: LLMRequest) -> LLMResponse:
+        user = [m for m in request.messages if m.role == "user"]
+        answer = None
+        if len(user) > 0:
+            body = user[-1].content
 
-        try:
-            body = eval(user[1])[1]
-        except SyntaxError:
-            return ""
+            # The agent escapes punctuation that would confuse its s-exp
+            # parser ('->_apostrophe_, "->_quote_, \n->_newline_) before
+            # the text reaches chat(). set_answer stores the literal
+            # prompt key, so try the raw body first, then the normalized
+            # form so prompts with quotes/apostrophes/newlines still match.
+            def normalize(text):
+                return (text
+                        .replace("_apostrophe_", "'")
+                        .replace("_quote_", '"')
+                        .replace("_newline_", "\n"))
 
-        # The agent escapes punctuation that would confuse its s-exp
-        # parser ('->_apostrophe_, "->_quote_, \n->_newline_) before
-        # the text reaches chat(). set_answer stores the literal
-        # prompt key, so try the raw body first, then the normalized
-        # form so prompts with quotes/apostrophes/newlines still match.
-        def normalize(text):
-            return (text
-                    .replace("_apostrophe_", "'")
-                    .replace("_quote_", '"')
-                    .replace("_newline_", "\n"))
-
-        with self._lock:
-            answer = self._answers.get(body) or self._answers.get(normalize(body))
-        if answer:
-            print(f"[LlmMockAgent] Mock answers: {answer}")
-            return answer
-
-        # IRC may deliver multiple PRIVMSGs in one agent iteration; the
-        # agent concatenates them with " | " between speakers. Split
-        # and look up each fragment individually so a registered answer
-        # is not missed when several messages arrive together.
-        fragments = body.split(" | ")
-        for fragment in fragments:
-            if ": " not in fragment:
-                continue
-            prompt = fragment.split(": ", 1)[1]
             with self._lock:
-                a = self._answers.get(normalize(prompt)) or self._answers.get(prompt)
-            if a:
-                answer = a
+                answer = self._answers.get(body) or self._answers.get(normalize(body))
+
+            if not answer:
+                # IRC may deliver multiple PRIVMSGs in one agent iteration; the
+                # agent concatenates them with " | " between speakers. Split
+                # and look up each fragment individually so a registered answer
+                # is not missed when several messages arrive together.
+                fragments = body.split(" | ")
+                for fragment in fragments:
+                    if ": " not in fragment:
+                        continue
+                    prompt = fragment.split(": ", 1)[1]
+                    with self._lock:
+                        a = self._answers.get(normalize(prompt)) or self._answers.get(prompt)
+                    if a:
+                        answer = a
 
         if answer:
             print(f"[LlmMockAgent] Mock answers: {answer}")
-            return answer
+            return self._make_llm_response(answer)
         else:
             print(f"[LlmMockAgent] Mock doesn't have answer for: {body}")
-            return ""
+            return LLMResponse()
 
     def on_set_answer(self, args):
         with self._lock:
@@ -80,8 +75,20 @@ class LlmMockAgent:
             return True
 
     def on_ping(self, args):
-        print(f'[LlmMockAgent] Mock ping request processed')
+        print('[LlmMockAgent] Mock ping request processed')
         return True
+
+    def _make_llm_response(self, calls: [(str, dict[str, str])]) -> LLMResponse:
+        response = LLMResponse()
+        id = 0
+        for (func, args) in calls:
+            response.add_tool_call(LLMToolCall()
+                                   .with_name(func)
+                                   .with_id(f"mockid#{id}")
+                                   .with_arguments(args))
+            id = id + 1
+        return response
+
 
 class LlmMockController:
 
@@ -100,7 +107,7 @@ class LlmMockController:
         return True
 
     def ping(self, timeout=None):
-        print(f'[LlmMockController] Ping agent')
+        print('[LlmMockController] Ping agent')
         result = self._rpc.request('ping', {})
         if result.get(timeout) != True:
             print(f'[LlmMockController] Did not get answer on ping in {timeout} seconds')

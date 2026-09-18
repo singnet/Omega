@@ -19,3 +19,7 @@
        "a/b")
 !(test (joinPath ("a/" "b"))
        "a/b")
+
+!(test (swrite a) "a")
+!(test (swrite "a") "\"a\"")
+!(test (swrite (a b)) "(a b)")

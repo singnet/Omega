@@ -56,8 +56,8 @@ def test_transition_pin_to_remember_mock(llm, comm):
         )
         llm.set_answer(
             prompt1,
-            f'(pin "{marker}: candidates A, B, C") '
-            f'(send "Pinned {marker}: A, B, C.")',
+            [("pin", { "message": f"{marker}: candidates A, B, C" }),
+             ("send", { "content": f"Pinned {marker}: A, B, C." })]
         )
         if not comm.send_message(prompt1):
             c.fail("comm-1", "could not deliver turn 1 prompt within 60s")
@@ -90,8 +90,8 @@ def test_transition_pin_to_remember_mock(llm, comm):
         )
         llm.set_answer(
             prompt2,
-            f'(remember "{marker}: candidates A, B, C") '
-            f'(send "Committed {marker} to long-term memory.")',
+            [("remember", { "content": f"{marker}: candidates A, B, C" }),
+             ("send", { "content": f"Committed {marker} to long-term memory." })]
         )
         if not comm.send_message(prompt2):
             c.fail("comm-2", "could not deliver turn 2 prompt within 60s")
