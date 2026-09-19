@@ -11,12 +11,16 @@ nginx_url() {
 cd /PeTTa
 
 EMBEDDING_PROVIDER="${EMBEDDING_PROVIDER:-Local}"
+EMBEDDING_MODEL="${EMBEDDING_MODEL:-}"
 OPENAIAPI_URL="http://localhost:8080/" # dummy value
 MM_URL="http://localhost:8080/" # dummy value
 OPENCLAW_URL="http://localhost:8080/" # dummy value
 for arg in "$@"; do
   if [[ "$arg" == embeddingprovider=* ]]; then
     EMBEDDING_PROVIDER="${arg#*=}"
+  fi
+  if [[ "$arg" == embeddingModel=* ]]; then
+    EMBEDDING_MODEL="${arg#*=}"
   fi
   # URL to redirect OpenAIAPI provider requests
   if [[ "$arg" == openaiapi_url=* ]]; then
@@ -31,7 +35,7 @@ for arg in "$@"; do
     OPENCLAW_URL=$(nginx_url "${arg#*=}")
   fi
 done
-export EMBEDDING_PROVIDER OPENAIAPI_URL MM_URL OPENCLAW_URL
+export EMBEDDING_PROVIDER EMBEDDING_MODEL OPENAIAPI_URL MM_URL OPENCLAW_URL
 
 su www-data -s /bin/sh -c "sh /opt/nginx/nginx.sh"
 
@@ -41,11 +45,12 @@ if [[ "${IMPORT_KB_ON_START}" == "1" ]]; then
 fi
 
 MEMORY_PORTABILITY_PYTHON='import os
+import sys
 from config import init_config
 from memory_export import create_memory_store
 from memory_portability import MemoryTransfer
 
-init_config([])
+init_config(sys.argv[1:])
 transfer = MemoryTransfer(
     transfer_dir="/memory-transfer",
     store=create_memory_store(),
@@ -66,13 +71,13 @@ export MEMORY_PORTABILITY_PYTHON
 export PYTHONPATH="${OMEGA_DIR}:${OMEGA_DIR}/src${PYTHONPATH:+:${PYTHONPATH}}"
 
 export MEMORY_PORTABILITY_OPERATION=recover
-su nobody -s /bin/sh -c 'exec python3 -c "$MEMORY_PORTABILITY_PYTHON"' \
+su nobody -s /bin/sh -c 'exec python3 -c "$MEMORY_PORTABILITY_PYTHON" "$@"' sh "$@" \
   || { echo "Memory import recovery failed. Aborting startup." >&2; exit 1; }
 
 if [[ -n "${MEMORY_IMPORT_FILE:-}" ]]; then
   echo "memory_portability: importing ${MEMORY_IMPORT_FILE}"
   export MEMORY_PORTABILITY_OPERATION=import
-  su nobody -s /bin/sh -c 'exec python3 -c "$MEMORY_PORTABILITY_PYTHON"' \
+  su nobody -s /bin/sh -c 'exec python3 -c "$MEMORY_PORTABILITY_PYTHON" "$@"' sh "$@" \
     || { echo "Memory import failed. Aborting startup." >&2; exit 1; }
   echo "memory_portability: import complete"
 fi

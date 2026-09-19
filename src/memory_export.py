@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 from config import config_get_by_key
+from embedding_models import DEFAULT_MODELS, DIMENSIONS, embedding_model
 from helper import omega_version, projectRootDirectory
 from src.logger import get_logger
 
@@ -33,6 +34,31 @@ def _resolve_chroma_path() -> Path:
     return Path(str(configured)).expanduser().resolve()
 
 
+def _cloud_embedder(provider, model):
+    def embed(texts):
+        from import_knowledge.import_knowledge import embed_batch, init_embeddings
+
+        init_embeddings(mode=provider.casefold(), model_name=model)
+        return embed_batch(texts)
+
+    return embed
+
+
+def _embedding_options():
+    provider = str(config_get_by_key("embeddingprovider", "Local")).strip()
+    if provider.casefold() == "local":
+        return {}
+    model = embedding_model(provider, config_get_by_key("embeddingModel", ""))
+    return {
+        "embed_batch": _cloud_embedder(provider, model),
+        "embedding_profile": {
+            "provider": provider,
+            "model": model,
+            "vector_dimension": DIMENSIONS.get(model),
+        },
+    }
+
+
 def create_memory_store():
     """Build an import-kb store from Omega's effective configuration."""
     from memory_portability.storage import MemoryStore
@@ -41,6 +67,7 @@ def create_memory_store():
         memory_dir=_resolve_memory_dir(),
         chroma_path=_resolve_chroma_path(),
         collection_name="memories",
+        **_embedding_options(),
     )
 
 
@@ -50,7 +77,7 @@ def _get_transfer():
         from memory_portability import MemoryTransfer
 
         embedding_provider = str(config_get_by_key("embeddingprovider", "Local")).strip()
-        if embedding_provider.casefold() not in {"local", "openai"}:
+        if embedding_provider.casefold() not in {"local", *DEFAULT_MODELS}:
             raise ValueError(f"Unsupported embedding provider: {embedding_provider!r}")
 
         os.environ["EMBEDDING_PROVIDER"] = embedding_provider
