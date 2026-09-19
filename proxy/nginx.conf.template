@@ -111,6 +111,17 @@ http {
             proxy_http_version 1.1;
         }
 
+        # Telegram file downloads: Telegram serves uploaded files from
+        # /file/bot<TOKEN>/<path>, not /bot<TOKEN>/<path>, so media needs its own.
+        location /telegram-file/ {
+            rewrite ^/telegram-file/(.*)$ /file/bot${TG_BOT_TOKEN}/$1 break;
+            proxy_pass https://api.telegram.org;
+            proxy_set_header Host api.telegram.org;
+            proxy_ssl_server_name on;
+            proxy_ssl_protocols TLSv1.2 TLSv1.3;
+            proxy_http_version 1.1;
+        }
+
         # Mattermost: inject Bearer token header (HTTP + WebSocket).
         # Origin is rewritten to the upstream URL so Mattermost's CORS check
         # on the WebSocket upgrade matches its SiteURL / AllowCorsFrom — the
