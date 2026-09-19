@@ -46,12 +46,15 @@ class OpenRouterProviderImpl(llm.AIProvider):
 
         return None
 
-    def _openrouter_extra_body(self, content: str, max_tokens: int) -> Dict[str, Any]:
+    def _openrouter_extra_body(self, content: str, reasoning: str) -> Dict[str, Any]:
+        is_anthropic = self._model_name.lower().startswith("anthropic/")
         sysmsg, _ = llm._split_system_user(content)
+        # For models that accept only a reasoning token budget (e.g. Anthropic),
+        # OpenRouter derives it from the effort level and max_tokens itself.
         body = {
             "reasoning": {
-                "enabled": True,
-                "max_tokens": max_tokens,
+                "enabled": True if reasoning and str(reasoning).lower() != "none" else False,
+                "effort": reasoning,
                 "exclude": True,
             }
         }
@@ -65,10 +68,8 @@ class OpenRouterProviderImpl(llm.AIProvider):
         if session_id:
             body["session_id"] = session_id[:256]
 
-        model = self._model_name.lower()
-
         # OpenRouter supports top-level cache_control for Anthropic Claude routes.
-        if model.startswith("anthropic/"):
+        if is_anthropic:
             body["cache_control"] = {
                 "type": "ephemeral",
                 "ttl": config_get_by_key("OPENROUTER_CACHE_TTL", "5m"),
@@ -79,7 +80,7 @@ class OpenRouterProviderImpl(llm.AIProvider):
 
     def chat(self, content: str, max_tokens: int = 6000, reasoning: str = "medium", **kwargs) -> str:
         extra_body = llm._merge_dicts(
-            self._openrouter_extra_body(content, max_tokens),
+            self._openrouter_extra_body(content, reasoning),
             kwargs.pop("extra_body", None),
         )
 
