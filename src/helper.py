@@ -200,6 +200,17 @@ def normalize_string(x):
         logger.debug(f"Could not normalize value, using its plain string form: {e}")
         return str(x)
 
+def is_true(value):
+    """Interpret a configuration value as a boolean flag. The value can arrive as
+    a MeTTa symbol (True/False), a Python bool, or a string from the command line,
+    an environment variable or the config file. Returns 1 when the value reads as
+    true and 0 otherwise, so MeTTa can compare the result with (== ... 1)."""
+    if isinstance(value, bool):
+        return 1 if value else 0
+    if value is None:
+        return 0
+    return 1 if str(value).strip().lower() in ("true", "1", "yes", "on") else 0
+
 def joinPath(parts):
     return os.path.join(*parts)
 
