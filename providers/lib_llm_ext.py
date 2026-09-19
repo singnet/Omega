@@ -3,17 +3,87 @@ import openai
 from providers import *
 from typing import Optional, Tuple, Dict, Any
 from config import config_get_by_key
+from src.logger import get_logger
 import json
+import uuid
 
 PROMPT_DELIMITER = ":-:-:-:"
-
-from src.logger import get_logger
+LLM_EMPTY_RESPONSE_MESSAGE = (
+    "The agent didn\'t return an answer: reasoning exceeded the token limit for "
+    "this response before it could produce one."
+    "\n\n"
+    "If you are not an administrator: ask the Omega administrator to lower "
+    "the reasoning level or raise the response token budget - or try breaking "
+    "your request into smaller, simpler steps."
+    "\n\n"
+    "If you are the Omega administrator: check whether the model supports a "
+    "lower reasoning level and set it via 'reasoningMode' "
+    "(e.g. high → medium → low). Alternatively, raise 'maxOutputToken' - "
+    "reasoning and the final answer draw from the same token limit, so higher "
+    "reasoning levels need a higher token limit."
+)
+LLM_TRUNCATED_CALL_HINT = (
+    "The call was cut off by the output token limit. "
+    "Retry with shorter arguments or split the content into several calls."
+)
 
 
 logger = get_logger(__name__)
 
 def _log_raw(kind, provider: str, model: str, raw: Dict) -> None:
     logger.debug(f"[{kind}] provider={provider} model={model} raw={raw!r}")
+
+def _log_chat_completion(provider: str, model: str, response) -> None:
+    """Report how the completion budget was actually spent (Chat Completions API)."""
+    finish_reason = getattr(response.choices[0], "finish_reason", None)
+    usage = getattr(response, "usage", None)
+    details = getattr(usage, "completion_tokens_details", None)
+    prompt_details = getattr(usage, "prompt_tokens_details", None)
+    line = (
+        f"[LLM_USAGE] provider={provider} model={model} "
+        f"finish_reason={finish_reason} "
+        f"prompt_tokens={getattr(usage, 'prompt_tokens', None)} "
+        f"cached_tokens={getattr(prompt_details, 'cached_tokens', None)} "
+        f"completion_tokens={getattr(usage, 'completion_tokens', None)} "
+        f"reasoning_tokens={getattr(details, 'reasoning_tokens', None)} "
+    )
+    logger.info(line)
+
+def _log_responses_completion(provider: str, model: str, response) -> None:
+    """Report how the completion budget was actually spent (Responses API)."""
+    incomplete_details = getattr(response, "incomplete_details", None)
+    usage = getattr(response, "usage", None)
+    input_details = getattr(usage, "input_tokens_details", None)
+    output_details = getattr(usage, "output_tokens_details", None)
+    line = (
+        f"[LLM_USAGE] provider={provider} model={model} "
+        f"status={getattr(response, 'status', None)} "
+        f"incomplete_reason={getattr(incomplete_details, 'reason', None)} "
+        f"input_tokens={getattr(usage, 'input_tokens', None)} "
+        f"cached_tokens={getattr(input_details, 'cached_tokens', None)} "
+        f"output_tokens={getattr(usage, 'output_tokens', None)} "
+        f"reasoning_tokens={getattr(output_details, 'reasoning_tokens', None)} "
+    )
+    logger.info(line)
+
+def _llm_empty_response_call(response_id: Optional[str]) -> LLMToolCall:
+    """Build a `send` tool call that explains an empty LLM reply to the user.
+
+    Used when the LLM spends the entire output token budget on reasoning
+    and returns no tool calls, so there is no tool call id to reuse.
+
+    Args:
+        response_id: Id of the LLM response, used as the tool call id when present.
+
+    Returns:
+        Tool call that sends LLM_EMPTY_RESPONSE_MESSAGE.
+    """
+    return (
+        LLMToolCall() \
+            .with_name("send") \
+            .with_id(response_id or f"call_{uuid.uuid4().hex}") \
+            .with_arguments({"content": LLM_EMPTY_RESPONSE_MESSAGE})
+    )
 
 def _split_system_user(content: str) -> Tuple[str, str]:
     """
@@ -146,10 +216,16 @@ class AIProvider(AbstractAIProvider):
         }
 
     def convert_response(self, raw):
+        _log_chat_completion(self._name, self._model_name, raw)
         response =  LLMResponse()
 
-        message = raw.choices[0].message
+        choice = raw.choices[0]
+        message = choice.message
+        exhausted = choice.finish_reason == "length"
         if not message.tool_calls:
+            logger.warning("LLM returned an empty response")
+            if exhausted:
+                response.add_tool_call(_llm_empty_response_call(raw.id))
             return response
 
         for tool_call in message.tool_calls:
@@ -157,7 +233,10 @@ class AIProvider(AbstractAIProvider):
             try:
                 arguments = json.loads(tool_call.function.arguments)
             except json.JSONDecodeError as error:
-                response.add_tool_call(tc.with_error(f"Invalid tool arguments from model: {error}"))
+                error_text = f"Invalid tool arguments from model: {error}"
+                if exhausted:
+                    error_text = f"{error_text}. {LLM_TRUNCATED_CALL_HINT}"
+                response.add_tool_call(tc.with_error(error_text))
             else:
                 if isinstance(arguments, dict):
                     response.add_tool_call(tc.with_arguments(arguments))

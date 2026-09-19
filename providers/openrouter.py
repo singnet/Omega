@@ -34,8 +34,8 @@ class OpenRouterProviderImpl(llm.AIProvider):
         sysmsg = request.messages[0].content
         body = {
             "reasoning": {
-                "enabled": True,
-                "max_tokens": request.max_tokens,
+                "enabled": True if request.reasoning_mode and str(request.reasoning_mode).lower() != "none" else False,
+                "effort": request.reasoning_mode,
                 "exclude": True,
             }
         }
