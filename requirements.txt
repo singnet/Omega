@@ -1,6 +1,6 @@
 torch==2.12.1
 chromadb==1.5.9
-openai==2.38.0
+openai==2.54.0
 transformers==5.8.0
 sentence-transformers==5.5.1
 import-kb==0.2.3
