@@ -6,12 +6,10 @@
 (= (reasoningMode) (empty))
 (= (wakeupInterval) (empty))
 (= (memoryDirectory) (empty))
-(= (spamShield) (empty)) ; TODO: this parameter is considered deprecated
 
 (= (initLoop)
    (progn (configure maxNewInputLoops 50) ;20
           (configure maxWakeLoops 1)
-          (configure spamShield False)
           (configure sleepInterval 1) ;10
           (configure provider Anthropic)
           (configure maxOutputToken 6000)
@@ -96,7 +94,7 @@
                              ($_ (if (and (> $k 1) $msgnew)
                                      (change-state! &loops (maxNewInputLoops)) _)))
                             (if (> (get-state &loops) 0)
-                                (let* (($lastmessage (if $msgnew $msg (if (spamShield) " DO NOT RE-SEND OR SPAM!" "")))
+                                (let* (($lastmessage (if $msgnew $msg ""))
                                        ($_ (change-state! &nextWakeAt (+ (get_time) (wakeupInterval))))
                                        ($_ (log INFO "loop" $lastmessage))
                                        ($system (llmRequestMessage role "system" content $prompt))
