@@ -27,7 +27,6 @@
 (= (add-skill $function $description $arguments)
    (let $text (strings-concat ($description ": " $function " " (join " " $arguments)))
      (progn
-       (py-call (helper.add_llm_command $function))
        (log INFO "skills" (strings-concat ("Add skill: " $text)))
        (add-atom &self (dynamic-skill $function ($function $description $arguments))) )))
 
@@ -35,7 +34,6 @@
 ; $function - MeTTa function which implements the skill
 (= (remove-skill $function)
    (progn
-     (py-call (helper.remove_llm_command $function))
      (log INFO "skills" (strings-concat ("Remove skill: " $function)))
      (collapse (match &self (dynamic-skill $function $info) (remove-atom &self (dynamic-skill $function $info))))
      True))

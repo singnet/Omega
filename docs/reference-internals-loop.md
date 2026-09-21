@@ -36,7 +36,6 @@ Also creates shared state slots:
    - `Anthropic` → `lib_llm_ext.useClaude`
    - `ASICloud` → `lib_llm_ext.useMiniMax`
    - else → `lib_llm_ext.useAsi1`
-7. **Repair parentheses** — `helper.balance_parentheses` fixes common mismatches before parsing.
 8. **Parse** — `sread` on the repaired string; if it does not start with `(`, the loop feeds back a reminder prompt.
 9. **Dispatch skills** — `(superpose $sexpr)` runs each skill, capturing errors via `HandleError`.
 10. **Record** — `addToHistory` appends human message + response + any errors to `memory/history.metta`, provided something new happened.

@@ -17,7 +17,6 @@ With the hard rules that every argument is a quoted string and no MeTTa variable
 From `src/loop.metta`:
 
 1. **Raw LLM string** → `$respi`.
-2. **Parenthesis repair** — `helper.balance_parentheses $respi` → `$resp`. Common LLM mistakes (missing closers) are fixed here.
 3. **First-character check** — if `$resp` does not start with `(`, the agent receives a reminder prompt instead of a real dispatch; the LLM tries again next turn.
 4. **Parse** — `catch (sread $response)` → `$sexpr`. On parse failure, `HandleError` records `MULTI_COMMAND_FAILURE_...`.
 5. **Fan out** — `(superpose $sexpr)` produces one binding per skill call in the tuple.
