@@ -17,7 +17,7 @@ jobs:
           repositories: "singnet/Omega"
 
       - name: Checkout
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7.0.1
 
       - name: Self-hosted Renovate
         uses: renovatebot/github-action@v46.1.19
