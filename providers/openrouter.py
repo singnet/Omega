@@ -1,6 +1,5 @@
 import os
-import openai
-from typing import Optional, Dict, Any
+from typing import Any
 import lib_llm_ext as llm
 import providers
 from src.logger import get_logger
@@ -22,8 +21,8 @@ class OpenRouterProvider(providers.LLMProvider):
     def stop(self) -> None:
         self.delegate.stop()
 
-    def chat(self, prompt: str, max_tokens: int = 6000, reasoning_mode: str = "medium") -> str:
-        return self.delegate.chat(prompt, max_tokens, reasoning_mode)
+    def chat(self, args: providers.LLMRequest) -> providers.LLMResponse:
+        return self.delegate.chat(args)
 
 def loadOmegaPlugin():
     providers.registerLLMProvider("OpenRouter", OpenRouterProvider())
@@ -31,12 +30,12 @@ def loadOmegaPlugin():
 class OpenRouterProviderImpl(llm.AIProvider):
     """OpenRouter provider with reasoning mode enabled (reasoning tokens excluded from the response)."""
 
-    def _openrouter_extra_body(self, content: str, max_tokens: int) -> Dict[str, Any]:
-        sysmsg, _ = llm._split_system_user(content)
+    def _openrouter_extra_body(self, request: providers.LLMRequest) -> dict[str, Any]:
+        sysmsg = request.messages[0].content
         body = {
             "reasoning": {
                 "enabled": True,
-                "max_tokens": max_tokens,
+                "max_tokens": request.max_tokens,
                 "exclude": True,
             }
         }
@@ -61,12 +60,10 @@ class OpenRouterProviderImpl(llm.AIProvider):
 
         return body
 
-    def prepare_args(self, content: str, max_tokens: int = 6000,
-                                reasoning: str = "medium", **kwargs) -> Dict[str, Any]:
-        extra_body = llm._merge_dicts(
-            self._openrouter_extra_body(content, max_tokens),
-            kwargs.pop("extra_body", None),
+    def convert_request(self, request: providers.LLMRequest) -> dict[str, Any]:
+        result = super().convert_request(request)
+        result['extra_body'] = llm._merge_dicts(
+            self._openrouter_extra_body(request),
+            result.pop("extra_body", None),
         )
-
-        return super().prepare_args(content, max_tokens, reasoning,
-                                    extra_body=extra_body, **kwargs)
+        return result

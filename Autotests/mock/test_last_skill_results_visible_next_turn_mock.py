@@ -5,7 +5,7 @@ This is a one-iteration carry that lets the agent reference the output
 of (metta ...), (query ...), (shell ...) etc. without persisting it.
 
 Turn 1 mock answer dictates a metta computation. We then read the
-docker log to find the CHARS_SENT line for the NEXT iteration and
+docker log to find the REQUEST line for the NEXT iteration and
 confirm it contains the LAST_SKILL_USE_RESULTS marker.
 
 Run:
@@ -46,7 +46,10 @@ def test_last_skill_results_visible_next_turn_mock(llm, comm):
         # the next iteration's LAST_SKILL_USE_RESULTS.
         llm.set_answer(
             prompt1,
-            f'(metta "(quote {sentinel})") (send "computed")',
+            [
+                ("metta", { "sexpression": f"(quote {sentinel})" }),
+                ("send", { "content": "computed" })
+            ]
         )
         if not comm.send_message(prompt1):
             c.fail("comm-1", "could not deliver turn 1 prompt within 60s")
@@ -69,13 +72,13 @@ def test_last_skill_results_visible_next_turn_mock(llm, comm):
         c.step("wait for the agent to start a fresh iteration")
         time.sleep(20)
 
-        c.step("verify next iteration's CHARS_SENT contains LAST_SKILL_USE_RESULTS with sentinel")
+        c.step("verify next iteration's REQUEST contains LAST_SKILL_USE_RESULTS with sentinel")
         logs = docker_logs()
-        # We look for any CHARS_SENT line after our metta call that carries
+        # We look for any REQUEST line after our metta call that carries
         # the sentinel inside the LAST_SKILL_USE_RESULTS section.
         chars_sent_lines = [
             ln for ln in logs.split("\n")
-            if "CHARS_SENT:" in ln and "LAST_SKILL_USE_RESULTS:" in ln
+            if "REQUEST:" in ln and "LAST_SKILL_USE_RESULTS" in ln
         ]
         relevant = [
             ln for ln in chars_sent_lines
@@ -83,8 +86,8 @@ def test_last_skill_results_visible_next_turn_mock(llm, comm):
         ]
         if not relevant:
             c.fail("sentinel in lastresults",
-                   f"no CHARS_SENT line carries {sentinel!r} in "
-                   f"LAST_SKILL_USE_RESULTS. Total CHARS_SENT lines "
+                   f"no REQUEST line carries {sentinel!r} in "
+                   f"LAST_SKILL_USE_RESULTS. Total REQUEST lines "
                    f"checked: {len(chars_sent_lines)}")
         c.ok("sentinel in lastresults",
              f"found in {len(relevant)} subsequent iteration prompt(s)")

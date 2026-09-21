@@ -39,7 +39,7 @@ def test_memory_history_slack_mock(llm, sl):
             f"Acknowledge with one short line that you received marker {c.run_id}.",
         )
         ack = f"Marker {c.run_id} received. REQ-{c.run_id} acknowledged."
-        llm.set_answer(prompt, f'(send "{ack}")')
+        llm.set_answer(prompt, [("send", { "content": f"{ack}" })])
         sl_send_prompt(sl, prompt)
         c.ok("slack", f"run-id={c.run_id}")
 
