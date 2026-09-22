@@ -20,6 +20,7 @@
           (change-state! &prevmsg "")
           (change-state! &lastresults "")
           (change-state! &loops (maxNewInputLoops))
+          (messagesClear)
           ))
 
 (= (initKnowledge)
@@ -93,7 +94,7 @@
                              ($_ (if (and (> $k 1) $msgnew)
                                      (change-state! &loops (maxNewInputLoops)) _)))
                             (if (> (get-state &loops) 0)
-                                (let* (($lastmessage (if $msgnew $msg ""))
+                                (let* (($lastmessage (if $msgnew $msg "[NO NEW USER INPUT. CONTINUE AUTONOMOUS WORK. DO NOT REPEAT THE PREVIOUS RESPONSE. ONLY USE send FOR GENUINELY NEW INFORMATION OR WHEN USER INPUT IS NEEDED.]"))
                                        ($_ (change-state! &nextWakeAt (+ (get_time) (wakeupInterval))))
                                        ($_ (log INFO "loop" $lastmessage))
                                        ($system (llmRequestMessage role "system" content $prompt))
