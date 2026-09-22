@@ -31,11 +31,15 @@ class OpenRouterProviderImpl(llm.AIProvider):
     """OpenRouter provider with reasoning mode enabled (reasoning tokens excluded from the response)."""
 
     def _openrouter_extra_body(self, request: providers.LLMRequest) -> dict[str, Any]:
+        is_anthropic = self._model_name.lower().startswith("anthropic/")
         sysmsg = request.messages[0].content
+        reasoning = request.reasoning_mode
+        # For models that accept only a reasoning token budget (e.g. Anthropic),
+        # OpenRouter derives it from the effort level and max_tokens itself.
         body = {
             "reasoning": {
-                "enabled": True,
-                "max_tokens": request.max_tokens,
+                "enabled": bool(reasoning and str(reasoning).lower() != "none"),
+                "effort": reasoning,
                 "exclude": True,
             }
         }
@@ -49,10 +53,8 @@ class OpenRouterProviderImpl(llm.AIProvider):
         if session_id:
             body["session_id"] = session_id[:256]
 
-        model = self._model_name.lower()
-
         # OpenRouter supports top-level cache_control for Anthropic Claude routes.
-        if model.startswith("anthropic/"):
+        if is_anthropic:
             body["cache_control"] = {
                 "type": "ephemeral",
                 "ttl": config_get_by_key("OPENROUTER_CACHE_TTL", "5m"),

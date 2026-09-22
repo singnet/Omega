@@ -4,16 +4,72 @@ from providers import *
 from typing import Optional, Tuple, Dict, Any
 from config import config_get_by_key
 import json
+from src.logger import get_logger
+import uuid
 
 PROMPT_DELIMITER = ":-:-:-:"
-
-from src.logger import get_logger
+LLM_EMPTY_RESPONSE_MESSAGE = (
+    "The agent didn\'t return an answer: reasoning exceeded the token limit for "
+    "this response before it could produce one."
+    "\n\n"
+    "If you are not an administrator: ask the Omega administrator to lower "
+    "the reasoning level or raise the response token budget - or try breaking "
+    "your request into smaller, simpler steps."
+    "\n\n"
+    "If you are the Omega administrator: check whether the model supports a "
+    "lower reasoning level and set it via 'reasoningMode' "
+    "(e.g. high → medium → low). Alternatively, raise 'maxOutputToken' - "
+    "reasoning and the final answer draw from the same token limit, so higher "
+    "reasoning levels need a higher token limit."
+)
 
 
 logger = get_logger(__name__)
 
 def _log_raw(kind, provider: str, model: str, raw: Dict) -> None:
     logger.debug(f"[{kind}] provider={provider} model={model} raw={raw!r}")
+
+def _log_chat_completion(provider: str, model: str, response) -> None:
+    """Report how the completion budget was actually spent (Chat Completions API)."""
+    finish_reason = getattr(response.choices[0], "finish_reason", None)
+    usage = getattr(response, "usage", None)
+    details = getattr(usage, "completion_tokens_details", None)
+    prompt_details = getattr(usage, "prompt_tokens_details", None)
+    line = (
+        f"[LLM_USAGE] provider={provider} model={model} "
+        f"finish_reason={finish_reason} "
+        f"prompt_tokens={getattr(usage, 'prompt_tokens', None)} "
+        f"cached_tokens={getattr(prompt_details, 'cached_tokens', None)} "
+        f"completion_tokens={getattr(usage, 'completion_tokens', None)} "
+        f"reasoning_tokens={getattr(details, 'reasoning_tokens', None)} "
+    )
+    logger.info(line)
+
+def _log_responses_completion(provider: str, model: str, response) -> None:
+    """Report how the completion budget was actually spent (Responses API).
+    """
+    incomplete_details = getattr(response, "incomplete_details", None)
+    usage = getattr(response, "usage", None)
+    input_details = getattr(usage, "input_tokens_details", None)
+    output_details = getattr(usage, "output_tokens_details", None)
+    line = (
+        f"[LLM_USAGE] provider={provider} model={model} "
+        f"status={getattr(response, 'status', None)} "
+        f"incomplete_reason={getattr(incomplete_details, 'reason', None)} "
+        f"input_tokens={getattr(usage, 'input_tokens', None)} "
+        f"cached_tokens={getattr(input_details, 'cached_tokens', None)} "
+        f"output_tokens={getattr(usage, 'output_tokens', None)} "
+        f"reasoning_tokens={getattr(output_details, 'reasoning_tokens', None)} "
+    )
+    logger.info(line)
+
+def _llm_empty_response_tool_call(response_id) -> LLMToolCall:
+    """Return an explanatory message as a MeTTa `send` command when the LLM
+    spends the entire output token budget on reasoning and returns no content.
+    """
+    return (LLMToolCall().with_name("send")
+            .with_id(f"{response_id}#{uuid.uuid4().hex}")
+            .add_argument("content", LLM_EMPTY_RESPONSE_MESSAGE))
 
 def _split_system_user(content: str) -> Tuple[str, str]:
     """
@@ -148,8 +204,14 @@ class AIProvider(AbstractAIProvider):
     def convert_response(self, raw):
         response =  LLMResponse()
 
-        message = raw.choices[0].message
+        choice = raw.choices[0]
+        message = choice.message
+
         if not message.tool_calls:
+            logger.warning("LLM returned an empty response")
+            finish_reason = getattr(choice, "finish_reason", None)
+            if finish_reason == "length":
+                response.add_tool_call(_llm_empty_response_tool_call(raw.id))
             return response
 
         for tool_call in message.tool_calls:
@@ -178,6 +240,7 @@ class AIProvider(AbstractAIProvider):
             _log_raw("LLM_RAW_REQUEST", self._name, self._model_name, raw_request)
             raw_response = self._client.chat.completions.create(**raw_request)
             _log_raw("LLM_RAW_RESPONSE", self._name, self._model_name, raw_response)
+            _log_chat_completion(self._name, self._model_name, raw_response)
             return self.convert_response(raw_response)
         except Exception as e:
             error = f"Exception while communicating with LLM: {e}"

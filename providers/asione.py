@@ -6,6 +6,22 @@ from typing import Any
 
 logger = get_logger(__name__)
 
+# Share of max_tokens reserved for reasoning at each effort level; the rest stays for the answer.
+# Ratios follow OpenRouter: https://openrouter.ai/docs/guides/best-practices/reasoning-tokens#reasoning-effort-level
+REASONING_EFFORT_RATIO = {
+    "none": 0.0,
+    "minimal": 0.10,
+    "low": 0.20,
+    "medium": 0.50,
+    "high": 0.80,
+    "xhigh": 0.95,
+    "max": 0.95,
+}
+
+def _reasoning_budget(max_tokens: int, effort: str) -> int:
+    """Tokens reserved for reasoning; the rest of max_tokens stays for the answer."""
+    return int(max_tokens * REASONING_EFFORT_RATIO.get(str(effort).lower(), 0.0))
+
 class ASIOneProvider(providers.LLMProvider):
 
     def __init__(self):
@@ -31,8 +47,10 @@ class ASIOneProviderImpl(llm.AIProvider):
 
     def convert_request(self, request: providers.LLMRequest) -> dict[str, Any]:
         result = super().convert_request(request)
+        thinking_budget = _reasoning_budget(request.max_tokens,
+                                            request.reasoning_mode)
         result["extra_body"] = {
-            "enable_thinking": True,
-            "thinking_budget": 6000
+            "enable_thinking": thinking_budget > 0,
+            "thinking_budget": thinking_budget
         }
         return result

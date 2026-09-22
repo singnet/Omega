@@ -106,7 +106,7 @@ class OpenAIProviderImpl(llm.AIProvider):
             )
 
     def convert_response(self, raw):
-        self.log_usage_statistics(raw)
+        llm._log_responses_completion(raw)
 
         response =  LLMResponse()
         output = raw.output
@@ -127,6 +127,13 @@ class OpenAIProviderImpl(llm.AIProvider):
                     response.add_tool_call(tc.with_arguments(arguments))
                 else:
                     response.add_tool_call(tc.with_error("Tool arguments must be a JSON object"))
+
+        if not response.calls:
+            logger.warning("LLM returned an empty response")
+            incomplete_details = getattr(raw, "incomplete_details", None)
+            incomplete_reason = getattr(incomplete_details, "reason", None)
+            if incomplete_reason == "max_output_tokens":
+                response.add_tool_call(_llm_empty_response_tool_call(raw.id))
 
         return response
 
