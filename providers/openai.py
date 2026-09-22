@@ -106,7 +106,7 @@ class OpenAIProviderImpl(llm.AIProvider):
             )
 
     def convert_response(self, raw):
-        llm._log_responses_completion(raw)
+        llm._log_responses_completion(self._name, self._model_name, raw)
 
         response =  LLMResponse()
         output = raw.output
