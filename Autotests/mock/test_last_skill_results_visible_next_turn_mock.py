@@ -6,7 +6,7 @@ of (metta ...), (query ...), (shell ...) etc. without persisting it.
 
 Turn 1 mock answer dictates a metta computation. We then read the
 docker log to find the REQUEST line for the NEXT iteration and
-confirm it contains the LAST_SKILL_USE_RESULTS marker.
+confirm it contains the last tool call results marker.
 
 Run:
     pytest test_last_skill_results_visible_next_turn_mock.py -s
@@ -72,13 +72,13 @@ def test_last_skill_results_visible_next_turn_mock(llm, comm):
         c.step("wait for the agent to start a fresh iteration")
         time.sleep(20)
 
-        c.step("verify next iteration's REQUEST contains LAST_SKILL_USE_RESULTS with sentinel")
+        c.step("verify next iteration's REQUEST contains tool call results with sentinel")
         logs = docker_logs()
         # We look for any REQUEST line after our metta call that carries
-        # the sentinel inside the LAST_SKILL_USE_RESULTS section.
+        # the sentinel inside the tool call results section.
         chars_sent_lines = [
             ln for ln in logs.split("\n")
-            if "REQUEST:" in ln and "LAST_SKILL_USE_RESULTS" in ln
+            if "REQUEST:" in ln and "[TOOL CALL]" in ln
         ]
         relevant = [
             ln for ln in chars_sent_lines
@@ -87,7 +87,7 @@ def test_last_skill_results_visible_next_turn_mock(llm, comm):
         if not relevant:
             c.fail("sentinel in lastresults",
                    f"no REQUEST line carries {sentinel!r} in "
-                   f"LAST_SKILL_USE_RESULTS. Total REQUEST lines "
+                   f"tool call results. Total REQUEST lines "
                    f"checked: {len(chars_sent_lines)}")
         c.ok("sentinel in lastresults",
              f"found in {len(relevant)} subsequent iteration prompt(s)")
@@ -97,6 +97,6 @@ def test_last_skill_results_visible_next_turn_mock(llm, comm):
             c.fail("no unconditional failure instruction",
                    f"found deprecated prompt text: {deprecated_instruction!r}")
         c.ok("no unconditional failure instruction",
-             "LAST_SKILL_USE_RESULTS contains feedback without failure guidance")
+             "tool call results contains feedback without failure guidance")
 
         c.done()

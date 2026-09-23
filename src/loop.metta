@@ -18,7 +18,6 @@
           (configure memoryDirectory
                (joinPath ((py-call (helper.projectRootDirectory)) memory)))
           (change-state! &prevmsg "")
-          (change-state! &lastresults "")
           (change-state! &loops (maxNewInputLoops))
           (messagesClear)
           ))
@@ -32,7 +31,6 @@
    (string-safe (py-str ("PROMPT: " (getPrompt (provider)) " SKILLS: " (getSkillRules)
                          (newline) (getPromptExtensions) (newline)
                          " SAVE_PERMANENT_FILES_DIR: " (memoryDirectory)
-                         " LAST_SKILL_USE_RESULTS: " (last_chars (get-state &lastresults) (maxFeedback))
                          " HISTORY: " (getHistory) 
                          " TIME: " (get_time_as_string)))))
 
@@ -51,10 +49,15 @@
 ; dynamic prompt extension placeholder to eliminate error when no extension is added
 (= (prompt-extension placeholder) (empty))
 
-(= (HandleError $msg $cmd $sexpr)
-   (case $sexpr (((Error $a $b) (let $new (append (get-state &error) (($msg $cmd)))
-                                          (progn (change-state! &error $new) (ALERT_FAILED $a $b))))
-                 ($else $sexpr))))
+(= (HandleError $result $error)
+   (case $result (
+      ((Error $cmd $msg) (let $new (append (get-state &error) (($msg $cmd)))
+                           (let $errorstr (swrite $result)
+                             (progn
+                               (change-state! &error $new)
+                               (let $error (strings-concat ("Tool execution failed: " $errorstr))
+                                 True)))))
+      ($else False))))
 
 (= (collectTools)
    (py-call (providers.getTools (getSkills))))
@@ -98,27 +101,30 @@
                                        ($_ (change-state! &nextWakeAt (+ (get_time) (wakeupInterval))))
                                        ($_ (log INFO "loop" $lastmessage))
                                        ($system (llmRequestMessage role "system" content $prompt))
-                                       ($_ (messagesClear))
                                        ($_ (messagesAppend (llmRequestMessage role "user" content $lastmessage)))
                                        ($request (llmRequest $system (messagesGet) (maxOutputToken) (reasoningMode) (collectTools)))
                                        ($_ (log INFO "loop" (REQUEST: (py-str ($request)))))
                                        ($response (llmProviderChat $request))
                                        ($_ (log INFO "loop" (RESPONSE: (py-str ($response)))))
-                                       ($resp (py-call (providers.llmResponseToSExpr $response)))
-                                       ($sexpr (catch (sread $resp)))
+                                       ($respstr (py-call (providers.llmResponseToSExpr $response)))
+                                       ($resp (catch (sread $respstr)))
                                        ($_ (change-state! &error ()))
-                                       ($mcerr (HandleError MULTI_COMMAND_FAILURE_NOTHING_WAS_DONE_PLEASE_CORRECT_PARENTHESES_AND_USE_QUOTES_AND_RETRY $resp $sexpr))
-                                       ($_ (log INFO "loop" (RESPONSE: $sexpr)))
-                                       ($results (if (== $mcerr $sexpr)
-                                                      (RESULTS: (collapse (let $s (superpose $sexpr)
-                                                                           (let $precheck (HandleError UNKNOWN_SKILL_CALL $s $s)
-                                                                             (COMMAND_RETURN: ($s (if (== $precheck $s)
-                                                                                                    (HandleError SINGLE_COMMAND_ERROR_NOTHING_WAS_DONE_PLEASE_FIX_AND_RETRY $s (catch (let $R (eval $s) (py-call (helper.normalize_string $R)))))
-                                                                                                    $precheck)))))))
-                                                      (RESULTS: $mcerr)))
-                                       ($_ (log INFO "loop" (RESPONSE: $results))))
-                                      (progn (if (or $msgnew  (not (== $sexpr ()))) (addToHistory $msg $resp $sexpr $msgnew) _)
-                                             (change-state! &lastresults (string-safe (repr $results)))))
+                                       ($_ (log INFO "loop" (RESPONSE: $resp)))
+                                       ($_ (messagesClear))
+                                       ($_ (messagesAppend (llmRequestMessage role "assistant"
+                                                                              calls (llmResponseCalls $response)
+                                                                              content "[TOOL CALL]")))
+                                       ($sexpr (collapse
+                                             (let ($callid $s) (superpose $resp)
+                                               (let $result
+                                                 (if (HandleError $s $error) $error
+                                                   (let $rc (catch (let $R (eval $s) (py-call (helper.normalize_string $R))))
+                                                     (if (HandleError $rc $error) $error (strings-concat ("SUCCESS, RETURN: " $rc)))))
+                                                 (progn
+                                                   ($_ (log INFO "loop" (COMMAND_RETURN: ($s $result))))
+                                                   (messagesAppend (llmRequestMessage role "tool" callid $callid content $result))i
+                                                   (quote $s)))))))
+                                       (if (or $msgnew  (not (== $sexpr ()))) (addToHistory $msg $sexpr $msgnew) _))
                                 (if (> (get_time) (get-state &nextWakeAt))
                                     (change-state! &loops (+ 1 (maxWakeLoops))) _)))
                       (sleep (sleepInterval))

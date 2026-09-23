@@ -315,7 +315,10 @@ def llmToolCallToSExpr(call: LLMToolCall):
             arg = call.arguments[parameter.name]
             arg = arg.replace('"','\\"')
             sexpr = sexpr + f"\"{arg}\" "
-    return sexpr[:-1] + ")"
+    sexpr = sexpr + ")"
+    if call.is_error():
+        sexpr = f"(Error {sexpr} \"{call.error}\")"
+    return f"({call.id} {sexpr})"
 
 def llmResponseToSExpr(response: LLMResponse) -> str:
     sexpr = "("
