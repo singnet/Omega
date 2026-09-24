@@ -36,8 +36,11 @@ maxEpisodeRecallLines: 20
 maxHistory: 30000
 # ChromaDB persistence directory used for long-term memory portability.
 chromaDbPath: "./chroma_db"
-# `Local` (Python-side model) or `OpenAI` (requires `OPENAI_API_KEY`)
+# `Local` (Python-side model) or the id of a provider serving OpenAI-compatible embeddings: `OpenAI`, `ASICloud`
 embeddingprovider: Local
+# Model asked of a non-`Local` embeddingprovider; empty means the provider default:
+# `text-embedding-3-large` for `OpenAI`, `WhereIsAI/UAE-Large-V1` for `ASICloud`
+embeddingModel: ""
 # Enable authenticated operator-triggered /memory-export commands (disabled by default).
 memoryExportEnabled: false
 

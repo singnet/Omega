@@ -65,7 +65,7 @@ From `src/memory.metta`:
 - `maxRecallItems` — how many items `query` returns (default 20).
 - `maxEpisodeRecallLines` — how many lines `episodes` returns (default 20).
 - `maxHistory` — characters of history fed back into the prompt (default 30000).
-- `embeddingprovider` — `OpenAI` or `Local`.
+- `embeddingprovider` — `OpenAI`, `ASICloud` or `Local`.
 
 Change any of these by editing the `configure` calls in `initMemory` or passing command-line overrides — see [reference-configuration.md](./reference-configuration.md).
 
