@@ -6,10 +6,14 @@ try:
 except ImportError:
     from rpc import Rpc, IPCClient, IPCServer
 from contextlib import contextmanager
+import re
 import threading
 from providers import *
 
 LLM_MOCK_PORT = 9765
+
+# The loop sends every user message as "Step <time>: <text>"; answers are keyed by <text>.
+_STEP_PREFIX = re.compile(r"^Step \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}: ")
 
 class LlmMockAgent:
 
@@ -41,15 +45,16 @@ class LlmMockAgent:
                         .replace("_quote_", '"')
                         .replace("_newline_", "\n"))
 
+            text = _STEP_PREFIX.sub("", body, count=1)
             with self._lock:
-                answer = self._answers.get(body) or self._answers.get(normalize(body))
+                answer = self._answers.get(text) or self._answers.get(normalize(text))
 
             if not answer:
                 # IRC may deliver multiple PRIVMSGs in one agent iteration; the
                 # agent concatenates them with " | " between speakers. Split
                 # and look up each fragment individually so a registered answer
                 # is not missed when several messages arrive together.
-                fragments = body.split(" | ")
+                fragments = text.split(" | ")
                 for fragment in fragments:
                     if ": " not in fragment:
                         continue

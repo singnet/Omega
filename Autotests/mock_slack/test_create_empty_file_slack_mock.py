@@ -38,8 +38,10 @@ def test_create_empty_file_slack_mock(llm, sl):
         )
         llm.set_answer(
             prompt,
-            f'(shell "mkdir -p {TARGET_DIR}") '
-            f'(write-file "{TARGET_FILE}" "")',
+            [
+                ("shell", { "cmd": f"mkdir -p {TARGET_DIR}" }),
+                ("write-file", { "filename": f"{TARGET_FILE}", "content": "" }),
+            ],
         )
         sl_send_prompt(sl, prompt)
         c.ok("slack", f"run-id={c.run_id}")

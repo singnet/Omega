@@ -52,7 +52,7 @@ def test_edit_append_line_telegram_mock(llm, tg):
         )
         llm.set_answer(
             prompt,
-            f'(shell "printf \'%s\\\\n\' {LINE4_EXPECTED} >> {TARGET_FILE}")',
+            [("shell", { "cmd": f"printf '%s\\\\n' {LINE4_EXPECTED} >> {TARGET_FILE}" })],
         )
         tg_send_prompt(tg, prompt)
         c.ok("telegram", f"run-id={c.run_id}")

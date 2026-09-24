@@ -43,8 +43,7 @@ def test_search_invalid_telegram_mock(llm, tg):
         )
         llm.set_answer(
             prompt,
-            f'(send "No results found for {GIBBERISH}. The string appears to '
-            f'be gibberish — no meaningful matches.")',
+            [("send", { "content": f"No results found for {GIBBERISH}. The string appears to be gibberish — no meaningful matches." })],
         )
         tg_send_prompt(tg, prompt)
         c.ok("telegram", f"run-id={c.run_id}")

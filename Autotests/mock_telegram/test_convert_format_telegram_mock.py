@@ -51,7 +51,7 @@ def test_convert_md_to_txt_telegram_mock(llm, tg):
         )
         llm.set_answer(
             prompt,
-            f'(shell "cp {SOURCE_FILE} {DEST_FILE}")',
+            [("shell", { "cmd": f"cp {SOURCE_FILE} {DEST_FILE}" })],
         )
         tg_send_prompt(tg, prompt)
         c.ok("telegram", f"run-id={c.run_id}")

@@ -39,7 +39,7 @@ def test_memory_history_telegram_mock(llm, tg):
             f"Acknowledge with one short line that you received marker {c.run_id}.",
         )
         ack = f"Marker {c.run_id} received. REQ-{c.run_id} acknowledged."
-        llm.set_answer(prompt, f'(send "{ack}")')
+        llm.set_answer(prompt, [("send", { "content": f"{ack}" })])
         tg_send_prompt(tg, prompt)
         c.ok("telegram", f"run-id={c.run_id}")
 

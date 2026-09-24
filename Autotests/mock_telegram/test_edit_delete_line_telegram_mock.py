@@ -52,7 +52,7 @@ def test_edit_delete_line_telegram_mock(llm, tg):
         )
         llm.set_answer(
             prompt,
-            f'(shell "sed -i 2d {TARGET_FILE}")',
+            [("shell", { "cmd": f"sed -i 2d {TARGET_FILE}" })],
         )
         tg_send_prompt(tg, prompt)
         c.ok("telegram", f"run-id={c.run_id}")

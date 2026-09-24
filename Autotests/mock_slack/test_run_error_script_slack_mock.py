@@ -55,7 +55,7 @@ def test_run_error_script_slack_mock(llm, sl):
         )
         llm.set_answer(
             prompt,
-            f'(shell "sh {SCRIPT_FILE} > {OUTPUT_FILE} 2>&1")',
+            [("shell", { "cmd": f"sh {SCRIPT_FILE} > {OUTPUT_FILE} 2>&1" })],
         )
         sl_send_prompt(sl, prompt)
         c.ok("slack", f"run-id={c.run_id}")

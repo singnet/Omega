@@ -53,6 +53,16 @@ class TestLlmMock:
         assert controller.set_answer("hello", _llm_response_json("world"))
         assert agent.chat(_llm_request("DO NOT RE-SEND OR SPAM!")) == LLMResponse()
 
+    def test_step_prefix_before_sender(self, agent, controller):
+        assert controller.set_answer("hello", _llm_response_json("world"))
+        msg = "Step 2026-09-24 15:12:23: <@U0B6ML16Q84> (OmegaClaw Driver): hello"
+        assert agent.chat(_llm_request(msg)) == _llm_response("world")
+
+    def test_step_prefix_without_sender(self, agent, controller):
+        assert controller.set_answer("hello", _llm_response_json("world"))
+        msg = "Step 2026-09-24 15:12:23: hello"
+        assert agent.chat(_llm_request(msg)) == _llm_response("world")
+
     def test_context_manager(self, agent):
         with llm_mock_controller(address=TEST_ADDRESS) as controller:
             assert controller.set_answer("hello", _llm_response_json("world"))

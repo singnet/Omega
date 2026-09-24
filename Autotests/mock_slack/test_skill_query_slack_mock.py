@@ -44,7 +44,7 @@ def test_skill_query_slack_mock(llm, sl):
             seed_prompt,
             [
                 ("remember", { "content": f"My favorite color is {secret_color}." }),
-                ("send", { "content": f"Stored: favorite colour is {secret_color}."),
+                ("send", { "content": f"Stored: favorite colour is {secret_color}." }),
             ]
         )
         sl_send_prompt(sl, seed_prompt)
@@ -79,8 +79,10 @@ def test_skill_query_slack_mock(llm, sl):
         )
         llm.set_answer(
             recall_prompt,
-            f'(query "favorite color") '
-            f'(send "Your favorite color is {secret_color}.")',
+            [
+                ("query", { "content": "favorite color" }),
+                ("send", { "content": f"Your favorite color is {secret_color}." }),
+            ],
         )
         sl_send_prompt(sl, recall_prompt)
         c.ok("irc-recall", f"run-id={recall_id}")

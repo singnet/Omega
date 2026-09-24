@@ -31,7 +31,7 @@ def test_ws_outbox_flush_ws_mock(llm, ws):
         c.step("deliver prompt, then drop and refuse reconnects while the agent replies")
         answer = f"WS-BUFFERED-{c.run_id}"
         prompt = make_prompt(c.run_id, f"Reply with the send skill: {answer}")
-        llm.set_answer(prompt, f'(send "{answer}")')
+        llm.set_answer(prompt, [("send", { "content": f"{answer}" })])
         ws.inject_user_message(prompt)
         ws.block_connections()
         c.ok("dropped", "connection dropped, reconnects blocked")
