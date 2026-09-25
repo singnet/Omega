@@ -57,16 +57,19 @@ class ASIOneProviderImpl(llm.AIProvider):
         sysmsg, usermsg = content.split(":-:-:-:")
         thinking_budget = _reasoning_budget(max_tokens, reasoning)
         try:
-            response = self._client.chat.completions.create(
-                model=self._model_name,
-                messages=[{"role": "system", "content": sysmsg},
-                          {"role": "user", "content": usermsg}],
-                max_tokens=max_tokens,
-                extra_body={
-                    "enable_thinking": thinking_budget > 0,
-                    "thinking_budget": thinking_budget
-                },
-                **kwargs
+            response = llm._retrying(
+                lambda: self._client.chat.completions.create(
+                    model=self._model_name,
+                    messages=[{"role": "system", "content": sysmsg},
+                              {"role": "user", "content": usermsg}],
+                    max_tokens=max_tokens,
+                    extra_body={
+                        "enable_thinking": thinking_budget > 0,
+                        "thinking_budget": thinking_budget
+                    },
+                    **kwargs
+                ),
+                self._name,
             )
 
             raw = response.choices[0].message.content or ""
@@ -81,4 +84,6 @@ class ASIOneProviderImpl(llm.AIProvider):
             return resp
         except Exception as e:
             logger.exception(f"[ASIOneProviderImpl.chat]: Exception while communicating with LLM: {e}")
+            if llm._is_timeout_error(e):
+                return llm._llm_timeout_command()
             return ""

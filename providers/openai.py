@@ -53,7 +53,7 @@ class OpenAIProviderImpl(llm.AIProvider):
 
             create_kwargs.update(kwargs)
 
-            response = self._client.responses.create(**create_kwargs)
+            response = llm._retrying(lambda: self._client.responses.create(**create_kwargs), self._name)
 
             raw = response.output_text or ""
             incomplete_details = getattr(response, "incomplete_details", None)
@@ -67,4 +67,6 @@ class OpenAIProviderImpl(llm.AIProvider):
             return self._clean_text(raw)
         except Exception as e:
             logger.exception(f"[OpenAIProviderImpl.chat]: Exception while communicating with LLM: {e}")
+            if llm._is_timeout_error(e):
+                return llm._llm_timeout_command()
             return ""

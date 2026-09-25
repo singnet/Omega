@@ -40,9 +40,11 @@ class OpenRouterProviderImpl(llm.AIProvider):
             return openai.OpenAI(
                     api_key="proxy",
                     base_url=base_url,
+                    max_retries=llm.CHAT_MAX_RETRIES,
                     )
         if self._var_name in os.environ:
-            return openai.OpenAI(api_key=os.environ.get(self._var_name), base_url=self._base_url)
+            return openai.OpenAI(api_key=os.environ.get(self._var_name), base_url=self._base_url,
+                                 max_retries=llm.CHAT_MAX_RETRIES)
 
         return None
 

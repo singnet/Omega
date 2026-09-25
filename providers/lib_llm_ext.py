@@ -1,4 +1,4 @@
-import os, hashlib
+import os, hashlib, time
 import openai
 from typing import Optional, Tuple, Dict, Any
 from config import config_get_by_key
@@ -20,6 +20,36 @@ LLM_EMPTY_RESPONSE_MESSAGE = (
     "reasoning and the final answer draw from the same token limit, so higher "
     "reasoning levels need a higher token limit."
 )
+
+LLM_TIMEOUT_MESSAGE = (
+    "LLM request timed out at {time}. Please try again later."
+    "\n\n"
+    "If you are the Omega administrator: the provider did not answer within the "
+    "request timeout, and a timed-out request is not retried. The failed request "
+    "is in the agent log; check the provider status and, if its answers are "
+    "simply slow, raise the timeout of its route in the proxy configuration."
+)
+
+# Statuses a gateway returns when the upstream did not answer in time.
+GATEWAY_TIMEOUT_STATUSES = (408, 504, 524)
+
+# One attempt per chat request inside the SDK. Its retry loop repeats a timed-out
+# request unconditionally, which would multiply the request timeout before the
+# user hears anything. Transient failures are retried by _retrying() below
+# instead, where a timeout can be excluded.
+CHAT_MAX_RETRIES = 0
+
+# Failures worth trying again right away. The SDK retries 409, 429 and any 5xx,
+# so keep that rule rather than a list that misses one (529 and 522 both reach
+# here); the timeout statuses are excluded by _is_timeout_error above, so they are
+# reported instead of retried.
+TRANSIENT_STATUSES = (409, 429)
+# First attempt plus two retries, and only while the whole call stays inside the
+# budget: a failure that already cost minutes is not "transient", and the user is
+# waiting for an answer.
+CHAT_ATTEMPTS = 3
+CHAT_RETRY_BUDGET_SECONDS = 60
+CHAT_RETRY_BACKOFF_SECONDS = 0.5
 
 
 logger = get_logger(__name__)
@@ -66,6 +96,79 @@ def _llm_empty_response_command() -> str:
     spends the entire output token budget on reasoning and returns no content.
     """
     return f"(send {quote_arg(LLM_EMPTY_RESPONSE_MESSAGE)})"
+
+def _is_timeout_error(error: BaseException) -> bool:
+    """True when the request ran out of time rather than failing outright: the
+    client's own timeout, or a timeout status from the gateway in front of the
+    provider (the proxy answers 504 when the upstream is still thinking).
+    """
+    # The classes are looked up rather than referenced: classifying a failure must
+    # never raise one of its own, whatever the installed client exposes.
+    if isinstance(error, getattr(openai, "APITimeoutError", ())):
+        return True
+    return getattr(error, "status_code", None) in GATEWAY_TIMEOUT_STATUSES
+
+def _llm_timeout_command() -> str:
+    """Return a status message as a MeTTa `send` command when the request times
+    out, so the turn ends with the user told instead of in silence.
+
+    The message carries the time. `send` drops a message equal to the last one it
+    sent, so without it a second timeout in a row would leave that turn silent,
+    which is the symptom this whole change is about.
+    """
+    message = LLM_TIMEOUT_MESSAGE.format(time=time.strftime("%H:%M:%S"))
+    return f"(send {quote_arg(message)})"
+
+def _is_transient_error(error: BaseException) -> bool:
+    """True for a failure that another attempt may get past. A timeout is not
+    one of them: it already spent the request timeout, so retrying it only keeps
+    the user waiting.
+    """
+    if _is_timeout_error(error):
+        return False
+    if isinstance(error, getattr(openai, "APIConnectionError", ())):
+        return True
+    status = getattr(error, "status_code", None)
+    if status is None:
+        return False
+    return status in TRANSIENT_STATUSES or status >= 500
+
+def _retry_delay(error: BaseException, attempt: int) -> float:
+    """How long to wait before the next attempt: the provider's Retry-After when
+    it sends one in seconds, otherwise a short exponential backoff. A Retry-After
+    given as an HTTP date falls back to the backoff.
+    """
+    headers = getattr(getattr(error, "response", None), "headers", None)
+    value = headers.get("retry-after") if hasattr(headers, "get") else None
+    if value is not None:
+        try:
+            return max(0.0, float(value))
+        except (TypeError, ValueError):
+            pass
+    return CHAT_RETRY_BACKOFF_SECONDS * (2 ** (attempt - 1))
+
+def _retrying(call, provider: str):
+    """Run call(), retrying only transient failures and only briefly.
+
+    The SDK's own retries are off (CHAT_MAX_RETRIES), so this is the single place
+    that decides what gets another attempt: transient failures do, a timeout does
+    not, and nothing is retried once the budget is spent.
+    """
+    started = time.monotonic()
+    for attempt in range(1, CHAT_ATTEMPTS + 1):
+        try:
+            return call()
+        except Exception as error:
+            if attempt == CHAT_ATTEMPTS or not _is_transient_error(error):
+                raise
+            delay = _retry_delay(error, attempt)
+            if time.monotonic() - started + delay >= CHAT_RETRY_BUDGET_SECONDS:
+                logger.warning(
+                    f"[{provider}.chat]: retry budget spent, giving up: {error}")
+                raise
+            logger.warning(
+                f"[{provider}.chat]: transient failure, retrying in {delay:.1f}s: {error}")
+            time.sleep(delay)
 
 def _split_system_user(content: str) -> Tuple[str, str]:
     """
@@ -145,9 +248,11 @@ class AIProvider(AbstractAIProvider):
             return openai.OpenAI(
                     api_key="proxy",
                     base_url=base_url,
+                    max_retries=CHAT_MAX_RETRIES,
                     )
         if self._var_name in os.environ:
-            return openai.OpenAI(api_key=os.environ.get(self._var_name), base_url=self._base_url)
+            return openai.OpenAI(api_key=os.environ.get(self._var_name), base_url=self._base_url,
+                                 max_retries=CHAT_MAX_RETRIES)
 
         return None
 
@@ -175,11 +280,14 @@ class AIProvider(AbstractAIProvider):
             raise RuntimeError(f"{self.name} not configured (set {self._var_name})")
 
         try:
-            response = self._client.chat.completions.create(
-                model=self._model_name,
-                messages=self._build_messages(content),
-                max_tokens=max_tokens,
-                **kwargs
+            response = _retrying(
+                lambda: self._client.chat.completions.create(
+                    model=self._model_name,
+                    messages=self._build_messages(content),
+                    max_tokens=max_tokens,
+                    **kwargs
+                ),
+                self._name,
             )
 
             raw = response.choices[0].message.content or ""
@@ -194,6 +302,8 @@ class AIProvider(AbstractAIProvider):
             return resp
         except Exception as e:
             logger.exception(f"[AIProvider.chat]: Exception while communicating with LLM: {e}")
+            if _is_timeout_error(e):
+                return _llm_timeout_command()
             return ""
 
     def _clean_text(self, text: str) -> str:
