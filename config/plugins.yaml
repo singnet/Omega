@@ -52,3 +52,7 @@
 - name: openclaw
   loader: metta
   location: "{REPO}/plugins/openclaw"
+
+- name: playwright
+  loader: metta
+  location: "{REPO}/plugins/playwright"

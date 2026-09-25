@@ -801,7 +801,8 @@ start() {
             --security-opt no-new-privileges:true
             --init
             --add-host=host.docker.internal:host-gateway
-            --tmpfs /tmp:size=64m,mode=1777
+            --shm-size=1g
+            --tmpfs /tmp:size=1g,mode=1777
             --tmpfs /var/tmp:size=64m,mode=1777
             --tmpfs /run:size=16m,mode=755
             --volume omega-memory:/PeTTa/repos/Omega/memory

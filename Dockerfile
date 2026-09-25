@@ -8,7 +8,8 @@ FROM ${SWIPL_IMAGE} AS builder
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive \
     HF_HOME=/opt/huggingface \
-    SENTENCE_TRANSFORMERS_HOME=/opt/sentence_transformers
+    SENTENCE_TRANSFORMERS_HOME=/opt/sentence_transformers \
+    PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
@@ -27,6 +28,16 @@ RUN apt-get update \
       libgflags-dev \
       nano \
  && rm -rf /var/lib/apt/lists/*
+
+# Install pinned Python dependencies and cache the matching Chromium build
+# before cloning source repositories or copying application code.
+COPY ./requirements.txt /tmp/requirements.txt
+RUN python3 -m pip install --no-cache-dir --break-system-packages \
+    --index-url https://download.pytorch.org/whl/cpu \
+    --extra-index-url https://pypi.org/simple/ \
+    torch==2.12.1 \
+ && python3 -m pip install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
+RUN python3 -m playwright install --only-shell chromium
 
 # Build dependencies from source. Pin refs at build time for reproducibility.
 ARG PETTA_REPO=https://github.com/trueagi-io/PeTTa.git
@@ -51,13 +62,6 @@ WORKDIR /PeTTa
 RUN sh build.sh
 RUN mkdir -p /PeTTa/repos \
  && git clone --depth 1 --branch "${CHROMADB_REF}" "${CHROMADB_REPO}" /PeTTa/repos/petta_lib_chromadb
-
-COPY ./requirements.txt /tmp/requirements.txt
-RUN python3 -m pip install --no-cache-dir --break-system-packages \
-    --index-url https://download.pytorch.org/whl/cpu \
-    --extra-index-url https://pypi.org/simple/ \
-    torch==2.12.1 \
- && python3 -m pip install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
 
 # Pre-download the sentence-transformers model so runtime does not need network access.
 RUN mkdir -p "${HF_HOME}" "${SENTENCE_TRANSFORMERS_HOME}" \
@@ -91,7 +95,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     HF_HOME=/opt/huggingface \
-    SENTENCE_TRANSFORMERS_HOME=/opt/sentence_transformers
+    SENTENCE_TRANSFORMERS_HOME=/opt/sentence_transformers \
+    PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
@@ -113,9 +118,12 @@ RUN apt-get update \
 WORKDIR /PeTTa
 
 COPY --from=builder /usr/local /usr/local
+COPY --from=builder /opt/ms-playwright /opt/ms-playwright
 COPY --from=builder /PeTTa /PeTTa
 COPY --from=builder /opt/huggingface /opt/huggingface
 COPY --from=builder /opt/sentence_transformers /opt/sentence_transformers
+RUN python3 -m playwright install-deps chromium \
+ && rm -rf /var/lib/apt/lists/*
 
 # setup nginx proxy
 RUN usermod -a -G tty www-data
