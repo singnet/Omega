@@ -70,6 +70,12 @@ python3 -m pip install -r ./repos/Omega/requirements.txt
 
 Ensure that you have [Docker installed](https://docs.docker.com/engine/install/)
 
+The `scripts/omega` launcher and the Docker image must be the same version.
+`scripts/omega start` (and the interactive bootstrap) compare the host script
+version with the version baked into the image and abort if they differ. Use the
+same git tag for both, for example `scripts/omega` from `v0.1.19` with
+`singularitynet/omega:v0.1.19`.
+
 Run Omega using the next command:
 ```
 curl -fsSL https://github.com/singnet/Omega/raw/refs/tags/v0.1.19/scripts/omegaclaw | bash -s -- singularitynet/omega:v0.1.19
