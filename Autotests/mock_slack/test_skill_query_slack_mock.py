@@ -16,7 +16,8 @@ import time
 
 
 from helpers import (
-    Checker, find_skill_calls, make_prompt, wait_for_skill_call, wait_for_skill_match,
+    Checker, find_skill_calls, make_prompt, wait_for_skill_call,
+    wait_for_skill_match,
 )
 from slack_helpers import sl_send_prompt
 
@@ -41,8 +42,10 @@ def test_skill_query_slack_mock(llm, sl):
         )
         llm.set_answer(
             seed_prompt,
-            f'(remember "My favorite color is {secret_color}.") '
-            f'(send "Stored: favorite colour is {secret_color}.")',
+            [
+                ("remember", { "content": f"My favorite color is {secret_color}." }),
+                ("send", { "content": f"Stored: favorite colour is {secret_color}."),
+            ]
         )
         sl_send_prompt(sl, seed_prompt)
         c.ok("irc-seed", f"run-id={seed_id}")

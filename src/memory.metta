@@ -33,14 +33,8 @@
          (read_file_tail $history_file (maxHistory))
          "")))
 
-(= (addToHistory $lastmessage $response $sexpr $msgnew)
-   (if $msgnew
-       (if (== (get-state &error) ())
-           (appendToHistory ((get_time_as_string) (newline) "HUMAN_MESSAGE: " $lastmessage (newline) $response (newline)))
-           (appendToHistory ((get_time_as_string) (newline) "HUMAN_MESSAGE: " $lastmessage (newline) $response (newline) ERROR_FEEDBACK: (get-state &error))))
-       (if (== (get-state &error) ())
-           (appendToHistory ((get_time_as_string) (newline) $response (newline)))
-           (appendToHistory ((get_time_as_string) (newline) $response (newline) ERROR_FEEDBACK: (get-state &error))))))
+(= (addToHistory $content)
+   (appendToHistory (py-str ("(\"" (get_time_as_string) "\" " $content ")"))))
 
 (= (embed $str)
    (if (== (embeddingprovider) Local)
@@ -50,8 +44,14 @@
 (= (appendToHistory $addition)
    (append-file-raw (library Omega ./memory/history.metta) (swrite $addition)))
 
+(= (createMemory $str)
+   (let* (($current_time_str (get_time_as_string))
+          ($uuid (py-call (lib_chromadb.remember $str (embed $str) $current_time_str))))
+         (progn (py-call (lib_chromadb.link_episode $uuid $current_time_str))
+                $uuid)))
+
 (= (remember $str)
-   (progn (py-call (lib_chromadb.remember $str (embed $str) (get_time_as_string)))
+   (progn (createMemory $str)
           REMEMBER-SUCCESS))
 
 (= (query $str)

@@ -5,9 +5,9 @@ assembled BEFORE skill evaluation, so the pin block — written by
 addToHistory at the END of the iteration — only enters HISTORY at the
 next prompt-build.
 
-Verification reads the docker log: the CHARS_SENT line that carries
+Verification reads the docker log: the REQUEST line that carries
 the PROMPT for the iteration containing our pin must NOT contain the
-pin's unique marker; the NEXT CHARS_SENT line (next iteration) must.
+pin's unique marker; the NEXT REQUEST line (next iteration) must.
 
 Run:
     pytest test_pin_invisible_within_iteration_mock.py -s
@@ -32,7 +32,7 @@ def docker_logs():
 def chars_sent_lines():
     return [
         ln for ln in docker_logs().split("\n")
-        if "CHARS_SENT:" in ln
+        if "REQUEST:" in ln
     ]
 
 
@@ -45,11 +45,11 @@ def test_pin_invisible_within_iteration_mock(llm, comm):
         c.add_cleanup_marker(marker)
 
         baseline_count = len(chars_sent_lines())
-        c.ok("docker log baseline", f"{baseline_count} CHARS_SENT lines so far")
+        c.ok("docker log baseline", f"{baseline_count} REQUEST lines so far")
 
         c.step("send a prompt; mock answers with (pin ...) + (send ...)")
         # IMPORTANT: marker must NOT appear in HUMAN_MESSAGE. Otherwise it
-        # ends up in CHARS_SENT for the current iteration via the prompt
+        # ends up in REQUEST for the current iteration via the prompt
         # body itself, defeating the within-iteration visibility check.
         # We ask the agent to "track progress with a short code"; the mock
         # answer supplies the actual marker only inside (pin ...).
@@ -60,7 +60,7 @@ def test_pin_invisible_within_iteration_mock(llm, comm):
         )
         llm.set_answer(
             prompt,
-            f'(pin "{marker}") (send "Pinned a progress code.")',
+            [("pin", { "message": f"{marker}" })]
         )
         if not comm.send_message(prompt):
             c.fail("comm", "could not deliver prompt within 60s")
@@ -80,7 +80,7 @@ def test_pin_invisible_within_iteration_mock(llm, comm):
         c.step("wait so the next iteration definitely starts and logs its PROMPT")
         time.sleep(30)
 
-        c.step("split CHARS_SENT lines into before-pin and after-pin")
+        c.step("split REQUEST lines into before-pin and after-pin")
         all_lines = chars_sent_lines()
         # Find the iteration that received our HUMAN_MESSAGE (it carries
         # REQ-{run_id} in the prompt).
@@ -91,7 +91,7 @@ def test_pin_invisible_within_iteration_mock(llm, comm):
                 break
         if owning_idx is None:
             c.fail("locate iteration",
-                   f"no CHARS_SENT line carries REQ-{c.run_id} — "
+                   f"no REQUEST line carries REQ-{c.run_id} — "
                    f"prompt never reached agent loop")
         c.ok("locate iteration",
              f"PROMPT carrying our REQ at log index {owning_idx} "
@@ -112,7 +112,7 @@ def test_pin_invisible_within_iteration_mock(llm, comm):
              f"marker not in own iteration's PROMPT — as expected")
 
         c.step(
-            "verify SOME later CHARS_SENT line DOES carry the marker "
+            "verify SOME later REQUEST line DOES carry the marker "
             "(pin became visible on a subsequent iteration)"
         )
         later_hits = [
@@ -122,7 +122,7 @@ def test_pin_invisible_within_iteration_mock(llm, comm):
         if not later_hits:
             c.fail(
                 "pin appears later",
-                f"no later CHARS_SENT contains {marker!r}; pin did not propagate "
+                f"no later REQUEST contains {marker!r}; pin did not propagate "
                 f"to subsequent HISTORY",
             )
         c.ok("pin appears later",

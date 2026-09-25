@@ -27,10 +27,10 @@ def test_get_io_policy_mock(llm, comm):
         prompt = make_prompt(c.run_id, "Check your IO policy.")
         llm.set_answer(
             request=prompt,
-            response=(
-                f'(send "Checking my io policy {c.run_id}")\n'
-                '(get-io-policy)'
-            )
+            response=([
+                ("send", { "content": f"Checking my io policy {c.run_id}" }),
+                ("get-io-policy", {})
+            ])
         )
         if not comm.send_message(prompt):
             c.fail("comm", "could not deliver prompt within timeout")
@@ -51,10 +51,10 @@ def test_get_io_policy_mock(llm, comm):
         prompt = make_prompt(c.run_id, "Retrieve the current filesystem access policy.")
         llm.set_answer(
             request=prompt,
-            response=(
-                f'(metta (write-file "{JSON_POLICY_OUTPUT_PATH}" (get-io-policy)))\n'
-                f'(send "Policy checked for {c.run_id}")'
-            )
+            response=([
+                ("metta", { "sexpression":  f'(write-file "{JSON_POLICY_OUTPUT_PATH}" (get-io-policy))' }),
+                ("send", { "content": f"Policy checked for {c.run_id}" })
+            ])
         )
         if not comm.send_message(prompt):
             c.fail("comm", "could not deliver prompt within timeout")
