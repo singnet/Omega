@@ -129,10 +129,10 @@ Notes:
 - `SL_CHANNEL_ID` is the shared channel both bots live in.
 - `TEST_SERVER_IP=172.17.0.1` is the host's docker-bridge address used by the mock LLM provider. It must be set even for the Slack channel, because `provider=Test` reads it.
 
-Wait until the agent loop is up. The first runtime `CHARS_SENT:` line (with a byte count after the colon) marks the end of `initChannels` / `initMemory`:
+Wait until the agent loop is up. The first runtime `iteration 1` line marks the end of `initChannels` / `initMemory`:
 
 ```
-until docker logs omega 2>&1 | grep -qE "CHARS_SENT: [0-9]+"; do sleep 2; done
+until docker logs omega 2>&1 | grep -qE "iteration 1"; do sleep 2; done
 ```
 
 ## 5. Configure the test environment

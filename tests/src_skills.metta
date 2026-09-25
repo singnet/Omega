@@ -12,12 +12,12 @@
 
 !(test (progn
          (add-skill test-skill "This is a test skill" (test_arg))
-         (expression-count-item (getSkills) "- This is a test skill: test-skill test_arg"))
+         (expression-count-item (getSkills) (test-skill "This is a test skill" (test_arg))))
        1)
 
 !(test (progn
          (remove-skill test-skill)
-         (expression-count-item (getSkills) "- This is a test skill: test-skill test_arg"))
+         (expression-count-item (getSkills) (test-skill "This is a test skill" (test_arg))))
        0)
 
 !(test (progn

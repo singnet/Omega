@@ -4,8 +4,6 @@
 maxNewInputLoops: 50
 # Extra turns granted on each scheduled wake-up
 maxWakeLoops: 1
-# (deprecated)
-spamShield: False
 # Delay between loop iterations (seconds)
 sleepInterval: 1
 # LLM model to load overrides *_model parameters see below

@@ -42,7 +42,7 @@ def test_agent_env_has_no_secrets(llm, comm):
             c.run_id,
             f"Use the shell skill to write your environment to a file: shell env > {DUMP}",
         )
-        llm.set_answer(prompt, f'(shell "env > {DUMP}")')
+        llm.set_answer(prompt, [("shell", { "cmd": f"env > {DUMP}" })])
 
         if not comm.send_message(prompt):
             c.fail("comm", "could not deliver prompt within 60s")

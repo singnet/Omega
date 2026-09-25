@@ -48,7 +48,7 @@ def test_run_repeated_mock(llm, comm):
             f"a row. The script appends a date line to {OUTPUT_FILE} each "
             "time it runs.",
         )
-        repeated = " ".join(f'(shell "sh {SCRIPT_FILE}")' for _ in range(EXPECTED_RUNS))
+        repeated = [("shell", { "cmd": f"sh {SCRIPT_FILE}" }) for _ in range(EXPECTED_RUNS)]
         llm.set_answer(prompt, repeated)
         if not comm.send_message(prompt):
             c.fail("comm", "could not deliver prompt within 60s")

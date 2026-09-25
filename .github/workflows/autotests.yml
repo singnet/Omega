@@ -108,7 +108,7 @@ jobs:
           echo "Waiting for agent to become ready..."
           ready=
           for i in $(seq 1 90); do
-            if docker logs omega 2>&1 | grep -qE "CHARS_SENT: [0-9]+"; then
+            if docker logs omega 2>&1 | grep -qE "iteration 1"; then
               echo "Agent ready after ${i}s"
               ready=1
               break

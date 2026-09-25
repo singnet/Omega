@@ -98,13 +98,10 @@
 (= (atom-concat $a $b)
    (atomic_list_concat ($a $b)))
 
-(= (atom-string $atom $str)
-   (empty-to-bool (translatePredicate (atom_string $atom $str))))
-
 (= (projectRootDirectory)
    (py-call (helper.projectRootDirectory)))
 
 (= (joinPath $parts)
    (progn
      (let $path (py-call (helper.joinPath $parts)) ())
-     (let True (atom-string $path $pathstr) $pathstr)))
+     (swrite $path)))

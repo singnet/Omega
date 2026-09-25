@@ -51,7 +51,7 @@ def test_edit_append_line_mock(llm, comm):
         )
         llm.set_answer(
             prompt,
-            f'(shell "printf \'%s\\\\n\' {LINE4_EXPECTED} >> {TARGET_FILE}")',
+            [("shell", { "cmd": f"printf \'%s\\\\n\' {LINE4_EXPECTED} >> {TARGET_FILE}" })]
         )
         if not comm.send_message(prompt):
             c.fail("comm", "could not deliver prompt within 60s")
