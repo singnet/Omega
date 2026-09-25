@@ -21,5 +21,16 @@ filesystem_policy:
   - /opt/sentence_transformers
   - /var/tmp
   - /dev/shm
+  # Existing files here may be written and truncated, but not created or removed.
+  # The CUDA driver names its threads via /proc/self/task/<tid>/comm.
+  read_write_files:
+  - /proc
+  device_access:
+  - /dev/dxg
+  - /dev/nvidiactl
+  - /dev/nvidia[0-9]*
+  - /dev/nvidia-uvm
+  - /dev/nvidia-uvm-tools
+  - /dev/nvidia-caps
 landlock:
   compatibility: best_effort
