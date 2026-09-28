@@ -26,10 +26,7 @@ filesystem_policy:
   # Paths missing on the host are skipped.
   - /dev/dxg
   - /dev/nvidiactl
-  - /dev/nvidia0
-  - /dev/nvidia1
-  - /dev/nvidia2
-  - /dev/nvidia3
+  - /dev/nvidia[0-9]*
   - /dev/nvidia-uvm
   - /dev/nvidia-uvm-tools
 landlock:
