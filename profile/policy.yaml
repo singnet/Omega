@@ -5,7 +5,6 @@ filesystem_policy:
   - /bin
   - /usr
   - /lib
-  - /proc
   - /dev/urandom
   - /etc
   - /opt
@@ -21,16 +20,17 @@ filesystem_policy:
   - /opt/sentence_transformers
   - /var/tmp
   - /dev/shm
-  # Existing files here may be written and truncated, but not created or removed.
   # The CUDA driver names its threads via /proc/self/task/<tid>/comm.
-  read_write_files:
   - /proc
-  device_access:
+  # GPU device nodes: /dev/dxg on WSL2, /dev/nvidia* on native Linux.
+  # Paths missing on the host are skipped.
   - /dev/dxg
   - /dev/nvidiactl
-  - /dev/nvidia[0-9]*
+  - /dev/nvidia0
+  - /dev/nvidia1
+  - /dev/nvidia2
+  - /dev/nvidia3
   - /dev/nvidia-uvm
   - /dev/nvidia-uvm-tools
-  - /dev/nvidia-caps
 landlock:
   compatibility: best_effort
