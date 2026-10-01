@@ -207,19 +207,8 @@ def projectRootDirectory():
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def _format_omega_version(version: str) -> str | None:
-    version = version.strip()
-    if not version:
-        return None
-    if version.startswith("Omega version="):
-        return version
-    if version.startswith("Omega "):
-        version = version[len("Omega "):]
-    return f"Omega version={version}"
-
-
 def omega_version(repo_root: str | os.PathLike | None = None) -> str:
-    """Return the checkout version, falling back to the baked version file."""
+    """Return the bare checkout version, or an empty string when unknown."""
     root = Path(repo_root) if repo_root is not None else Path(projectRootDirectory())
 
     try:
@@ -236,34 +225,29 @@ def omega_version(repo_root: str | os.PathLike | None = None) -> str:
             timeout=3,
         )
         if result.returncode == 0:
-            version = _format_omega_version(result.stdout)
-            if version is not None:
+            version = result.stdout.strip()
+            if version:
                 return version
     except (OSError, subprocess.TimeoutExpired):
         pass
 
     try:
-        version = _format_omega_version(
-            (root / "version").read_text(encoding="utf-8")
-        )
-        if version is not None:
+        version = (root / "version").read_text(encoding="utf-8").strip()
+        if version:
             return version
     except OSError:
         pass
 
-    return "Omega unknown"
+    return ""
 
 
 def test_omega_version():
     with TemporaryDirectory() as directory:
         root = Path(directory)
-        assert omega_version(root) == "Omega unknown"
+        assert omega_version(root) == ""
 
         (root / "version").write_text("v1.2.3-4-g1234567\n", encoding="utf-8")
-        assert omega_version(root) == "Omega version=v1.2.3-4-g1234567"
-
-        (root / "version").write_text("Omega v1.2.3\n", encoding="utf-8")
-        assert omega_version(root) == "Omega version=v1.2.3"
+        assert omega_version(root) == "v1.2.3-4-g1234567"
 
 
 def test_balance_parenthesis():
