@@ -287,7 +287,7 @@ def _choose_memory_transfer():
     while True:
         answer = input("Set up a directory for memory transfer archives? [y/N]: ").strip().lower()
         if answer in ("", "n", "no"):
-            return "", "0"
+            return "", "", "0"
         if answer == "q":
             sys.exit(1)
         if answer not in ("y", "yes"):
@@ -299,21 +299,24 @@ def _choose_memory_transfer():
             print("A directory is required.", file=sys.stderr)
             continue
         path = os.path.abspath(os.path.expanduser(value))
-        try:
-            os.makedirs(path, exist_ok=True)
-        except OSError as exc:
-            print(f"Could not create {path}: {exc}", file=sys.stderr)
+        if os.path.islink(path) or not os.path.isdir(path):
+            print("Use an existing, non-symbolic-link directory prepared for memory archives.", file=sys.stderr)
             continue
-        if not os.access(path, os.W_OK):
-            print(f"Directory is not writable: {path}", file=sys.stderr)
-            continue
+
+        while True:
+            group_id = input("Private host group ID for memory archives: ").strip()
+            if group_id == "q":
+                sys.exit(1)
+            if group_id.isdecimal():
+                break
+            print("Enter a numeric group ID or q to exit.", file=sys.stderr)
 
         while True:
             enable = input("Enable memory export for this instance? [y/N]: ").strip().lower()
             if enable in ("", "n", "no"):
-                return path, "0"
+                return path, group_id, "0"
             if enable in ("y", "yes"):
-                return path, "1"
+                return path, group_id, "1"
             if enable == "q":
                 sys.exit(1)
             print("Please enter y or n.")
@@ -340,6 +343,7 @@ def _write_kv(fp, key, value):
 def config_run_omega(
     config_output_path,
     configured_memory_transfer_dir="",
+    configured_memory_transfer_gid="",
     configured_memory_export_enabled="0",
 ):
     print(" ")
@@ -352,10 +356,11 @@ def config_run_omega(
     import_kb_on_start = _choose_import_kb()
     if configured_memory_transfer_dir:
         memory_transfer_dir = configured_memory_transfer_dir
+        memory_transfer_gid = configured_memory_transfer_gid
         memory_export_enabled = configured_memory_export_enabled
         print(f"Using memory transfer directory: {memory_transfer_dir}")
     else:
-        memory_transfer_dir, memory_export_enabled = _choose_memory_transfer()
+        memory_transfer_dir, memory_transfer_gid, memory_export_enabled = _choose_memory_transfer()
 
     with open(config_output_path, "w", encoding="utf-8") as f:
         _write_kv(f, "api_token_var", api_token_var)
@@ -367,17 +372,19 @@ def config_run_omega(
         _write_kv(f, "openaiapi_url", openaiapi_url)
         _write_kv(f, "IMPORT_KB_ON_START", import_kb_on_start)
         _write_kv(f, "memory_transfer_dir", memory_transfer_dir)
+        _write_kv(f, "memory_transfer_gid", memory_transfer_gid)
         _write_kv(f, "memory_export_enabled", memory_export_enabled)
         for key, value in channel_config.items():
             _write_kv(f, key, value)
 
 
 if __name__ == "__main__":
-    config_run_omega(*sys.argv[1:4])
+    config_run_omega(*sys.argv[1:5])
 PY
 
 python3 "$tmp_py_file" "$tmp_config_file" \
-    "${memory_transfer_dir:-}" "${memory_export_enabled:-0}" </dev/tty
+    "${memory_transfer_dir:-}" "${memory_transfer_gid:-}" \
+    "${memory_export_enabled:-0}" </dev/tty
 
 . "$tmp_config_file"
 
@@ -549,7 +556,8 @@ help() {
     echo -e "\t--help, -h show this help"
     echo
     echo -e "Memory portability options:"
-    echo -e "\t--memory-transfer-dir <absolute-path> mount host directory for memory export/import archives"
+    echo -e "\t--memory-transfer-dir <absolute-path> mount prepared host directory for memory export/import archives"
+    echo -e "\t--memory-transfer-gid <gid> private host group ID allowed to access transfer archives"
     echo -e "\t--enable-memory-export enable memory export"
     echo -e "\t--memory-import <filename> restore archive from transfer directory before startup"
     echo -e "\t--memory-mode overwrite|append import mode (default: overwrite)"
@@ -581,6 +589,7 @@ options() {
     commchannel=irc
     log_config_path=""
     memory_transfer_dir=""
+    memory_transfer_gid=""
     memory_import_file=""
     memory_import_mode="overwrite"
     memory_import_only_history=0
@@ -606,7 +615,7 @@ options() {
             -d?*) image=${1:2}; shift; continue;;
             -l?*) log_config_path=${1:2}; shift; continue;;
             -m?*) model=${1:2}; shift; continue;;
-            -s|-t|-p|-u|-g|-c|-d|-l|-m|--memory-transfer-dir|--memory-import|--memory-mode)
+            -s|-t|-p|-u|-g|-c|-d|-l|-m|--memory-transfer-dir|--memory-transfer-gid|--memory-import|--memory-mode)
                 require_option_value "${1}" "${2:-}" || return 1
                 ;;
         esac
@@ -622,6 +631,10 @@ options() {
             -m) model=${2}; shift 2;;
             --memory-transfer-dir)
                 memory_transfer_dir="${2}"
+                shift 2
+                ;;
+            --memory-transfer-gid)
+                memory_transfer_gid="${2}"
                 shift 2
                 ;;
             --enable-memory-export)
@@ -694,21 +707,6 @@ options() {
         fi
     fi
 
-    if [[ -n "${memory_transfer_dir}" ]]; then
-        if [[ "${memory_transfer_dir}" != /* ]]; then
-            echo "--memory-transfer-dir must be an absolute path: ${memory_transfer_dir}" >&2
-            return 1
-        fi
-        if ! mkdir -p "${memory_transfer_dir}"; then
-            echo "Could not create --memory-transfer-dir: ${memory_transfer_dir}" >&2
-            return 1
-        fi
-        if [[ ! -w "${memory_transfer_dir}" ]]; then
-            echo "--memory-transfer-dir is not writable: ${memory_transfer_dir}" >&2
-            return 1
-        fi
-    fi
-
     if [[ -n "${memory_import_file}" ]]; then
         if [[ ! "${memory_import_file}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*\.tar\.gz$ ]]; then
             echo "--memory-import must be a plain filename, not a path: ${memory_import_file}" >&2
@@ -746,12 +744,100 @@ options() {
     fi
 }
 
+prepare_memory_transfer_dir() {
+    local launcher_uid
+    local actual_uid
+    local actual_gid
+    local mode
+    local acl_status
+
+    if [[ "$(uname -s)" != "Linux" ]]; then
+        echo "--memory-transfer-dir is supported only on Linux hosts" >&2
+        return 1
+    fi
+
+    if [[ "${memory_transfer_dir}" != /* ]]; then
+        echo "--memory-transfer-dir must be an absolute path: ${memory_transfer_dir}" >&2
+        return 1
+    fi
+    if [[ -L "${memory_transfer_dir}" ]]; then
+        echo "--memory-transfer-dir must not be a symbolic link: ${memory_transfer_dir}" >&2
+        return 1
+    fi
+    if [[ ! -d "${memory_transfer_dir}" ]]; then
+        echo "--memory-transfer-dir must be a directory: ${memory_transfer_dir}" >&2
+        return 1
+    fi
+    if [[ ! "${memory_transfer_gid}" =~ ^[0-9]+$ ]]; then
+        echo "--memory-transfer-gid must be a numeric private group ID" >&2
+        return 1
+    fi
+    if ! read -r launcher_uid actual_uid actual_gid mode < <(python3 -c 'import os, stat, sys; s = os.stat(sys.argv[1]); print(os.geteuid(), s.st_uid, s.st_gid, stat.S_IMODE(s.st_mode))' "${memory_transfer_dir}"); then
+        echo "Could not inspect --memory-transfer-dir: ${memory_transfer_dir}" >&2
+        return 1
+    fi
+    if [[ "${actual_uid}" != "${launcher_uid}" && "${actual_uid}" != "0" ]]; then
+        echo "--memory-transfer-dir must be owned by the launching user or root: ${memory_transfer_dir}" >&2
+        return 1
+    fi
+    if (( (mode & 02000) == 0 )); then
+        echo "--memory-transfer-dir must enable setgid so archives inherit its private group: ${memory_transfer_dir}" >&2
+        return 1
+    fi
+    if python3 - "${memory_transfer_dir}" <<'PY'
+import errno
+import os
+import sys
+
+missing = {errno.ENODATA}
+unsupported = {errno.ENOTSUP, errno.EOPNOTSUPP}
+try:
+    getxattr = os.getxattr
+except AttributeError:
+    sys.exit(2)
+for name in ("system.posix_acl_access", "system.posix_acl_default"):
+    try:
+        getxattr(sys.argv[1], name, follow_symlinks=False)
+    except OSError as exc:
+        if exc.errno in missing:
+            continue
+        if exc.errno in unsupported:
+            sys.exit(2)
+        sys.exit(2)
+    else
+        sys.exit(0)
+sys.exit(1)
+PY
+    then
+        acl_status=0
+    else
+        acl_status=$?
+    fi
+    if [[ "${acl_status}" == "0" ]]; then
+        echo "--memory-transfer-dir must not grant access through ACL: ${memory_transfer_dir}" >&2
+        return 1
+    fi
+    if [[ "${acl_status}" != "1" ]]; then
+        echo "Could not verify ACLs for --memory-transfer-dir: ${memory_transfer_dir}" >&2
+        return 1
+    fi
+    if [[ "${actual_gid}" != "${memory_transfer_gid}" ]]; then
+        echo "--memory-transfer-dir group must match --memory-transfer-gid: ${memory_transfer_dir}" >&2
+        return 1
+    fi
+    if (( (mode & 007) != 0 || (mode & 070) != 070 )); then
+        echo "--memory-transfer-dir must grant rwx to its private group and no access to other users: ${memory_transfer_dir}" >&2
+        return 1
+    fi
+}
+
 start() {
     docker pull "${image}" 2>/dev/null || true
 
     container_log_config_path=""
     log_config_volume=()
     memory_transfer_volume=()
+    memory_transfer_env=()
     memory_import_env=()
     memory_export_option=()
 
@@ -767,11 +853,13 @@ start() {
     fi
 
     if [ -n "${memory_transfer_dir}" ]; then
+        prepare_memory_transfer_dir || return 1
         memory_transfer_volume=(--volume "${memory_transfer_dir}:/memory-transfer")
-        if ! docker run --rm --user 65534:65534 --entrypoint /bin/sh \
+        memory_transfer_env=(-e "MEMORY_TRANSFER_GID=${memory_transfer_gid}")
+        if ! docker run --rm --user 65534:65534 --group-add "${memory_transfer_gid}" --entrypoint /bin/sh \
             --volume "${memory_transfer_dir}:/memory-transfer" "${image}" \
             -c 'test -d /memory-transfer && test -w /memory-transfer'; then
-            echo "--memory-transfer-dir must be writable by container user 65534:65534" >&2
+            echo "--memory-transfer-dir must be writable by container user 65534 with group ${memory_transfer_gid}" >&2
             return 1
         fi
     fi
@@ -807,6 +895,7 @@ start() {
             --volume omega-memory:/PeTTa/repos/Omega/memory
             ${log_config_volume[@]+"${log_config_volume[@]}"}
             ${memory_transfer_volume[@]+"${memory_transfer_volume[@]}"}
+            ${memory_transfer_env[@]+"${memory_transfer_env[@]}"}
             -e "${api_token_var}"="${api_token}"
             -e "TG_BOT_TOKEN=${TG_BOT_TOKEN:-}"
             -e "SL_BOT_TOKEN=${SL_BOT_TOKEN:-}"

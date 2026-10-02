@@ -100,11 +100,14 @@ for setup, export controls, archive contents, and import modes.
 > using `scripts/omega`, because both operations run from the container
 > entrypoint before the agent loop starts.
 
-To restore an archive while upgrading to a tagged image, use the same transfer directory:
+To restore an archive while upgrading to a tagged image on Linux, use the same
+prepared transfer directory. Its group ID is required by the launcher:
 
 ```sh
+transfer_gid="$(stat -c %g "$HOME/omega-transfers")"
 scripts/omega start -d singularitynet/omega:<tag> -p OpenAI -t telegram \
   --memory-transfer-dir "$HOME/omega-transfers" \
+  --memory-transfer-gid "$transfer_gid" \
   --memory-import omegaclaw-memory-<timestamp>.tar.gz \
   --memory-mode overwrite
 ```

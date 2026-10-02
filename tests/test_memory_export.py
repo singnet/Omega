@@ -341,7 +341,7 @@ def test_entrypoint_passes_container_arguments_to_memory_portability():
     assert "init_config(sys.argv[1:])" in entrypoint
     assert "init_config([])" not in entrypoint
     assert entrypoint.count(
-        """su nobody -s /bin/sh -c 'exec python3 -c "$MEMORY_PORTABILITY_PYTHON" "$@"' sh "$@\""""
+        '''"${agent_su[@]}" -s /bin/sh -c 'exec python3 -c "$MEMORY_PORTABILITY_PYTHON" "$@"' sh "$@"'''
     ) == 2
 
 
