@@ -69,7 +69,7 @@ def test_git_pull_public_mock(llm, comm):
         )
         llm.set_answer(
             prompt,
-            f'(shell "{clone_command}")',
+            [("shell", { "cmd": f"{clone_command}" })]
         )
         if not comm.send_message(prompt):
             c.fail("comm", "could not deliver prompt within 60s")

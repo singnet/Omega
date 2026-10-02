@@ -46,7 +46,7 @@ def test_memory_episode_mock(llm, comm):
         )
         llm.set_answer(
             prompt1,
-            '(remember "Barney the dog lost his first baby tooth at the vet today.")',
+            [("remember", { "content": f"Barney the dog lost his first baby tooth at the vet today." })]
         )
         if not comm.send_message(prompt1):
             c.fail("comm-1", "could not deliver first prompt within 60s")
@@ -89,7 +89,8 @@ def test_memory_episode_mock(llm, comm):
         )
         llm.set_answer(
             prompt2,
-            f'(query "Barney tooth") (send "{recall_reply}")',
+            [("query", { "content": "Barney tooth" }),
+             ("send", { "content": f"{recall_reply}" })]
         )
         if not comm.send_message(prompt2):
             c.fail("comm-2", "could not deliver recall prompt within 60s")

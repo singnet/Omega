@@ -114,8 +114,8 @@ iteration N+1.
 - Mock answer: `(pin "<marker>") (send "Pinned a progress code.")`. The marker is
   intentionally not placed in the HUMAN_MESSAGE body so it cannot leak into the current
   iteration's PROMPT via that path.
-- Checks (via docker logs): the CHARS_SENT line for the iteration that carries REQ-`<run_id>`
-  must not contain the marker; at least one later CHARS_SENT line must contain it.
+- Checks (via docker logs): the REQUEST line for the iteration that carries REQ-`<run_id>`
+  must not contain the marker; at least one later REQUEST line must contain it.
 
 ### 3. test_memory_history_byte_window_truncation_mock.py
 
@@ -173,5 +173,5 @@ assembled PROMPT for iteration N+1.
 
 - Mock answer: `(metta "(quote <sentinel>)") (send "computed")`. The sentinel is placed inside
   the metta expression so it can be located in the next iteration's PROMPT.
-- Checks (via docker logs): the CHARS_SENT line that follows the one carrying REQ-`<run_id>`
+- Checks (via docker logs): the REQUEST line that follows the one carrying REQ-`<run_id>`
   contains the LAST_SKILL_USE_RESULTS marker and the sentinel string.
