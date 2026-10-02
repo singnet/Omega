@@ -60,7 +60,7 @@ def test_memory_chromadb_telegram_mock(llm, tg):
         )
         llm.set_answer(
             prompt,
-            f'(remember "Unique smoke marker {marker} was emitted by CI.")',
+            [("remember", { "content": f"Unique smoke marker {marker} was emitted by CI." })],
         )
         tg_send_prompt(tg, prompt)
         c.ok("telegram", f"run-id={c.run_id}")

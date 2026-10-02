@@ -4,8 +4,6 @@
 maxNewInputLoops: 50
 # Extra turns granted on each scheduled wake-up
 maxWakeLoops: 1
-# (deprecated)
-spamShield: False
 # Delay between loop iterations (seconds)
 sleepInterval: 1
 # LLM model to load overrides *_model parameters see below
@@ -26,7 +24,7 @@ memoryDirectory: "./repos/Omega/memory"
 
 # Memory
 
-# Ceiling on `LAST_SKILL_USE_RESULTS` text fed back into the prompt (chars)
+# Ceiling on a single tool call result text fed back into the prompt (chars)
 maxFeedback: 50000
 # Items returned by `query`
 maxRecallItems: 20

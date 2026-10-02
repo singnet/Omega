@@ -51,7 +51,7 @@ def test_edit_delete_line_mock(llm, comm):
         )
         llm.set_answer(
             prompt,
-            f'(shell "sed -i 2d {TARGET_FILE}")',
+            [("shell", { "cmd": f"sed -i 2d {TARGET_FILE}" })]
         )
         if not comm.send_message(prompt):
             c.fail("comm", "could not deliver prompt within 60s")

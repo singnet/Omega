@@ -56,13 +56,13 @@ def test_complex_weather_flow_mock(llm, comm):
         )
         # Single LLM response containing the full pipeline.
         llm.set_answer(
-            prompt,
-            f'(write-file "{WEATHER_TXT}" "{FORECAST_TEXT}") '
-            f'(write-file "{SCRIPT_SH}" '
-            f'"#!/bin/bash\\ngrep -oE \'[0-9]+\' {WEATHER_TXT} | head -1 > {TEMP_ONLY}\\n") '
-            f'(shell "chmod +x {SCRIPT_SH}") '
-            f'(shell "sh {SCRIPT_SH}")',
-        )
+            prompt, [
+                ("write-file", { "filename": f"{WEATHER_TXT}", "content": f"{FORECAST_TEXT}" }),
+                ("write-file", { "filename": f"{SCRIPT_SH}", "content":
+                                f"#!/bin/bash\\ngrep -oE '[0-9]+' {WEATHER_TXT} | head -1 > {TEMP_ONLY}\\n" }),
+                ("shell", { "cmd": f"chmod +x {SCRIPT_SH}" }),
+                ("shell", { "cmd": f"sh {SCRIPT_SH}" })
+            ])
         if not comm.send_message(prompt):
             c.fail("comm", "could not deliver prompt within 60s")
         c.ok("comm", f"run-id={c.run_id}")

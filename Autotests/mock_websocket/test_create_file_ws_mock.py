@@ -37,7 +37,10 @@ def test_hello_file_ws_mock(llm, ws):
             f"Please overwrite {TARGET_FILE} so it contains exactly the single "
             "word Hello (no quotes, no extra newlines, create the directory if needed).",
         )
-        llm.set_answer(prompt, f'(shell "mkdir -p /tmp/testcat") (write-file "/tmp/testcat/hello.txt" "Hello")')
+        llm.set_answer(prompt, [
+            ("shell", { "cmd": "mkdir -p /tmp/testcat" }),
+            ("write-file", { "filename": "/tmp/testcat/hello.txt", "content": "Hello" }),
+        ])
 
         ws_send_prompt(ws, prompt)
         c.ok("websocket", f"prompt delivered, run-id={c.run_id}")
