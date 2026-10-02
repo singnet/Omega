@@ -13,6 +13,11 @@ memory/.channel/
 # venv
 .venv 
 
+# Node build artifacts
+node_modules/
+control-ui/dist/
+proofshot-artifacts/
+
 # editor backup files
 *~
 Autotests/venv/
