@@ -92,11 +92,84 @@ def around_time(needle_time_str, k):
         ret += f"{lineno}:{line}"
     return ret
 
+# string-safe in src/utils.metta writes these words in place of real quotes and
+# newlines before text reaches the model, and the model copies them back.
+QUOTE_TOKEN = "_quote_"
+NEWLINE_TOKEN = "_newline_"
+_LITERAL_ESCAPES = {"n": "\n", "t": "\t", '"': '"', "\\": "\\"}
+
+
+def decode_escape_tokens(text):
+    """Turn _quote_ and _newline_ back into the characters they stand for.
+
+    Incoming text that already contains these words is not escaped, so a
+    message, file or QR code can carry them straight into the model's reply.
+    Only call this on one argument value that has already been cut out of the
+    reply, never on the reply as a whole. Run first, a relayed "_newline_shell"
+    turns into a new command line and a relayed "_quote_)" closes the string
+    it sits in.
+    """
+    return text.replace(QUOTE_TOKEN, '"').replace(NEWLINE_TOKEN, "\n")
+
+
+def _strip_wrapping_quotes(x):
+    """Return the text between one matching pair of outer quotes, or None."""
+    for delim in ('"', QUOTE_TOKEN):
+        if len(x) >= 2 * len(delim) and x.startswith(delim) and x.endswith(delim):
+            return x[len(delim):-len(delim)]
+    return None
+
+
+def _read_literal_body(body):
+    """Undo backslash escapes in a quoted value; None if a bare quote ends it early.
+
+    repr() writes a quote inside a string as \\", which string-safe turns into
+    \\_quote_, so that pair reads as one quote character too.
+    """
+    out = []
+    i = 0
+    while i < len(body):
+        ch = body[i]
+        if ch == '"':
+            return None
+        if ch == "\\" and body.startswith(QUOTE_TOKEN, i + 1):
+            out.append('"')
+            i += 1 + len(QUOTE_TOKEN)
+        elif ch == "\\":
+            nxt = body[i + 1] if i + 1 < len(body) else "\\"
+            out.append(_LITERAL_ESCAPES.get(nxt, "\\" + nxt))
+            i += 2
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
+
 def quote_arg(x):
-    if x.startswith('"') and x.endswith('"') and "\n" not in x:
-        return x
-    else:
-        return json.dumps(x, ensure_ascii=False)
+    """Turn one raw argument from the model's reply into MeTTa string syntax.
+
+    The model may or may not wrap an argument in quotes, written as real quotes
+    or as _quote_. A single quoted value is unwrapped and its backslash escapes
+    are read, and anything else is taken as plain text. Escape tokens are
+    decoded last and the value is encoded with json.dumps, so a decoded _quote_
+    can never close the string it sits in.
+
+    One case is kept as the model wrote it: a single line that starts and ends
+    with a real quote but has bare quotes inside, such as '"a") (pin "b"'. That
+    is how the model puts several commands on one line, so it is passed through
+    as is, and any escape tokens in it stay plain text.
+
+        quote_arg('hello')                -> '"hello"'
+        quote_arg('_quote_hi_quote_')     -> '"hi"'
+        quote_arg('"a_quote_) (shell x"') -> '"a\\") (shell x"'
+    """
+    body = _strip_wrapping_quotes(x) if "\n" not in x else None
+    if body is None:
+        return json.dumps(decode_escape_tokens(x), ensure_ascii=False)
+    value = _read_literal_body(body)
+    if value is None:
+        return x if x.startswith('"') else json.dumps(decode_escape_tokens(x), ensure_ascii=False)
+    return json.dumps(decode_escape_tokens(value), ensure_ascii=False)
 
 def starts_command_line(line):
     s = line.lstrip()
@@ -113,7 +186,9 @@ def starts_command_line(line):
 def split_command_blocks(s):
     blocks = []
     cur = []
-    for raw in s.splitlines():
+    # Split on "\n" only: str.splitlines() also breaks on U+2028, U+0085 and
+    # other characters that relayed text can carry into the middle of an argument.
+    for raw in (line.removesuffix("\r") for line in s.split("\n")):
         if not raw.strip():
             if cur:
                 cur.append(raw)
@@ -127,8 +202,31 @@ def split_command_blocks(s):
         blocks.append("\n".join(cur).strip())
     return blocks
 
+def _split_first_arg(rest):
+    """Split rest into its first argument and everything after it."""
+    if rest.startswith('"'):
+        end = 1
+        escaped = False
+        while end < len(rest):
+            ch = rest[end]
+            if ch == '"' and not escaped:
+                break
+            escaped = (ch == '\\' and not escaped)
+            if ch != '\\':
+                escaped = False
+            end += 1
+        if end < len(rest) and rest[end] == '"':
+            return rest[:end+1], rest[end+1:].strip()
+        return rest[1:], ""
+    if rest.startswith(QUOTE_TOKEN):
+        end = rest.find(QUOTE_TOKEN, len(QUOTE_TOKEN))
+        if end != -1:
+            end += len(QUOTE_TOKEN)
+            return rest[:end], rest[end:].strip()
+    split_rest = rest.split(maxsplit=1)
+    return split_rest[0], split_rest[1].strip() if len(split_rest) > 1 else ""
+
 def balance_parentheses(s):
-    s = s.replace("_quote_", '"').replace("_newline_", "\n")
     sexprs = []
     for line in split_command_blocks(s):
         line = line.strip()
@@ -158,27 +256,8 @@ def balance_parentheses(s):
                 sexprs.append(f"({cmd})")
                 continue
             # filename is first token unless already quoted
-            if rest.startswith('"'):
-                end = 1
-                escaped = False
-                while end < len(rest):
-                    ch = rest[end]
-                    if ch == '"' and not escaped:
-                        break
-                    escaped = (ch == '\\' and not escaped)
-                    if ch != '\\':
-                        escaped = False
-                    end += 1
-                if end < len(rest) and rest[end] == '"':
-                    filename = rest[:end+1]
-                    content = rest[end+1:].strip()
-                else:
-                    filename = quote_arg(rest[1:])
-                    content = ""
-            else:
-                split_rest = rest.split(maxsplit=1)
-                filename = quote_arg(split_rest[0])
-                content = split_rest[1].strip() if len(split_rest) > 1 else ""
+            first, content = _split_first_arg(rest)
+            filename = quote_arg(first)
             if content:
                 sexprs.append(f"({cmd} {filename} {quote_arg(content)})")
             else:
