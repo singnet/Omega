@@ -746,6 +746,54 @@ options() {
     fi
 }
 
+migrate_omegaclaw_memory() {
+    local old_container="omegaclaw"
+    local old_volume="omegaclaw-memory"
+    local new_volume="omega-memory"
+    local memory_path="/PeTTa/repos/Omega/memory"
+    local marker=".migrated-to-omega"
+    local stopped_old_container=0
+
+    if [ -n "${memory_import_file}" ] \
+        || docker volume inspect "${new_volume}" >/dev/null 2>&1 \
+        || ! docker volume inspect "${old_volume}" >/dev/null 2>&1; then
+        return 0
+    fi
+    if docker run --rm --entrypoint sh --volume "${old_volume}:/from:ro" "${image}" \
+        -c "test -e /from/${marker}"; then
+        return 0
+    fi
+
+    echo "Copying memory from volume ${old_volume} to ${new_volume}"
+    if [ "$(docker inspect -f '{{.State.Running}}' "${old_container}" 2>/dev/null)" = "true" ]; then
+        if ! docker stop "${old_container}" >/dev/null; then
+            echo "Could not stop container ${old_container}, memory was not copied" >&2
+            return 1
+        fi
+        stopped_old_container=1
+        echo "Stopped container ${old_container}"
+    fi
+
+    if docker volume create "${new_volume}" >/dev/null \
+        && docker run --rm --entrypoint sh --volume "${new_volume}:${memory_path}" "${image}" \
+            -c "test -f ${memory_path}/prompt.txt" \
+        && docker run --rm --entrypoint sh \
+            --volume "${old_volume}:/from:ro" --volume "${new_volume}:/to" "${image}" \
+            -c 'list=$(mktemp) && cd /from && find . -mindepth 1 -maxdepth 1 ! -name "prompt*.txt" ! -name tg_prompt.txt > "$list" && while IFS= read -r entry; do rm -rf "/to/$entry" && cp -a "$entry" /to/ || exit 1; done < "$list"' \
+        && docker run --rm --entrypoint sh --volume "${old_volume}:/from" "${image}" \
+            -c "date -u > /from/${marker}"; then
+        echo "Memory copied. Once the agent remembers what it knew, remove the old installation with 'docker rm ${old_container}' and 'docker volume rm ${old_volume}'"
+        return 0
+    fi
+
+    echo "Could not copy memory from ${old_volume}, the old installation is left as it was" >&2
+    docker volume rm "${new_volume}" >/dev/null 2>&1 || true
+    if [ "${stopped_old_container}" = "1" ]; then
+        docker start "${old_container}" >/dev/null 2>&1 || true
+    fi
+    return 1
+}
+
 start() {
     docker pull "${image}" 2>/dev/null || true
 
@@ -792,6 +840,8 @@ start() {
             memory_import_env+=(-e MEMORY_IMPORT_NO_HISTORY=1)
         fi
     fi
+
+    migrate_omegaclaw_memory || return 1
 
     docker rm -f omega 2>/dev/null || true
 
