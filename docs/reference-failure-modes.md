@@ -87,9 +87,9 @@ Some rules are implemented but behave in unexpected ways. Know these before writ
 
 Measured across 4,500+ operational cycles, the top error categories are:
 
-1. **Commands not executed** (`NOTHING_WAS_DONE`) — the LLM produced output that was not a valid skill tuple.
-2. **Multi-command parsing failures.**
-3. **Parenthesis mismatches** — repaired best-effort by `helper.balance_parentheses`, but not always successfully.
+1. **Tool calls not executed** (`NOTHING_WAS_DONE`) — the reply could not be parsed, or a call raised an error. Text that is not a tool call is reported as `UNKNOWN_SKILL_CALL` instead.
+2. **Parsing failures in replies with several tool calls.**
+3. **Parenthesis mismatches** — the parser drops one enclosing pair or a lone opening parenthesis and quotes the arguments, so a mismatch now shows up mainly inside `metta` expressions, which `sread` parses.
 
 These are **the most frequent failure mode in the entire system**, not occasional glitches.
 
@@ -99,13 +99,13 @@ When a new human message arrives during autonomous work, the LLM attempts to sim
 
 ### Bandwidth constraint
 
-The 5-command-per-cycle limit means complex reasoning chains require 10–20 cycles. Budget accordingly.
+The prompt asks for at most 5 tool calls per cycle, so complex reasoning chains require 10–20 cycles. Budget accordingly.
 
 ### State fragility
 
 Working memory depends on:
 
-- `pin` — volatile, single-slot, overwritten each cycle;
+- `pin` — notes kept only in the episodic trace, visible in `HISTORY` until newer entries push them out of the last `maxHistory` characters;
 - `/tmp` files — lost on restart.
 
 Anything you need to keep across sessions must go through `remember`.

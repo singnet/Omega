@@ -33,9 +33,9 @@ Halt conditions the LLM is expected to monitor after each inference hop:
 | Confidence floor | `c < 0.3` | **Halt.** Conclusion is unreliable. |
 | Sufficiency threshold | `c ≥ 0.6` | Actionable for practical decisions. |
 | Diminishing returns | New hop reduces confidence more than it adds information | Halt. |
-| Resource budget | 5 commands per cycle | Hard ceiling enforced by the loop. |
+| Resource budget | 5 tool calls per cycle | Ceiling the LLM is asked to keep. |
 
-The per-cycle command ceiling is set in the output-format directive built by `getContext` in `src/loop.metta`.
+The per-cycle ceiling on tool calls is set in the output-format directive built by `getContext` in `src/loop.metta`. The loop does not enforce the ceiling and still runs every call in a longer reply.
 
 ---
 
@@ -97,7 +97,7 @@ Regression suite: confident lies, direct contradictions, and gradual poisoning a
 
 ## 6. Multi-cycle reasoning pattern
 
-Complex questions usually cannot fit in one cycle because the LLM must emit all commands before seeing results. A typical decomposition:
+Complex questions usually cannot fit in one cycle because the LLM must emit all tool calls before seeing results. A typical decomposition:
 
 | Cycle | Purpose |
 |---|---|

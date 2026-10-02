@@ -1,13 +1,13 @@
 # Tutorial 05 — Reasoning with NAL and PLN
 
-**Goal:** invoke Non-Axiomatic Logic and Probabilistic Logic Networks from inside Omega using the `(metta ...)` skill, and read the truth values the engines emit.
+**Goal:** invoke Non-Axiomatic Logic and Probabilistic Logic Networks from inside Omega using the `metta` tool, and read the truth values the engines emit.
 
 ## Prerequisites
 
 - A running Omega.
 - Reading familiarity with `(stv frequency confidence)` truth values.
 
-## The `metta` skill
+## The `metta` tool
 
 ```metta
 (metta sexpression)
@@ -129,7 +129,7 @@ is pingu a bird?
 A well-behaved response:
 
 1. Atomizes the two premises.
-2. Emits `(metta (|~ ...))` with those premises.
+2. Emits a `metta (|~ ...)` tool call with those premises. The parser passes the expression to the tool as one string, even when it spans several lines.
 3. Reads the `(stv ...)` of the conclusion.
 4. Checks the action threshold (ACT / HYPOTHESIZE / IGNORE).
 5. `send`s an answer that includes the derived confidence and the rule used.
@@ -175,6 +175,6 @@ Starting with each premise at `c = 0.9`:
 - [reference-lib-nal.md](./reference-lib-nal.md) — every NAL rule and truth formula.
 - [reference-lib-pln.md](./reference-lib-pln.md) — PLN rule catalogue.
 - [reference-lib-ona.md](./reference-lib-ona.md) — the third (temporal) engine.
-- [reference-skills-reasoning.md](./reference-skills-reasoning.md) — the `metta` skill signature.
+- [reference-tools-reasoning.md](./reference-tools-reasoning.md) — the `metta` tool signature.
 - [tutorial-07-grounded-reasoning.md](./tutorial-07-grounded-reasoning.md) — external grounding.
 - [tutorial-08-reliable-reasoning.md](./tutorial-08-reliable-reasoning.md) — best practices.

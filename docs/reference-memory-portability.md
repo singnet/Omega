@@ -2,7 +2,7 @@
 
 Memory portability lets an operator export persistent user memory from one
 deployment and restore it before another agent starts. It is an operator
-workflow, not an LLM skill.
+workflow, not a tool the LLM calls.
 
 ## Setup
 
@@ -46,7 +46,7 @@ vector/records.jsonl
 ```
 
 History is the conversation trace. LTM is logical user-memory records from
-ChromaDB. Prompts, credentials, logs, skills, and other operational state are
+ChromaDB. Prompts, credentials, logs, tools, and other operational state are
 not exported. SHA-256 detects corruption, not archive authorship.
 
 ## Import
