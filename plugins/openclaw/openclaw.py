@@ -90,9 +90,8 @@ def send(
     """Hand one independent task to OpenClaw without waiting for the reply.
 
     A new OpenClaw session is created for every invocation. The returned JSON
-    string is an acceptance envelope suitable for insertion into
-    LAST_SKILL_USE_RESULTS; the reply itself is collected later through
-    `take_completed`.
+    string is an acceptance envelope suitable for insertion into LLM request;
+    the reply itself is collected later through `take_completed`.
 
     Args:
         message (str): Self-contained natural-language task.

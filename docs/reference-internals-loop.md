@@ -27,7 +27,7 @@ Also creates shared state slots:
 ## Every turn
 
 1. **Decrement `&loops`** (turns > 1 only).
-2. **Build the prompt** — `getContext` assembles `PROMPT + SKILLS + LAST_SKILL_USE_RESULTS + HISTORY + TIME` plus an output-format instruction requiring a tuple of up to 5 skill s-exprs.
+2. **Build the prompt** — `getContext` assembles `PROMPT + SKILLS + HISTORY + TIME`, plus information about previous tool calls if any and list of available tools.
 3. **Receive** — `(receive)` via the active channel.
 4. **Detect new input** — compare against `&prevmsg`. If different and non-empty, reset `&loops` to `maxNewInputLoops`.
 5. **Set next wake** — `&nextWakeAt := now + wakeupInterval`.
@@ -36,7 +36,6 @@ Also creates shared state slots:
    - `Anthropic` → `lib_llm_ext.useClaude`
    - `ASICloud` → `lib_llm_ext.useMiniMax`
    - else → `lib_llm_ext.useAsi1`
-7. **Repair parentheses** — `helper.balance_parentheses` fixes common mismatches before parsing.
 8. **Parse** — `sread` on the repaired string; if it does not start with `(`, the loop feeds back a reminder prompt.
 9. **Dispatch skills** — `(superpose $sexpr)` runs each skill, capturing errors via `HandleError`.
 10. **Record** — `addToHistory` appends human message + response + any errors to `memory/history.metta`, provided something new happened.

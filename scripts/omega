@@ -253,6 +253,12 @@ def _choose_provider():
         if c != "":
             model = c
 
+        premium_model = ""
+        if provider == "OpenRouter" and model:
+            premium_model = input(
+                "Optional premium LLM model (press ENTER to skip routing): "
+            ).strip()
+
         openaiapi_url = ""
         if provider == "OpenAIAPI":
 
@@ -262,7 +268,7 @@ def _choose_provider():
                 openaiapi_url = c
             print(f"LLM API URL is set to {openaiapi_url}")
 
-        return provider, embeddingprovider, api_token_var, model, openaiapi_url, token
+        return provider, embeddingprovider, api_token_var, model, premium_model, openaiapi_url, token
 
 
 def _choose_import_kb():
@@ -348,7 +354,7 @@ def config_run_omega(
     require_license_acceptance()
 
     channel_config = _choose_channel()
-    provider, embeddingprovider, api_token_var, model, openaiapi_url, token = _choose_provider()
+    provider, embeddingprovider, api_token_var, model, premium_model, openaiapi_url, token = _choose_provider()
     import_kb_on_start = _choose_import_kb()
     if configured_memory_transfer_dir:
         memory_transfer_dir = configured_memory_transfer_dir
@@ -364,6 +370,7 @@ def config_run_omega(
         _write_kv(f, "provider", provider)
         _write_kv(f, "embeddingprovider", embeddingprovider)
         _write_kv(f, "model", model)
+        _write_kv(f, "premium_model", premium_model)
         _write_kv(f, "openaiapi_url", openaiapi_url)
         _write_kv(f, "IMPORT_KB_ON_START", import_kb_on_start)
         _write_kv(f, "memory_transfer_dir", memory_transfer_dir)
@@ -845,6 +852,10 @@ start() {
 
     if [ -n "${model:-}" ]; then
       docker_cmd+=("model=${model}")
+    fi
+
+    if [[ "${provider}" == "OpenRouter" && -n "${model:-}" && -n "${premium_model:-}" ]]; then
+      docker_cmd+=("premium_model=${premium_model}" "router=default")
     fi
 
     if [ -n "${openaiapi_url:-}" ]; then

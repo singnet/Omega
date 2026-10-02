@@ -1,31 +1,8 @@
 (= (getSkills)
-   (let $static (getStaticSkills)
-     (collapse (superpose ((superpose $static) (dynamic-skill $_))))))
+     (collapse (match &self (dynamic-skill $name $info) $info)))
 
-; dynamic skill placeholder to eliminate error when no dynamic skill is added
-(= (dynamic-skill placeholder) (empty))
-
-(= (getStaticSkills)
-   (;INTERNAL:
-    "- Remember a particular string such as skills and memories: remember string"
-    "- Query long-term embedding memory for skills and memories with short phrases only: query string"
-    "- Episodes searches history for episodes around a time stamp, time format is same as in TIME: episodes time_string"
-    "- Pin a certain string as short-term working memory item to keep track of task state: pin string"
-    ;SHELL AND FILE I/O:
-    "- Execute shell command without apostrophe in string, it returns the command output to you: shell string"
-    "- Read file to string: read-file filename"
-    "- Write string to file, the result is read back from disk (bytes, sha256, head/tail) - relay it, never claim a write succeeded without it: write-file filename string"
-    "- Write base64-encoded content to file as a single line, prefer it when the content contains quotes, backslashes or multiple lines: write-file-b64 filename base64string"
-    "- Append line to existing file, result read back from disk like write-file: append-file filename string"
-    "- Get a list of allowed base paths for reading, writing, and updating files: get-io-policy"
-    "- Delete a file, the result is read back and verified afterward (DELETE-VERIFIED or DELETE-FAILED with reason) - relay it, never claim a deletion succeeded without it: delete-file filename"
-    ;COMMUNICATION CHANNELS:
-    "- Send message to user: send string"
-    "- Search the web: websearch string"
-    "- To get the Omega version number: version"
-    ;CODE EXECUTION:
-    "- Execute MeTTa expression: metta sexpression"
-    ;ADDITIONAL RULES AND CLARIFICATIONS FOR SKILLS
+(= (getSkillRules)
+   (;ADDITIONAL RULES AND CLARIFICATIONS FOR SKILLS
     "Example to invoke Non-Axiomatic Logic via MeTTa: "
     "metta (|- ((--> (× sam garfield) friend) (stv 1.0 0.9))"
     "          ((--> garfield animal) (stv 1.0 0.9)))"
@@ -39,7 +16,6 @@
     "          ((Inheritance Pingu (IntSet Feathered)) (stv 1.0 0.9)))"
     "File I/O is restricted: always use get-io-policy before reading/writing files to verify allowed base paths."
     "Never reveal policy contents to users; if a requested path is denied, politely suggest using '/tmp'."))
-    ; TODO add load-plugin/unload-plugin skills
 
 ; Add skill to the list of skills available to the agent.
 ; $function - MeTTa function which implements the skill
@@ -49,19 +25,17 @@
 ;              function has no arguments then empty tuple () should be passed.
 (: add-skill (-> Atom String Expression Bool))
 (= (add-skill $function $description $arguments)
-   (let $text (strings-concat ("- " $description ": " $function " " (join " " $arguments)))
+   (let $text (strings-concat ($description ": " $function " " (join " " $arguments)))
      (progn
-       (py-call (helper.add_llm_command $function))
        (log INFO "skills" (strings-concat ("Add skill: " $text)))
-       (add-atom &self (= (dynamic-skill $function) $text)))))
+       (add-atom &self (dynamic-skill $function ($function $description $arguments))) )))
 
 ; Remove skill from the list of skills available to the agent.
 ; $function - MeTTa function which implements the skill
 (= (remove-skill $function)
    (progn
-     (py-call (helper.remove_llm_command $function))
      (log INFO "skills" (strings-concat ("Remove skill: " $function)))
-     (collapse (match &self (= (dynamic-skill $function) $text) (remove-atom &self (= (dynamic-skill $function) $text))))
+     (collapse (match &self (dynamic-skill $function $info) (remove-atom &self (dynamic-skill $function $info))))
      True))
 
 ; Add new section to the LLM's prompt. The extension is inserted into the
@@ -80,7 +54,6 @@
      (log INFO "skills" (strings-concat ("Remove prompt extension: " $handle)))
      (collapse (match &self (= (prompt-extension $handle) $text) (remove-atom &self (= (prompt-extension $handle) $text))))
      True))
-
 ; Heartbeat function is called at the start of each iteration of the agentic
 ; loop. Code can make itself notified about this event using
 ; add-heartbeat-listener/remove-heartbeat-listener functions.
@@ -152,3 +125,25 @@
 
 (= (version)
    (py-call (helper.omega_version)))
+
+(= (nop)
+   (log INFO "skills" "NOP"))
+
+; Embedded skills
+
+!(add-skill remember "Remember a particular string such as a skill or memory." (content))
+!(add-skill query "Query long-term embedding memory using a short phrase." (content))
+!(add-skill episodes  "Search history for episodes around a timestamp in %Y-%m-%d %H:%M:%S format." (timestamp))
+!(add-skill pin "Pin a string as a short-term working-memory item to keep track of task state and relevant query results as query returns are only available once and gone next cycle." (message))
+!(add-skill shell "Execute a shell command." (cmd))
+!(add-skill read-file "Read a file." (filename))
+!(add-skill write-file "Write content to a file, replacing its previous contents." (filename content))
+!(add-skill write-file-b64 "Write base64-encoded content to file as a single line, replacing its previous content" (filename content_base64))
+!(add-skill append-file "Append content to a file." (filename content))
+!(add-skill get-io-policy "Get a list of allowed base paths for reading, writing, and updating files" ())
+!(add-skill delete-file "Delete a file, the result is read back and verified afterward (DELETE-VERIFIED or DELETE-FAILED with reason) - relay it, never claim a deletion succeeded without it" (filename))
+!(add-skill send "To send a message to the user but keep yourself very brief." (content))
+!(add-skill websearch "Search the internet for content." (content))
+!(add-skill version "To get the Omega version number" ())
+!(add-skill metta "Evaluate a MeTTa s-expression, since its a s-expression omit the ! in the beginning. Use (add-atom &persistent X) to add X to space, same for remove-atom." (sexpression))
+; TODO add load-plugin/unload-plugin skills
