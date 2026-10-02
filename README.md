@@ -57,12 +57,13 @@ source ./.venv/bin/activate
 
 If you have CPU only machine or don't want calculate embeddings on GPU:
 ```
-python3 -m pip install --index-url https://download.pytorch.org/whl/cpu torch
+python3 -m pip install --index-url https://download.pytorch.org/whl/cpu \
+  "$(grep -E '^torch(\[|[=<>!~]|$)' ./repos/Omega/requirements.txt)"
 ```
 
-Install Python dependencies:
+Install Python dependencies — core's, and those of any plugin that declares its own:
 ```
-python3 -m pip install -r ./repos/Omega/requirements.txt
+./repos/Omega/scripts/install_dependencies.sh
 ```
 ---
 
