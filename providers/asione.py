@@ -49,6 +49,7 @@ class ASIOneProviderImpl(llm.AIProvider):
 
     def chat(self, content: str, max_tokens: int = 6000, reasoning: str = "medium", **kwargs) -> str:
         """Send chat request, initializing client if needed."""
+        self._start_of_turn(content)
         self._ensure_client()
 
         if self._client is None:
@@ -57,18 +58,22 @@ class ASIOneProviderImpl(llm.AIProvider):
         sysmsg, usermsg = content.split(":-:-:-:")
         thinking_budget = _reasoning_budget(max_tokens, reasoning)
         try:
-            response = self._client.chat.completions.create(
-                model=self._model_name,
-                messages=[{"role": "system", "content": sysmsg},
-                          {"role": "user", "content": usermsg}],
-                max_tokens=max_tokens,
-                extra_body={
-                    "enable_thinking": thinking_budget > 0,
-                    "thinking_budget": thinking_budget
-                },
-                **kwargs
+            response = llm._retrying(
+                lambda: self._client.chat.completions.create(
+                    model=self._model_name,
+                    messages=[{"role": "system", "content": sysmsg},
+                              {"role": "user", "content": usermsg}],
+                    max_tokens=max_tokens,
+                    extra_body={
+                        "enable_thinking": thinking_budget > 0,
+                        "thinking_budget": thinking_budget
+                    },
+                    **kwargs
+                ),
+                self._name,
             )
 
+            self._answered()
             raw = response.choices[0].message.content or ""
             finish_reason = getattr(response.choices[0], "finish_reason", None)
             llm._log_raw(self._name, self._model_name, raw)
@@ -81,4 +86,6 @@ class ASIOneProviderImpl(llm.AIProvider):
             return resp
         except Exception as e:
             logger.exception(f"[ASIOneProviderImpl.chat]: Exception while communicating with LLM: {e}")
+            if llm._is_timeout_error(e):
+                return self._timeout_reply()
             return ""
