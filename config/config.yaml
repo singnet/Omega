@@ -41,6 +41,8 @@ embeddingprovider: Local
 # Model asked of a non-`Local` embeddingprovider; empty means the provider default:
 # `text-embedding-3-large` for `OpenAI`, `WhereIsAI/UAE-Large-V1` for `ASICloud`
 embeddingModel: ""
+# Maximum texts per cloud embedding request; tune to the provider's limits.
+embeddingBatchSize: 32
 # Enable authenticated operator-triggered /memory-export commands (disabled by default).
 memoryExportEnabled: false
 
