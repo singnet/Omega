@@ -52,7 +52,7 @@ def test_edit_delete_line_slack_mock(llm, sl):
         )
         llm.set_answer(
             prompt,
-            f'(shell "sed -i 2d {TARGET_FILE}")',
+            [("shell", { "cmd": f"sed -i 2d {TARGET_FILE}" })],
         )
         sl_send_prompt(sl, prompt)
         c.ok("slack", f"run-id={c.run_id}")
