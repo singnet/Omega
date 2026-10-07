@@ -41,7 +41,7 @@ def test_ws_resume_dedup_ws_mock(llm, ws):
         c.step("deliver one prompt and get the single reply")
         answer = f"WS-ONCE-{c.run_id}"
         prompt = make_prompt(c.run_id, f"Reply once with the send skill: {answer}")
-        llm.set_answer(prompt, f'(send "{answer}")')
+        llm.set_answer(prompt, [("send", { "content": f"{answer}" })])
         seq = ws.inject_user_message(prompt)
         client_seq, text = _wait_for_reply(ws, answer, WAIT)
         if text is None:
@@ -52,7 +52,7 @@ def test_ws_resume_dedup_ws_mock(llm, ws):
         c.step("register a distinct answer for a poisoned replay at the seen seq")
         poison = f"WS-POISON-{c.run_id}"
         poison_prompt = make_prompt(c.run_id, f"Poisoned replay must be dropped: {poison}")
-        llm.set_answer(poison_prompt, f'(send "{poison}")')
+        llm.set_answer(poison_prompt, [("send", { "content": f"{poison}" })])
         c.ok("poison registered")
 
         c.step("force reconnect; agent must resume with the advanced last_seen_seq")
