@@ -18,6 +18,10 @@ maxOutputToken: 6000
 reasoningMode: medium
 # How long idle before the next scheduled wake-up (seconds)
 wakeupInterval: 600
+# Max number of historical messages to send to the LLM
+episodicTraceSize: 100
+# Maximum number of tool calls
+maxToolCalls: 10
 # Path to the logger configuration file
 # See https://docs.python.org/3/library/logging.config.html#configuration-file-format
 logConfigPath: ""

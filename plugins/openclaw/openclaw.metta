@@ -25,7 +25,7 @@
                     (add-skill
                         delegate-task-to-openclaw-agent
                         "Delegate a self-contained task to an external OpenClaw agent in a new separate session. Returns an id immediately, the reply arrives later on its own as an OPENCLAW_RESULT line."
-                        (task_in_quotes))
+                        (task))
                     (add-heartbeat-listener
                         openclaw
                         (|-> ($iter) (openclaw-collect-results $iter)))))

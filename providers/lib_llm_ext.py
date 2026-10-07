@@ -1,9 +1,11 @@
 import os, hashlib
 import openai
+from providers import *
 from typing import Optional, Tuple, Dict, Any
 from config import config_get_by_key
-from src.helper import quote_arg
+import json
 from src.logger import get_logger
+import uuid
 
 PROMPT_DELIMITER = ":-:-:-:"
 LLM_EMPTY_RESPONSE_MESSAGE = (
@@ -24,8 +26,8 @@ LLM_EMPTY_RESPONSE_MESSAGE = (
 
 logger = get_logger(__name__)
 
-def _log_raw(provider: str, model: str, raw: str) -> None:
-    logger.debug(f"[LLM_RAW] provider={provider} model={model} chars={len(raw or '')} raw={raw!r}")
+def _log_raw(kind, provider: str, model: str, raw: Dict) -> None:
+    logger.debug(f"[{kind}] provider={provider} model={model} raw={raw!r}")
 
 def _log_chat_completion(provider: str, model: str, response) -> None:
     """Report how the completion budget was actually spent (Chat Completions API)."""
@@ -61,11 +63,13 @@ def _log_responses_completion(provider: str, model: str, response) -> None:
     )
     logger.info(line)
 
-def _llm_empty_response_command() -> str:
+def _llm_empty_response_tool_call(response_id) -> LLMToolCall:
     """Return an explanatory message as a MeTTa `send` command when the LLM
     spends the entire output token budget on reasoning and returns no content.
     """
-    return f"(send {quote_arg(LLM_EMPTY_RESPONSE_MESSAGE)})"
+    return (LLMToolCall().with_name("send")
+            .with_id(f"{response_id}#{uuid.uuid4().hex}")
+            .add_argument("content", LLM_EMPTY_RESPONSE_MESSAGE))
 
 def _split_system_user(content: str) -> Tuple[str, str]:
     """
@@ -110,7 +114,7 @@ class AbstractAIProvider:
     def name(self) -> str:
         return self._name
 
-    def chat(self, content: str, max_tokens: int = 6000, reasoning: str = "medium", **kwargs) -> str:
+    def chat(self, request: LLMRequest) -> LLMResponse:
         raise NotImplementedError
 
     @property
@@ -156,18 +160,75 @@ class AIProvider(AbstractAIProvider):
         """Check if provider is configured (without initializing)."""
         return bool(config_get_by_key("GATEWAY_URL")) or bool(os.environ.get(self._var_name))
 
-    def _build_messages(self, content: str):
-        sysmsg, usermsg = _split_system_user(content)
+    def convert_message(self, message: LLMMessage) -> Dict:
+        result = { "role": message.role, "content": message.content }
+        if isinstance(message, LLMToolCallResponseMessage):
+            result["tool_call_id"] = message.callid
+        if isinstance(message, LLMToolCallMessage):
+            result["tool_calls"] = [self.convert_tool_call(call) for call in message.calls]
+        return result
 
-        if sysmsg:
-            return [
-                {"role": "system", "content": sysmsg},
-                {"role": "user", "content": usermsg},
-            ]
+    def convert_tool_call(self, call: LLMToolCall) -> Dict:
+        return {
+            "type": "function",
+            "id": call.id,
+            "function": {
+                "name": call.name,
+                "arguments": json.dumps(call.arguments)
+            }
+        }
 
-        return [{"role": "user", "content": usermsg}]
+    def convert_tool(self, tool: LLMTool) -> Dict:
+        return {
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": {
+                    "type": "object",
+                    "properties": { param.name: { "type": "string" } for param in tool.parameters },
+                    "required": [ param.name for param in tool.parameters ]
+                }
+            }
+        }
 
-    def chat(self, content: str, max_tokens: int = 6000, reasoning: str = "medium", **kwargs) -> str:
+    def convert_request(self, request: LLMRequest) -> Dict[str, Any]:
+        return {
+            "model": self._model_name,
+            "messages": [self.convert_message(msg) for msg in request.messages],
+            "max_tokens": request.max_tokens,
+            "tools": [self.convert_tool(tool) for tool in request.tools],
+            "tool_choice": "required",
+        }
+
+    def convert_response(self, raw):
+        response =  LLMResponse()
+
+        choice = raw.choices[0]
+        message = choice.message
+
+        if not message.tool_calls:
+            logger.warning("LLM returned an empty response")
+            finish_reason = getattr(choice, "finish_reason", None)
+            if finish_reason == "length":
+                response.add_tool_call(_llm_empty_response_tool_call(raw.id))
+            return response
+
+        for tool_call in message.tool_calls:
+            tc = LLMToolCall().with_name(tool_call.function.name).with_id(tool_call.id)
+            try:
+                arguments = json.loads(tool_call.function.arguments)
+            except json.JSONDecodeError as error:
+                response.add_tool_call(tc.with_error(f"Invalid tool arguments from model: {error}"))
+            else:
+                if isinstance(arguments, dict):
+                    response.add_tool_call(tc.with_arguments(arguments))
+                else:
+                    response.add_tool_call(tc.with_error("Tool arguments must be a JSON object"))
+
+        return response
+
+    def chat(self, request: LLMRequest) -> LLMResponse:
         """Send chat request, initializing client if needed."""
         self._ensure_client()
 
@@ -175,31 +236,16 @@ class AIProvider(AbstractAIProvider):
             raise RuntimeError(f"{self.name} not configured (set {self._var_name})")
 
         try:
-            response = self._client.chat.completions.create(
-                model=self._model_name,
-                messages=self._build_messages(content),
-                max_tokens=max_tokens,
-                **kwargs
-            )
-
-            raw = response.choices[0].message.content or ""
-            finish_reason = getattr(response.choices[0], "finish_reason", None)
-            _log_raw(self._name, self._model_name, raw)
-            _log_chat_completion(self._name, self._model_name, response)
-            if not raw:
-                logger.warning("LLM returned an empty response")
-                if finish_reason == "length":
-                    raw = _llm_empty_response_command()
-            resp = self._clean_text(raw)
-            return resp
+            raw_request = self.convert_request(request)
+            _log_raw("LLM_RAW_REQUEST", self._name, self._model_name, raw_request)
+            raw_response = self._client.chat.completions.create(**raw_request)
+            _log_raw("LLM_RAW_RESPONSE", self._name, self._model_name, raw_response)
+            _log_chat_completion(self._name, self._model_name, raw_response)
+            return self.convert_response(raw_response)
         except Exception as e:
-            logger.exception(f"[AIProvider.chat]: Exception while communicating with LLM: {e}")
-            return ""
-
-    def _clean_text(self, text: str) -> str:
-        """Unescape special characters."""
-        return text.replace("_quote_", '"').replace("_apostrophe_", "'").replace("</arg_value>", " ") \
-                    .replace("</tool_call>", " ").replace("<arg_value>", " ").replace("<tool_call>", " ")
+            error = f"Exception while communicating with LLM: {e}"
+            logger.exception(f"[AIProvider.chat]: {error}")
+            return LLMResponse().with_error(error)
 
     def stop(self) -> None:
         self._client.close()

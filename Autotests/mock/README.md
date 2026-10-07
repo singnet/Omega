@@ -37,10 +37,10 @@ Notes:
 - `TEST_SERVER_IP=172.17.0.1` is the host's docker-bridge address used by both the mock LLM provider and the test channel client.
 - The container is created with the name `omega` (the script default).
 
-Wait until the agent loop is up. The first runtime `CHARS_SENT:` line (with a byte count after the colon) in the container log marks the end of `initChannels` / `initMemory` and the start of real iterations; the bare `CHARS_SENT:` string also appears earlier as part of the MeTTa source dump, so match on the numeric form to avoid a premature exit:
+Wait until the agent loop is up. The first runtime `iteration 1` line (with a byte count after the colon) in the container log marks the end of `initChannels` / `initMemory` and the start of real iterations; the bare `iteration` string also appears earlier as part of the MeTTa source dump, so match on the numeric form to avoid a premature exit:
 
 ```
-until docker logs omega 2>&1 | grep -qE "CHARS_SENT: [0-9]+"; do sleep 2; done
+until docker logs omega 2>&1 | grep -qE "iteration 1"; do sleep 2; done
 ```
 
 ## 4. Configure the test environment
@@ -305,7 +305,7 @@ Four-step pipeline: search NY weather → write `w.txt` with the forecast → wr
 Verifies the one-iteration carry of `LAST_SKILL_USE_RESULTS`. Output of a skill call in turn N is exposed to the LLM at turn N+1 via this prompt section. The test does not require the agent to "behave intelligently"; it confirms the carry exists.
 
 - Mock answer (turn 1): `(metta "(+ 1 1)")`.
-- Checks: the docker log line `CHARS_SENT:` for the next iteration contains a `LAST_SKILL_USE_RESULTS` section that reflects the metta output.
+- Checks: the docker log line `REQUEST:` for the next iteration contains a last tool call section that reflects the metta output.
 
 ### 26. test_memory_history_byte_window_truncation_mock.py
 
@@ -327,7 +327,7 @@ A `(pin ...)` emitted in turn 1 must land in `history.metta` and remain inside t
 Negative test: a `(pin ...)` emitted within an iteration is NOT visible inside that same iteration's HISTORY context. The prompt is assembled before skill evaluation, so the pin block, written by `addToHistory` at the end of the iteration, only enters HISTORY at the next prompt-build.
 
 - Mock answer: `(pin "<marker>")` followed by a `(send ...)`.
-- Checks: the `CHARS_SENT` line carrying the PROMPT for the iteration that contained the pin does NOT contain the pin's unique marker; the next iteration's `CHARS_SENT` line does.
+- Checks: the `REQUEST` line carrying the PROMPT for the iteration that contained the pin does NOT contain the pin's unique marker; the next iteration's `REQUEST` line does.
 
 ### 29. test_transition_episodes_after_eviction_mock.py
 

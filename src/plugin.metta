@@ -12,8 +12,7 @@
    (py-call (plugin.loadPythonPlugin $name $location)))
 
 (= (loadPlugin (metta $name $location))
-   (let True (atom-string $location $locationstr)
-       (loadMettaPlugin $name $locationstr)))
+   (loadMettaPlugin $name $location))
 
 (= (loadMettaPlugin $name $location)
    (let $rc1

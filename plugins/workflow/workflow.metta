@@ -15,7 +15,7 @@
          (if (exists-directory (pluginWorkflowMemoryDir))
            (progn
              (log INFO "workflow-plugin" "Adding plugin's skills")
-             (add-skill workflow-load-instructions "Load an existing workflow instructions into the active context" (workflow_name_in_quotes))
+             (add-skill workflow-load-instructions "Load an existing workflow instructions into the active context" (workflow_name))
              (add-skill workflow-unload-instructions "Unload active workflow from the active context" ())
              (let $workflows (join (newline) (cons-atom "Available workflows: " (workflow-list-available)))
                (add-prompt-extension workflows-available $workflows))
@@ -54,19 +54,23 @@
                      (progn
                        (add-prompt-extension workflow_active_instructions (active-instructions $content))
                        (add-workflow-skills $name)
+                       (change-state! &workflow_active_name $name)
                        (send (strings-concat ("Loaded workflow: " $name
                                      ". Instructions active in context until completion.")))
-                        (appendToHistory  ((get_time_as_string) (newline)
-                            (strings-concat ("Workflow skills loaded: " $name)) (newline)))
-                       ))))))
+                       (addToHistory (strings-concat ("Workflow skills loaded: " $name)))
+                     ))))))
 
 (= (workflow-unload-instructions)
-   (progn (remove-prompt-extension workflow_active_instructions)
+   (let $name (get-state &workflow_active_name)
+     (if (== $name "")
+       (send "No active workflow is loaded")
+       (progn
+          (remove-prompt-extension workflow_active_instructions)
           (unload-workflow-skills)
+          (change-state! &workflow_active_name "")
           (send (strings-concat ("Unloaded workflow: " $name)))
-          (appendToHistory  ((get_time_as_string) (newline)
-               (strings-concat ("Workflow skills unloaded: " $name)) (newline)))
-          ))
+          (addToHistory (strings-concat ("Workflow skills unloaded: " $name)))
+       ))))
 
 (= (active-instructions $content)
    (strings-concat (" ACTIVE_WORKFLOW_INSTRUCTIONS: " $content
