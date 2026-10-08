@@ -78,6 +78,7 @@ if error:
 PY
 
 bootstrap() {
+ensure_launcher_matches_image || return 1
 
 # Create temporary files
 tmp_config_file="$(mktemp)"
@@ -623,16 +624,117 @@ start
 
 }
 
-version() {
-    local script_dir
-    local repo_root
+_trim() {
+    local value="${1-}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    printf '%s' "$value"
+}
 
-    script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+bare_omega_version() {
+    local script_path script_dir repo_root
+
+    # A piped `curl | bash` has no script file. Do not treat the working
+    # directory, or a helper.py above it, as the checkout.
+    script_path="${BASH_SOURCE[0]}"
+    if [[ ! -f "$script_path" ]]; then
+        return 0
+    fi
+    script_dir="$(cd -- "$(dirname -- "$script_path")" && pwd)"
     repo_root="$(cd -- "${script_dir}/.." && pwd)"
-    (
-        cd -- "$repo_root"
-        python3 -c 'from src.helper import omega_version; print(omega_version())'
-    )
+    if [[ -e "${repo_root}/.git" ]]; then
+        git -C "$repo_root" describe --tags --dirty --always 2>/dev/null || true
+        return 0
+    fi
+    if [[ -f "${repo_root}/version" ]]; then
+        cat "${repo_root}/version"
+    fi
+}
+
+strip_legacy_version_prefix() {
+    local version="$1"
+    local prefix
+    for prefix in "Omega version=" "OmegaClaw version="; do
+        if [[ "$version" == "$prefix"* ]]; then
+            version="${version#"$prefix"}"
+            version="$(_trim "$version")"
+            break
+        fi
+    done
+    printf '%s' "$version"
+}
+
+version() {
+    local bare
+    bare="$(_trim "$(bare_omega_version 2>/dev/null || true)")"
+    bare="${bare%$'\r'}"
+    bare="$(strip_legacy_version_prefix "$bare")"
+    if [[ -z "$bare" || "$bare" == "unknown" || "$bare" == "Omega unknown" ]]; then
+        printf '%s\n' "Omega unknown"
+    else
+        printf 'Omega version=%s\n' "$bare"
+    fi
+}
+
+strip_dirty_suffix() {
+    local version="$1"
+    if [[ "$version" == *-dirty ]]; then
+        version="${version%-dirty}"
+    fi
+    printf '%s' "$version"
+}
+
+comparable_omega_version() {
+    local version
+    version="$(_trim "${1-}")"
+    version="${version%$'\r'}"
+    version="$(strip_legacy_version_prefix "$version")"
+    if [[ -z "$version" || "$version" == "unknown" || "$version" == "Omega unknown" ]]; then
+        printf ''
+        return 0
+    fi
+    strip_dirty_suffix "$version"
+}
+
+read_image_omega_version() {
+    local raw="" path
+    for path in /PeTTa/repos/Omega/version /PeTTa/repos/OmegaClaw-Core/version; do
+        raw="$(docker run --rm --entrypoint cat "${image}" "$path" 2>/dev/null || true)"
+        raw="$(_trim "$raw")"
+        if [ -n "$raw" ]; then
+            printf '%s' "$raw"
+            return 0
+        fi
+    done
+}
+
+ensure_launcher_matches_image() {
+    local script_version image_version
+    script_version="$(comparable_omega_version "$(bare_omega_version 2>/dev/null || true)")"
+    if [ -z "$script_version" ]; then
+        echo "Could not determine the launcher script version; skipping version check." >&2
+        echo "Use the same tag for scripts/omega and the Docker image." >&2
+        return 0
+    fi
+
+    image_version="$(comparable_omega_version "$(read_image_omega_version)")"
+    if [ -z "$image_version" ]; then
+        echo "Could not determine the Docker image version; skipping version check." >&2
+        echo "Use the same tag for scripts/omega and the Docker image." >&2
+        return 0
+    fi
+
+    if [[ "$script_version" != "$image_version" ]]; then
+        cat >&2 <<EOF
+The launcher script and Docker image versions do not match.
+  Script: Omega version=${script_version}
+  Image (${image}): Omega version=${image_version}
+
+Update the script or the image so both are the same tag/commit. For example:
+  curl -fsSL https://github.com/singnet/Omega/raw/refs/tags/<tag>/scripts/omega | bash -s -- singularitynet/omega:<tag>
+EOF
+        return 1
+    fi
 }
 
 help() {
@@ -956,6 +1058,7 @@ start() {
     fi
 
     docker pull "${image}" 2>/dev/null || true
+    ensure_launcher_matches_image || return 1
 
     if [ -n "${memory_transfer_dir}" ]; then
         if ! docker run --rm --user 65534:65534 --group-add "${memory_transfer_gid}" --entrypoint /bin/sh \

@@ -150,7 +150,7 @@ def test_transfer_exposes_runtime_omega_version(handler, monkeypatch):
     package.MemoryTransfer = FakeTransfer
     monkeypatch.setitem(sys.modules, "memory_portability", package)
     monkeypatch.setattr(handler, "create_memory_store", lambda: "configured-store")
-    monkeypatch.setattr(handler, "omega_version", lambda: "Omega version=v1.2.3")
+    monkeypatch.setattr(handler, "omega_version", lambda: "v1.2.3")
     handler._transfer = None
 
     transfer = handler._get_transfer()
@@ -159,7 +159,7 @@ def test_transfer_exposes_runtime_omega_version(handler, monkeypatch):
     assert created == [{
         "transfer_dir": handler._TRANSFER_DIR,
         "store": "configured-store",
-        "omega_version": "Omega version=v1.2.3",
+        "omega_version": "v1.2.3",
     }]
 
 
@@ -352,7 +352,7 @@ def test_export_is_allowed_for_asicloud_embeddings(handler, monkeypatch):
     monkeypatch.setitem(sys.modules, "memory_portability", package)
     monkeypatch.setenv("EMBEDDING_PROVIDER", "Local")
     monkeypatch.setenv("OMEGA_VERSION", "unset")
-    monkeypatch.setattr(handler, "omega_version", lambda: "Omega version=test")
+    monkeypatch.setattr(handler, "omega_version", lambda: "test")
     monkeypatch.setattr(handler, "create_memory_store", lambda: "configured-store")
     monkeypatch.setattr(
         handler,

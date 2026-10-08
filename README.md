@@ -90,6 +90,12 @@ To restart the Omega Docker container:
 docker start omega
 ```
 
+The `scripts/omega` launcher and the Docker image must be the same version.
+`scripts/omega start` (and the interactive bootstrap) compare the host script
+version with the version baked into the image and abort when both are known
+and differ. A `curl | bash` install has no checkout, so that path warns and
+continues. Use the same git tag for a checkout and its image.
+
 ### Memory portability
 
 Memory export is disabled by default. See the [memory portability reference](./docs/reference-memory-portability.md)
