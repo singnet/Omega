@@ -63,12 +63,12 @@ def _log_responses_completion(provider: str, model: str, response) -> None:
     )
     logger.info(line)
 
-def _llm_empty_response_tool_call(response_id) -> LLMToolCall:
+def _llm_empty_response_tool_call() -> LLMToolCall:
     """Return an explanatory message as a MeTTa `send` command when the LLM
     spends the entire output token budget on reasoning and returns no content.
     """
     return (LLMToolCall().with_name("send")
-            .with_id(f"{response_id}#{uuid.uuid4().hex}")
+            .with_id(f"call_{uuid.uuid4().hex}")
             .add_argument("content", LLM_EMPTY_RESPONSE_MESSAGE))
 
 def _split_system_user(content: str) -> Tuple[str, str]:
@@ -213,7 +213,7 @@ class AIProvider(AbstractAIProvider):
             logger.warning("LLM returned an empty response")
             finish_reason = getattr(choice, "finish_reason", None)
             if finish_reason == "length":
-                response.add_tool_call(_llm_empty_response_tool_call(raw.id))
+                response.add_tool_call(_llm_empty_response_tool_call())
             return response
 
         for tool_call in message.tool_calls:

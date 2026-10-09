@@ -135,7 +135,7 @@ class OpenAIProviderImpl(llm.AIProvider):
             incomplete_details = getattr(raw, "incomplete_details", None)
             incomplete_reason = getattr(incomplete_details, "reason", None)
             if incomplete_reason == "max_output_tokens":
-                response.add_tool_call(llm._llm_empty_response_tool_call(raw.id))
+                response.add_tool_call(llm._llm_empty_response_tool_call())
 
         return response
 
