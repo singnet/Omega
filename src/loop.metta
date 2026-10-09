@@ -118,7 +118,7 @@
                                              (let ($callid $s) (superpose $resp)
                                                (let $result
                                                  (if (HandleError $s $error) $error
-                                                   (let $rc (catch (let $R (eval $s) (py-call (helper.normalize_string $R))))
+                                                   (let $rc (catch (let $R (case (eval $s) ((Empty "") ($RR $RR))) (py-call (helper.normalize_string $R))))
                                                      (if (HandleError $rc $error) $error (strings-concat ("SUCCESS, RETURN: " $rc)))))
                                                  (progn
                                                    ($_ (log INFO "loop" (COMMAND_RETURN: ($s $result))))

@@ -60,3 +60,5 @@
          (heartbeat 1)
          (get-state &test_heartbeat_counter))
        0)
+
+!(test (read-file "does-not-exist") (empty))
