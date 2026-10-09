@@ -71,7 +71,7 @@ class FileSystemPolicy:
                              | AccessFs.REMOVE_DIR | AccessFs.MAKE_FIFO
                              | AccessFs.MAKE_SOCK)
     READ_WRITE_FILE_ACCESS = (AccessFs.READ_FILE | AccessFs.WRITE_FILE |
-                              AccessFs.TRUNCATE)
+                              AccessFs.TRUNCATE | AccessFs.IOCTL_DEV)
 
     def __init__(self):
         self._compatibility = LandLockCompatibility.BEST_EFFORT
@@ -116,11 +116,33 @@ class FileSystemPolicy:
         self._read_only = [Path(f'{p}') for p in ro]
         self._read_write = [Path(f'{p}') for p in rw]
 
+    @staticmethod
+    def _existing_paths(paths: list[Path]) -> list[Path]:
+        """Drop policy paths that do not exist on a host machine.
+
+        Landlock cannot add a rule for a missing path, and the policy lists
+        platform-specific paths such as GPU device nodes that exist only on
+        some host machines.
+
+        Args:
+            paths: Paths listed in the policy.
+
+        Returns:
+            Paths that exist on a host machine.
+        """
+        existing = [p for p in paths if p.exists()]
+        missing = [str(p) for p in paths if not p.exists()]
+        if missing:
+            logger.info(f"Skipped missing policy paths: {missing}")
+        return existing
+
     def apply(self):
-        rod = list(filter(lambda p: p.is_dir(), self._read_only))
-        rof = list(filter(lambda p: not p.is_dir(), self._read_only))
-        rwd = list(filter(lambda p: p.is_dir(), self._read_write))
-        rwf = list(filter(lambda p: not p.is_dir(), self._read_write))
+        ro = self._existing_paths(self._read_only)
+        rw = self._existing_paths(self._read_write)
+        rod = list(filter(lambda p: p.is_dir(), ro))
+        rof = list(filter(lambda p: not p.is_dir(), ro))
+        rwd = list(filter(lambda p: p.is_dir(), rw))
+        rwf = list(filter(lambda p: not p.is_dir(), rw))
 
         strict = self._compatibility == LandLockCompatibility.HARD_REQUIREMENT
         Landlock(strict=strict) \
