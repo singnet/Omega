@@ -1,6 +1,7 @@
 import config
 import logging
 from typing import List
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -260,6 +261,9 @@ def _validate_response(request: LLMRequest, response: LLMResponse) -> LLMRespons
             if not parameter.name in call.arguments:
                 call.set_error(f"Call tool parameter is not set: tool: {call.name!r}, parameter: {parameter.name!r}")
                 break
+            if not isinstance(call.arguments[parameter.name], str):
+                call.set_error(f"Call tool parameter is not a string: tool: {call.name!r}, parameter: {parameter.name!r}")
+                break
     return response
 
 def getTools(skills):
@@ -330,12 +334,14 @@ def llmToolCallToSExpr(call: LLMToolCall):
                 sexpr = sexpr + f"\"{arg}\" "
     else:
         for arg in call.arguments.values():
+            if not isinstance(arg, str):
+                arg = json.dumps(arg, ensure_ascii=False)
             arg = arg.translate(ESCAPE)
             sexpr = sexpr + f"\"{arg}\" "
 
     sexpr = sexpr[:-1] + ")"
     if call.is_error():
-        sexpr = f"(Error {sexpr} \"{call.error}\")"
+        sexpr = f"(Error {sexpr} \"{str(call.error).translate(ESCAPE)}\")"
     return f"({call.id} {sexpr})"
 
 def llmResponseToSExpr(response: LLMResponse) -> str:
