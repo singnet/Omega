@@ -26,7 +26,6 @@ No meaningful return value. Used for its side effect.
 ```
 
 ### Notes / Limits
-- **Deduplication:** `send` silently drops the call if `message` is identical to the previous one (`&lastsend` state). Change the text to send a near-duplicate.
 - Channel selection is set at `initChannels` time via `commchannel`.
 
 ---
