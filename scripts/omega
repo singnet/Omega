@@ -950,6 +950,21 @@ start() {
     memory_transfer_env=()
     memory_import_env=()
     memory_export_option=()
+    embedding_token_env=()
+
+    case "${embeddingprovider}" in
+        OpenAI) emb_token_var="OPENAI_API_KEY" ;;
+        ASICloud) emb_token_var="ASI_API_KEY" ;;
+        *) emb_token_var="" ;;
+    esac
+
+    if [[ -n "${emb_token_var}" && "${emb_token_var}" != "${api_token_var}" ]]; then
+        if [[ -z "${!emb_token_var:-}" ]]; then
+            echo "${emb_token_var} is not set (required by embedding provider ${embeddingprovider})" >&2
+            return 1
+        fi
+        embedding_token_env=(-e "${emb_token_var}=${!emb_token_var}")
+    fi
 
     if [ -n "${log_config_path}" ]; then
         if [ ! -f "${log_config_path}" ]; then
@@ -1018,6 +1033,7 @@ start() {
             ${memory_transfer_volume[@]+"${memory_transfer_volume[@]}"}
             ${memory_transfer_env[@]+"${memory_transfer_env[@]}"}
             -e "${api_token_var}"="${api_token}"
+            ${embedding_token_env[@]+"${embedding_token_env[@]}"}
             -e "TG_BOT_TOKEN=${TG_BOT_TOKEN:-}"
             -e "SL_BOT_TOKEN=${SL_BOT_TOKEN:-}"
             -e "OMEGA_OPENCLAW_TOKEN=${OMEGA_OPENCLAW_TOKEN:-}"
