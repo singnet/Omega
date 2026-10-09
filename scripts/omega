@@ -651,6 +651,8 @@ help() {
     echo -e "\t-p <provider> set LLM API provider (default is ASICloud)."
     echo -e "\t              Pass API token via environment variable."
     echo -e "\t-m <model> set LLM model to use with provider (default depends on provider)."
+    echo -e "\t-e <embedding provider> set embedding provider: Local|OpenAI|ASICloud (default depends on provider)."
+    echo -e "\t              Can also be set via EMBEDDING_PROVIDER environment variable."
     echo -e "\t-u <LLM API url> set LLM API URL for the OpenAIAPI provider"
     echo -e "\t-g <OpenClaw Gateway url> enable the openclaw plugin against this Gateway"
     echo -e "\t              Pass the Gateway token via OMEGA_OPENCLAW_TOKEN"
@@ -694,6 +696,7 @@ options() {
     OMEGA_OPENCLAW_TOKEN="${OMEGA_OPENCLAW_TOKEN:-}"
     commchannel=irc
     log_config_path=""
+    embedding_override="${EMBEDDING_PROVIDER:-}"
     memory_transfer_dir=""
     memory_transfer_gid=""
     memory_import_file=""
@@ -721,7 +724,8 @@ options() {
             -d?*) image=${1:2}; shift; continue;;
             -l?*) log_config_path=${1:2}; shift; continue;;
             -m?*) model=${1:2}; shift; continue;;
-            -s|-t|-p|-u|-g|-c|-d|-l|-m|--memory-transfer-dir|--memory-transfer-gid|--memory-import|--memory-mode)
+            -e?*) embedding_override=${1:2}; shift; continue;;
+            -s|-t|-p|-u|-g|-c|-d|-l|-m|-e|--memory-transfer-dir|--memory-transfer-gid|--memory-import|--memory-mode)
                 require_option_value "${1}" "${2:-}" || return 1
                 ;;
         esac
@@ -735,6 +739,7 @@ options() {
             -d) image=${2}; shift 2;;
             -l) log_config_path=${2}; shift 2;;
             -m) model=${2}; shift 2;;
+            -e) embedding_override=${2}; shift 2;;
             --memory-transfer-dir)
                 memory_transfer_dir="${2}"
                 shift 2
@@ -804,6 +809,14 @@ options() {
            return 1
            ;;
     esac
+    if [ -n "${embedding_override}" ]; then
+        case "${embedding_override}" in
+            Local|OpenAI|ASICloud) embeddingprovider="${embedding_override}" ;;
+            *) echo "Unsupported embedding provider: ${embedding_override}, use Local, OpenAI or ASICloud" >&2
+               return 1
+               ;;
+        esac
+    fi
     if [[ -n "${!api_token_var:-}" ]]; then
         api_token="${!api_token_var}"
     else
@@ -937,6 +950,21 @@ start() {
     memory_transfer_env=()
     memory_import_env=()
     memory_export_option=()
+    embedding_token_env=()
+
+    case "${embeddingprovider}" in
+        OpenAI) emb_token_var="OPENAI_API_KEY" ;;
+        ASICloud) emb_token_var="ASI_API_KEY" ;;
+        *) emb_token_var="" ;;
+    esac
+
+    if [[ -n "${emb_token_var}" && "${emb_token_var}" != "${api_token_var}" ]]; then
+        if [[ -z "${!emb_token_var:-}" ]]; then
+            echo "${emb_token_var} is not set (required by embedding provider ${embeddingprovider})" >&2
+            return 1
+        fi
+        embedding_token_env=(-e "${emb_token_var}=${!emb_token_var}")
+    fi
 
     if [ -n "${log_config_path}" ]; then
         if [ ! -f "${log_config_path}" ]; then
@@ -1005,6 +1033,7 @@ start() {
             ${memory_transfer_volume[@]+"${memory_transfer_volume[@]}"}
             ${memory_transfer_env[@]+"${memory_transfer_env[@]}"}
             -e "${api_token_var}"="${api_token}"
+            ${embedding_token_env[@]+"${embedding_token_env[@]}"}
             -e "TG_BOT_TOKEN=${TG_BOT_TOKEN:-}"
             -e "SL_BOT_TOKEN=${SL_BOT_TOKEN:-}"
             -e "OMEGA_OPENCLAW_TOKEN=${OMEGA_OPENCLAW_TOKEN:-}"
