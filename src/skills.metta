@@ -145,5 +145,6 @@
 !(add-skill send "To send a message to the user but keep yourself very brief." (content))
 !(add-skill websearch "Search the internet for content." (content))
 !(add-skill version "To get the Omega version number" ())
+!(add-skill nop "Perform no action." ())
 !(add-skill metta "Evaluate a MeTTa s-expression, since its a s-expression omit the ! in the beginning. Use (add-atom &persistent X) to add X to space, same for remove-atom." (sexpression))
 ; TODO add load-plugin/unload-plugin skills
