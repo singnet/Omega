@@ -35,6 +35,7 @@ This resolves the value through the Python configuration layer, using command-li
 | `chromaDbPath` | `./chroma_db` | ChromaDB persistence directory used for memory backup and restore. |
 | `embeddingprovider` | `Local` | `Local` (Python-side model), or the id of a provider that serves an OpenAI-compatible `/embeddings` endpoint — `OpenAI` and `ASICloud` are known to. The gateway supplies that provider's key. |
 | `embeddingModel` | empty | Model asked of a non-`Local` `embeddingprovider`. Empty means the provider default: `text-embedding-3-large` for `OpenAI`, `WhereIsAI/UAE-Large-V1` for `ASICloud`. |
+| `embeddingBatchSize` | `32` | Positive integer: maximum texts per cloud embedding request during runtime knowledge loading. Lower it for providers with smaller request limits. The default keeps valid OpenAI inputs below the 300,000-token request limit (32 × 8192 = 262,144 tokens). Larger values must fit the provider's input-count and total-token limits. This does not split or truncate individual texts that exceed the model's context limit. |
 
 ## Channels (`src/channels.metta`, `initChannels`)
 

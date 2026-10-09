@@ -140,6 +140,16 @@ def _chunk_markdown(text, filename):
 
 def cloud_embed_batch(texts):
     """Embed a list of texts via an OpenAI-compatible API. Returns list of float vectors."""
+    if not texts:
+        return []
+
+    # 32 valid OpenAI inputs use at most 32 * 8192 = 262144 tokens,
+    # below the 300000-token request limit. Other providers can use a smaller cap.
+    batch_size = config_get_by_key("embeddingBatchSize", 32)
+    if not re.fullmatch(r"[1-9][0-9]*", str(batch_size).strip()):
+        raise ValueError("embeddingBatchSize must be a positive integer")
+    batch_size = int(batch_size)
+
     provider = str(config_get_by_key("embeddingprovider", "OpenAI"))
     model = embedding_model(provider, config_get_by_key("embeddingModel", ""))
     proxy_url = config_get_by_key("GATEWAY_URL")
@@ -147,12 +157,17 @@ def cloud_embed_batch(texts):
         client = openai.OpenAI(base_url=f"{proxy_url.rstrip('/')}/{provider.lower()}/", api_key="unused")
     else:
         client = openai.OpenAI()
+    embeddings = []
     try:
-        resp = client.embeddings.create(model=model, input=texts)
+        for start in range(0, len(texts), batch_size):
+            resp = client.embeddings.create(
+                model=model, input=texts[start:start + batch_size]
+            )
+            embeddings.extend(item.embedding for item in resp.data)
     except Exception as e:
         logger.error(f"Embedding request failed: provider={provider} model={model}: {e}")
         raise RuntimeError(f"Embedding request failed: {e}") from e
-    return [item.embedding for item in resp.data]
+    return embeddings
 
 
 def cloud_embed(text):
