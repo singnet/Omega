@@ -23,7 +23,7 @@ docker build -t omega:mock .
 ## 3. Start the container with the Test provider
 
 The container connects back to the host on TCP port 9765 to reach the mock LLM controller.
-`TEST_API_KEY` must hold the host IP that is reachable from inside the container. Under the
+`TEST_SERVER_IP` must hold the host IP that is reachable from inside the container. Under the
 default Docker bridge this is `172.17.0.1`.
 
 ```
@@ -37,7 +37,7 @@ docker run -d -it \
   --tmpfs /tmp:size=64m,mode=1777,exec \
   --tmpfs /run:size=16m,mode=755 \
   --tmpfs /var/tmp:size=64m,mode=1777,exec \
-  -e TEST_API_KEY=172.17.0.1 \
+  -e TEST_SERVER_IP=172.17.0.1 \
   -e OMEGA_AUTH_SECRET=0000 \
   omega:mock \
   IRC_channel="#omega_mock" \
@@ -49,7 +49,7 @@ Notes:
 
 - `provider="Test"` selects the mock LLM dispatcher.
 - `embeddingprovider="Local"` keeps the embedding model in-process (no network call).
-- `TEST_API_KEY=172.17.0.1` is the host's docker-bridge address.
+- `TEST_SERVER_IP=172.17.0.1` is the host's docker-bridge address.
 - `OMEGA_AUTH_SECRET=0000` matches the value the test harness sends as `auth 0000`.
 - The IRC channel can be any unique string; pick one not used by another concurrent run.
 
@@ -90,10 +90,11 @@ docker volume rm omega-mock-memory
 
 ## Tests description
 
-All seven tests exercise the agent's memory machinery (working memory via `pin`, long-term
-memory via `remember`, history window, episodes lookup) using deterministic mock-LLM answers.
-Each test sends one or more prompts via IRC, registers a fixed answer for each prompt, and
-verifies the resulting skill calls and side effects (`history.metta`, ChromaDB, docker logs).
+All seven tests live in `Autotests/mock/` and exercise the agent's memory machinery (working
+memory via `pin`, long-term memory via `remember`, history window, episodes lookup) using
+deterministic mock-LLM answers. Each test sends one or more prompts over the test channel,
+registers a fixed answer for each prompt, and verifies the resulting tool calls and side effects
+(`history.metta`, ChromaDB, docker logs).
 
 ### 1. test_memory_pin_window_visibility_mock.py
 
@@ -108,7 +109,7 @@ the trailing 30K-byte HISTORY window so the agent can see it on the next iterati
 ### 2. test_pin_invisible_within_iteration_mock.py
 
 Negative test that confirms a `(pin ...)` emitted inside iteration N is not present in the same
-iteration's PROMPT (the prompt is built before skill evaluation), and only enters HISTORY on
+iteration's PROMPT (the prompt is built before the tool calls run), and only enters HISTORY on
 iteration N+1.
 
 - Mock answer: `(pin "<marker>") (send "Pinned a progress code.")`. The marker is
@@ -131,7 +132,7 @@ marker stays in the file on disk but disappears from the slice fed back to the a
 
 ### 4. test_transition_episodes_after_eviction_mock.py
 
-Three-turn flow that confirms an evicted marker is still recoverable via the `episodes` skill
+Three-turn flow that confirms an evicted marker is still recoverable via the `episodes` tool
 (timestamp-based scan of `history.metta`).
 
 - Turn 1 mock answer: `(send "<BEACON>")`; the host captures `seed_time` immediately before
@@ -150,7 +151,7 @@ candidates; turn 2 commits the same set via `remember`. ChromaDB grows by exactl
 - Turn 1 mock answer: `(pin "<marker>: candidates A, B, C") (send "Pinned <marker>: A, B, C.")`.
 - Turn 2 mock answer: `(remember "<marker>: candidates A, B, C") (send "Committed <marker> to
   long-term memory.")`.
-- Checks: both skill calls landed with the same marker, and `chroma.sqlite3` embeddings count
+- Checks: both tool calls landed with the same marker, and `chroma.sqlite3` embeddings count
   rose from N to N+1.
 
 ### 6. test_transition_metta_to_remember_mock.py
@@ -168,7 +169,7 @@ one vector.
 
 ### 7. test_last_skill_results_visible_next_turn_mock.py
 
-Verifies the LAST_SKILL_USE_RESULTS carry: results of skill calls in iteration N appear in the
+Verifies the LAST_SKILL_USE_RESULTS carry: results of tool calls in iteration N appear in the
 assembled PROMPT for iteration N+1.
 
 - Mock answer: `(metta "(quote <sentinel>)") (send "computed")`. The sentinel is placed inside

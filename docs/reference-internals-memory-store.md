@@ -4,9 +4,9 @@ Omega uses a **three-tier memory architecture**. Each tier has distinct semantic
 
 ## Overview
 
-| Tier | Skill | Persistence | Role |
+| Tier | Tool | Persistence | Role |
 |---|---|---|---|
-| 1. Working memory | `pin` | Single slot, overwritten per cycle, session-local | Task state — "what am I doing right now?" |
+| 1. Working memory | `pin` | Kept in `memory/history.metta`, visible in `HISTORY` until newer entries push it out of the last `maxHistory` characters | Task state — "what am I doing right now?" |
 | 2. Long-term embedding memory | `remember` / `query` | Persistent across sessions | Accumulated knowledge, semantic recall |
 | 3. AtomSpace | `(metta ...)` | Per-invocation (fresh AtomSpace each `\|-` call) | Formal reasoning over truth-valued atoms |
 
@@ -18,9 +18,9 @@ Omega uses a **three-tier memory architecture**. Each tier has distinct semantic
 Holds the agent's current task state: what it is doing, what step comes next, what intermediate results matter.
 
 ### Characteristics
-- **Limited, volatile, constantly updated.**
-- Each cycle can overwrite the previous pin.
-- Does **not** persist across sessions.
+- **Limited and constantly updated.**
+- A new pin does not replace the previous one. Each pin is part of the reply that `addToHistory` appends to `memory/history.metta`.
+- Pins stay in that file across restarts, but the agent sees a pin only while it is inside the last `maxHistory` characters, which `getHistory` returns as `HISTORY`.
 - Analogous to human working memory.
 
 ### Use it for
@@ -85,7 +85,7 @@ The loader skips the step when the folder is missing, or when the folder exists 
 ### Use it for
 - Facts that must persist across sessions.
 - Verified, grounded premises (attach provenance in the atom body).
-- Accumulated user preferences, skills learned, lessons.
+- Accumulated user preferences, procedures learned, lessons.
 
 ### Do not use it for
 - Ephemeral scratchpad state — use `pin`.
@@ -168,7 +168,7 @@ They are complementary, not overlapping. Long-term memory *feeds* the AtomSpace 
 
 ## See also
 
-- [reference-skills-memory.md](./reference-skills-memory.md) — user-facing surface.
+- [reference-tools-memory.md](./reference-tools-memory.md) — user-facing surface.
 - [reference-configuration.md](./reference-configuration.md) — memory tunables.
 - [introduction.md#the-hybrid-thesis](./introduction.md#the-hybrid-thesis) — why this layout exists.
 - [tutorial-01-teaching-memories.md](./tutorial-01-teaching-memories.md) — hands-on use.
