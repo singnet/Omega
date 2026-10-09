@@ -850,36 +850,93 @@ options() {
     fi
 }
 
+remove_partly_copied_memory() {
+    local volume="$1"
+    local container="$2"
+    local label="$3"
+    local leftover
+    local holder
+    local holders=""
+
+    if ! docker volume inspect "${volume}" >/dev/null 2>&1; then
+        return 0
+    fi
+    for leftover in $(docker ps -aq --filter "label=${label}" --filter "volume=${volume}" 2>/dev/null); do
+        docker rm -f "${leftover}" >/dev/null 2>&1 || true
+    done
+    for holder in $(docker ps -a --filter "volume=${volume}" --format '{{.Names}}' 2>/dev/null); do
+        if [ "${holder}" != "${container}" ]; then
+            holders="${holders:+${holders} }${holder}"
+        fi
+    done
+    if [ -n "${holders}" ]; then
+        echo "Could not remove the partly copied volume ${volume}, it is used by containers: ${holders}. Remove them with 'docker rm -f ${holders}' and start again" >&2
+        return 1
+    fi
+    if docker container inspect "${container}" >/dev/null 2>&1 \
+        && docker rm -f "${container}" >/dev/null; then
+        echo "Removed container ${container}, it used the partly copied volume ${volume}"
+    fi
+    if ! docker volume rm "${volume}" >/dev/null; then
+        echo "Could not remove the partly copied volume ${volume}" >&2
+        return 1
+    fi
+}
+
 migrate_omegaclaw_memory() {
     local old_container="omegaclaw"
     local old_volume="omegaclaw-memory"
     local new_volume="omega-memory"
+    local new_container="omega"
+    local migration_label="omega.memory-migration"
     local memory_path="/PeTTa/repos/Omega/memory"
     local marker=".migrated-to-omega"
     local started_marker=".migration-started"
     local stopped_old_container=0
     local old_state
+    local new_state
 
-    if [ -n "${memory_import_file}" ] \
-        || ! docker volume inspect "${old_volume}" >/dev/null 2>&1; then
+    if ! docker volume inspect "${old_volume}" >/dev/null 2>&1; then
         return 0
     fi
-    if ! old_state=$(docker run --rm --entrypoint sh --volume "${old_volume}:/from:ro" "${image}" \
+    if ! old_state=$(docker run --rm --label "${migration_label}" --entrypoint sh --volume "${old_volume}:/from:ro" "${image}" \
         -c "if [ -e /from/${marker} ]; then echo migrated; elif [ -e /from/${started_marker} ]; then echo interrupted; fi"); then
         echo "Could not read the migration markers in ${old_volume}" >&2
         return 1
+    fi
+    if [ -n "${memory_import_file}" ]; then
+        if [ "${old_state}" = "interrupted" ]; then
+            echo "The last copy from ${old_volume} did not finish, the memory import replaces it"
+            remove_partly_copied_memory "${new_volume}" "${new_container}" "${migration_label}" || return 1
+            if ! docker run --rm --label "${migration_label}" --entrypoint sh --volume "${old_volume}:/from" "${image}" \
+                -c "rm -f /from/${started_marker}"; then
+                echo "Could not clear the migration marker in ${old_volume}" >&2
+                return 1
+            fi
+        fi
+        return 0
     fi
     case "${old_state}" in
         migrated)
             return 0
             ;;
         interrupted)
-            echo "The last copy from ${old_volume} did not finish, copying again"
-            if docker volume inspect "${new_volume}" >/dev/null 2>&1 \
-                && ! docker volume rm "${new_volume}" >/dev/null; then
-                echo "Could not remove the partly copied volume ${new_volume}" >&2
-                return 1
+            if docker volume inspect "${new_volume}" >/dev/null 2>&1; then
+                if ! new_state=$(docker run --rm --label "${migration_label}" --entrypoint sh \
+                    --volume "${old_volume}:/from:ro" --volume "${new_volume}:/to:ro" "${image}" \
+                    -c 'if [ -e /to/history.metta ]; then n=$(wc -c < /to/history.metta); if [ ! -e /from/history.metta ] || [ "$n" -gt "$(wc -c < /from/history.metta)" ] || ! head -c "$n" /from/history.metta | cmp -s - /to/history.metta; then echo kept; fi; fi'); then
+                    echo "Could not compare ${new_volume} with ${old_volume}" >&2
+                    return 1
+                fi
+                if [ "${new_state}" = "kept" ]; then
+                    echo "${new_volume} holds memory that is not a partial copy of ${old_volume}, for example an imported archive, so it was left as it was" >&2
+                    echo "To keep it, clear the marker: docker run --rm --entrypoint rm --volume ${old_volume}:/from ${image} /from/${started_marker}" >&2
+                    echo "To copy ${old_volume} again instead, remove it: docker rm -f ${new_container}; docker volume rm ${new_volume}" >&2
+                    return 1
+                fi
             fi
+            echo "The last copy from ${old_volume} did not finish, copying again"
+            remove_partly_copied_memory "${new_volume}" "${new_container}" "${migration_label}" || return 1
             ;;
         *)
             if docker volume inspect "${new_volume}" >/dev/null 2>&1; then
@@ -898,15 +955,15 @@ migrate_omegaclaw_memory() {
         echo "Stopped container ${old_container}"
     fi
 
-    if docker run --rm --entrypoint sh --volume "${old_volume}:/from" "${image}" \
+    if docker run --rm --label "${migration_label}" --entrypoint sh --volume "${old_volume}:/from" "${image}" \
             -c "date -u > /from/${started_marker}" \
         && docker volume create "${new_volume}" >/dev/null \
-        && docker run --rm --entrypoint sh --volume "${new_volume}:${memory_path}" "${image}" \
+        && docker run --rm --label "${migration_label}" --entrypoint sh --volume "${new_volume}:${memory_path}" "${image}" \
             -c "test -f ${memory_path}/prompt.txt" \
-        && docker run --rm --entrypoint sh \
+        && docker run --rm --label "${migration_label}" --entrypoint sh \
             --volume "${old_volume}:/from:ro" --volume "${new_volume}:/to" "${image}" \
             -c 'list=$(mktemp) && cd /from && find . -mindepth 1 -maxdepth 1 ! -name "prompt*.txt" ! -name tg_prompt.txt ! -name .migration-started > "$list" && while IFS= read -r entry; do rm -rf "/to/$entry" && cp -a "$entry" /to/ || exit 1; done < "$list"' \
-        && docker run --rm --entrypoint sh --volume "${old_volume}:/from" "${image}" \
+        && docker run --rm --label "${migration_label}" --entrypoint sh --volume "${old_volume}:/from" "${image}" \
             -c "date -u > /from/${marker}"; then
         echo "Memory copied. Carrying memory over is experimental, so keep the volume ${old_volume} until you have checked that the agent remembers what it knew. Then remove the old installation with 'docker rm ${old_container}' and 'docker volume rm ${old_volume}'"
         return 0
@@ -915,7 +972,7 @@ migrate_omegaclaw_memory() {
     echo "Could not copy memory from ${old_volume}, the old installation is left as it was" >&2
     if docker volume rm "${new_volume}" >/dev/null 2>&1 \
         || ! docker volume inspect "${new_volume}" >/dev/null 2>&1; then
-        docker run --rm --entrypoint sh --volume "${old_volume}:/from" "${image}" \
+        docker run --rm --label "${migration_label}" --entrypoint sh --volume "${old_volume}:/from" "${image}" \
             -c "rm -f /from/${started_marker}" >/dev/null 2>&1 || true
     else
         echo "Could not remove ${new_volume}, the next start will copy the memory again" >&2
