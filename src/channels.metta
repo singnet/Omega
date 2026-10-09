@@ -21,8 +21,6 @@
    (commChannelReceive))
 
 ;Send a message to all communication channels:
-!(change-state! &lastsend "")
 (= (send $msg)
-   (progn (change-state! &lastsend $msg)
-          (let $safemsg (string-replace $msg  "\n" "\\n")
-               (let $temp (cut) (commChannelSend $safemsg)))))
+   (let $safemsg (string-replace $msg  "\n" "\\n")
+        (let $temp (cut) (commChannelSend $safemsg))))
