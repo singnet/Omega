@@ -33,6 +33,11 @@ module. The plugin record has the following fields:
     `name` module is located. Can include `{REPO}` placeholder to designate the
     root folder of the Omega source repository.
 
+Python plugins loaded from a `location` share their module and state with
+normal imports when their `name` is available. Cached modules from the same
+file are reused. If the name conflicts with another importable module, that
+module is preserved and the plugin is accessed through Omega's registry.
+
 As an example of a MeTTa plugin one can look at the code of the [workflow
 plugin](/plugins/workflow/workflow.metta). As an example of a Python plugin
 one can look at the code of the [IRC communication channel](/channels/irc.py).
