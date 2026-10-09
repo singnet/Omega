@@ -117,11 +117,11 @@
                                        ($sexpr (collapse
                                              (let ($callid $s) (superpose $resp)
                                                (let $result
-                                                 (if (HandleError $s $error) $error
+                                                 (if (HandleError (quote $s) $error) $error
                                                    (let $rc (catch (let $R (case (eval $s) ((Empty "") ($RR $RR))) (py-call (helper.normalize_string $R))))
                                                      (if (HandleError $rc $error) $error (strings-concat ("SUCCESS, RETURN: " $rc)))))
                                                  (progn
-                                                   ($_ (log INFO "loop" (COMMAND_RETURN: ($s $result))))
+                                                   ($_ (log INFO "loop" (COMMAND_RETURN: ((quote $s) $result))))
                                                    (messagesAppend (llmToolCallResponseMessage role "tool" callid $callid content (last_chars $result (maxFeedback))))
                                                    (quote $s)))))))
                                        (if (or $msgnew  (not (== $sexpr ()))) (addToHistory $msg $sexpr $msgnew) _))

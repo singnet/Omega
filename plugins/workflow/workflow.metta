@@ -5,6 +5,7 @@
 
 (= (loadOmegaPlugin)
    (progn
+     (change-state! &workflow_active_name "")
      (configure pluginWorkflowInstructionsDir (joinPath ((projectRootDirectory) "plugins" "workflow" "instructions")))
      (if (not (exists-directory (pluginWorkflowInstructionsDir)))
        (Error (_loadOmegaPlugin) (strings-concat ("Instructions directory: " (pluginWorkflowInstructionsDir) " doesn't exist")))
@@ -45,30 +46,34 @@
 
 (= (instructionsDir) (get-existing-dir (pluginWorkflowInstructionsDir)))
 (= (workflow-load-instructions $name)
-   (if (not (valid-file-or-folder-name  $name))
-       (send (strings-concat ("ERROR: invalid workflow name: " $name)))
-       (let $path (joinPath ((instructionsDir) $name "SKILL.md"))
-            (if (not (exists-file $path))
-                (send (strings-concat ("ERROR: skill file not found: " $path)))
-                (let $content (read-file $path)
-                     (progn
-                       (add-prompt-extension workflow_active_instructions (active-instructions $content))
-                       (add-workflow-skills $name)
-                       (change-state! &workflow_active_name $name)
-                       (send (strings-concat ("Loaded workflow: " $name
-                                     ". Instructions active in context until completion.")))
-                     ))))))
+   (let $active (get-state &workflow_active_name)
+     (if (== $active "")
+       (if (not (valid-file-or-folder-name  $name))
+         (Error (quote (workflow-load-instructions $name)) (strings-concat ("ERROR: invalid workflow name: " $name)))
+         (let $path (joinPath ((instructionsDir) $name "SKILL.md"))
+           (if (not (exists-file $path))
+             (Error (quote (workflow-load-instructions $name)) (strings-concat ("ERROR: skill file not found: " $path)))
+             (let $content (read-file $path)
+               (progn
+                 (log INFO "workflow-plugin" (strings-concat ("Loading workflow instructions for: " $name)))
+                 (add-prompt-extension workflow_active_instructions (active-instructions $content))
+                 (add-workflow-skills $name)
+                 (change-state! &workflow_active_name $name)
+                 (send (strings-concat ("Loaded workflow: " $name
+                                        ". Instructions active in context until completion.")))
+                 )))))
+       (Error (quote (workflow-load-instructions $name)) (strings-concat ("ERROR: There is an active workflow: " $active ". Unload it before loading new one"))))))
 
 (= (workflow-unload-instructions)
    (let $name (get-state &workflow_active_name)
      (if (== $name "")
-       (send "No active workflow is loaded")
+       (Error (quote (workflow-unload-instructions)) "No active workflow is loaded")
        (progn
           (remove-prompt-extension workflow_active_instructions)
           (unload-workflow-skills)
           (change-state! &workflow_active_name "")
           (send (strings-concat ("Unloaded workflow: " $name)))
-       ))))
+          ))))
 
 (= (active-instructions $content)
    (strings-concat (" ACTIVE_WORKFLOW_INSTRUCTIONS: " $content
