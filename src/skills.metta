@@ -28,6 +28,11 @@
    (let $text (strings-concat ($description ": " $function " " (join " " $arguments)))
      (progn
        (log INFO "skills" (strings-concat ("Add skill: " $text)))
+       (if (== () (collapse (match &self (dynamic-skill $function $info) FOUND)))
+         ()
+         (progn
+           (log INFO "skill" "Re-add skill, removing previous instance")
+           (remove-skill $function)))
        (add-atom &self (dynamic-skill $function ($function $description $arguments))) )))
 
 ; Remove skill from the list of skills available to the agent.

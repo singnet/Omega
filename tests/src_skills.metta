@@ -8,11 +8,18 @@
 (= (commchannel) telegram)
 (= (memoryDirectory) (joinPath ((projectRootDirectory) "memory")))
 
+; used by prompt-extension
 !(import! &self ./src/loop)
 
 !(test (progn
          (add-skill test-skill "This is a test skill" (test_arg))
          (expression-count-item (getSkills) (test-skill "This is a test skill" (test_arg))))
+       1)
+
+!(test (progn
+         (add-skill test-skill-2 "This is a test skill" (test_arg))
+         (add-skill test-skill-2 "This is a test skill" (test_arg))
+         (expression-count-item (getSkills) (test-skill-2 "This is a test skill" (test_arg))))
        1)
 
 !(test (progn
