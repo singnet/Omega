@@ -28,6 +28,7 @@ mock/test_search_invalid_mock.py
 mock/test_search_weather_mock.py
 mock/test_skill_metta_mock.py
 mock/test_skill_pin_mock.py
+mock/test_tool_result_for_every_call_mock.py
 mock/test_transition_episodes_after_eviction_mock.py
 mock/test_transition_metta_to_remember_mock.py
 mock/test_transition_pin_to_remember_mock.py
@@ -40,5 +41,6 @@ test_wschat.py
 unit/test_fileio_verified_writes.py
 unit/test_fileio_verified_deletes.py
 unit/test_helper_parsing.py
+unit/test_llm_budget.py
 unit/test_openclaw_unit.py
 import_knowledge/test_import_knowledge.py

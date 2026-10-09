@@ -48,7 +48,7 @@ def test_run_create_dirs_telegram_mock(llm, tg):
         llm.set_answer(
             prompt,
             [
-                ("write-file", { "filename": f"{SCRIPT_PATH}", "content": f"#!/bin/bash\\nmkdir -p {mkdir_args}\\n" }),
+                ("write-file", { "filename": f"{SCRIPT_PATH}", "content": f"#!/bin/bash\nmkdir -p {mkdir_args}\n" }),
                 ("shell", { "cmd": f"chmod +x {SCRIPT_PATH}" }),
                 ("shell", { "cmd": f"sh {SCRIPT_PATH}" }),
             ],

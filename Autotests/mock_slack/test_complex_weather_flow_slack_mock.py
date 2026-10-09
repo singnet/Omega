@@ -60,7 +60,7 @@ def test_complex_weather_flow_slack_mock(llm, sl):
             prompt,
             [
                 ("write-file", { "filename": f"{WEATHER_TXT}", "content": f"{FORECAST_TEXT}" }),
-                ("write-file", { "filename": f"{SCRIPT_SH}", "content": f"#!/bin/bash\\ngrep -oE '[0-9]+' {WEATHER_TXT} | head -1 > {TEMP_ONLY}\\n" }),
+                ("write-file", { "filename": f"{SCRIPT_SH}", "content": f"#!/bin/bash\ngrep -oE '[0-9]+' {WEATHER_TXT} | head -1 > {TEMP_ONLY}\n" }),
                 ("shell", { "cmd": f"chmod +x {SCRIPT_SH}" }),
                 ("shell", { "cmd": f"sh {SCRIPT_SH}" }),
             ],

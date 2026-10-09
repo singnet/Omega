@@ -46,7 +46,7 @@ def test_run_create_dirs_mock(llm, comm):
         mkdir_args = " ".join(f"{TARGET_DIR}/{d}" for d in EXPECTED_DIRS)
         llm.set_answer(
             prompt,
-            [("write-file", { "filename": f"{SCRIPT_PATH}", "content": f"#!/bin/bash\\nmkdir -p {mkdir_args}\\n" }),
+            [("write-file", { "filename": f"{SCRIPT_PATH}", "content": f"#!/bin/bash\nmkdir -p {mkdir_args}\n" }),
              ("shell", { "cmd": f"chmod +x {SCRIPT_PATH}" }),
              ("shell", { "cmd": f"sh {SCRIPT_PATH}" })]
         )

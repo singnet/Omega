@@ -427,3 +427,12 @@ The delegation path is authenticated by Nginx rather than by the agent, checked 
 - Checks: the stub recorded at least one request whose `Authorization` header matched the token, and no request arrived without that header. Since the agent process never holds the token, a matching header can only have come from the proxy.
 
 The other half of this property - that `OMEGA_OPENCLAW_TOKEN` never reaches the agent process - belongs to `test_credentials_scrubbed_mock.py`, which reads the environment the agent dumps for itself. Do not check it with `dexec`: `docker exec` starts a new process from the container's own configuration, which does carry the token by design, so such a check fails while the scrubbing works correctly.
+
+## Tool call results
+
+### 41. test_tool_result_for_every_call_mock.py
+
+Each call of a model answer gets exactly one tool result in the next request, also when the skill fails without a value, as `read-file` of a missing file does. Anthropic and OpenAI reject a request with a call that has no result.
+
+- Mock answer: `[("read-file", {"filename": "/tmp/omega-missing-<run_id>.txt"}), ("send", {"content": "done <run_id>"})]`.
+- Checks: the `REQUEST:` line after the one carrying the prompt lists both calls in the assistant message and one tool result for each of them; the `send` result is its own, and the `read-file` result says the call returned no value.

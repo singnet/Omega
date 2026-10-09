@@ -1,4 +1,3 @@
-unit/test_llm_budget.py
 mock/test_complex_weather_flow_mock.py
 mock/test_git_push_to_remote_mock.py
 mock/test_memory_episode_mock.py
