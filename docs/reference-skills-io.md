@@ -1,6 +1,6 @@
 # Reference — I/O Skills
 
-Defined in `src/skills.metta`; the `shell` primitive is backed by `src/skills.pl`, the write skills by `src/fileio.py`.
+Defined in `src/skills.metta`; the `shell` primitive is backed by `src/skills.pl`, the write and delete skills by `src/fileio.py`.
 
 ---
 
@@ -149,6 +149,53 @@ read back from disk — or `APPEND-FAILED file=<path>: <error>` (e.g. when the f
 - Fails if the file does not exist (the skill checks existence first). Create it with `write-file` first if needed.
 - For files up to 160 bytes the `tail` snippet is empty (`head` plus `sha256` already cover the content); for files over 2 MB the hash is reported as `sha256=skipped(large)`.
 - A trailing newline is always added.
+
+---
+
+## `delete-file`
+
+### Signature
+```metta
+(delete-file "path")
+```
+
+### Purpose
+Delete a file and check afterward whether the path still exists. Implemented by
+`fileio.delete_file` in `src/fileio.py`.
+
+### Parameters
+- `path` — absolute or relative filesystem path to delete. Relative paths are resolved against the Omega process's current working directory.
+
+### Returns
+`DELETE-VERIFIED file=<path>` after removal if the existence check reports that
+the path is absent, or `DELETE-FAILED file=<path>: <reason>` on failure.
+The returned path matches the input as given.
+
+Failure reasons include:
+
+- `file does not exist` — the path does not exist, including as a symbolic link.
+- `path is a directory` — the path is a directory or a symbolic link to a directory.
+- The exception message from the removal operation, such as a permission error.
+- `file still exists after removal` — the post-removal check finds the path still present, for example if another process recreated it.
+
+### Examples
+```metta
+(write-file "/tmp/delete-file-example.txt" "temporary contents")
+(delete-file "/tmp/delete-file-example.txt")
+```
+
+After a successful write and deletion, the deletion result is:
+```text
+DELETE-VERIFIED file=/tmp/delete-file-example.txt
+```
+
+### Notes / Limits
+- Deletes immediately without confirmation or moving the file to a trash folder. There is no built-in undo.
+- Does not delete directories or recursively remove their contents.
+- Removes symbolic links to files and dangling symbolic links themselves, leaving their targets untouched. Symbolic links to directories are rejected.
+- Deleting an already missing path returns `DELETE-FAILED`, not a success result.
+- Use `get-io-policy` before deleting when the path is not known to be allowed; the target must be covered by a `read_write` path. Filesystem permissions and active security restrictions still apply.
+- Relay the returned verification result; do not claim success without `DELETE-VERIFIED`. Verification is a point-in-time check using `os.path.exists`, which follows symbolic links and does not detect dangling links recreated at the path.
 
 ---
 
