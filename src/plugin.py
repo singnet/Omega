@@ -77,7 +77,8 @@ def loadPythonPlugin(name, location):
     specified it imports "<location>/<name>.py" file. Imports <name> Python
     module otherwise. Calls "loadOmegaPlugin" function from the imported
     module. This is the point where plugin's code gets control and should
-    register appropriate callbacks."""
+    register appropriate callbacks. Repeated loads of the same module do not
+    call the entry point again."""
     global _plugins, _REPO
 
     mod = None
@@ -85,22 +86,44 @@ def loadPythonPlugin(name, location):
         logger.info(f"_initPythonPlugin: loading {name} plugin from PYTHONPATH using Python module loader")
         mod = importlib.import_module(name)
     else:
-        # adding location into sys.path to be able loading plugins which
-        # consist of multiple files
-        addLocationToPath(location)
         location = pathlib.Path(location.format(REPO=_REPO)).resolve()
         modpath = location.joinpath(f"{name}.py").resolve()
         logger.info(f"_initPythonPlugin: loading {name} plugin from {modpath} using Python module loader")
-        spec = importlib.util.spec_from_file_location(name, modpath)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
+        if name in sys.modules:
+            mod = sys.modules[name]
+            existing_path = getattr(mod, "__file__", None)
+            if existing_path is None or pathlib.Path(existing_path).resolve() != modpath:
+                _error("_initPythonPlugin", f"Plugin name '{name}' is already used by another module ({existing_path}); cannot load {modpath}")
 
-    if mod is not None:
-        _plugins[name] = PythonPlugin(mod)
-    else:
+        # Multi-file plugins need their folder available for sibling imports.
+        if str(location) not in sys.path:
+            addLocationToPath(str(location))
+        if mod is None:
+            spec = importlib.util.spec_from_file_location(name, modpath)
+            mod = importlib.util.module_from_spec(spec)
+            # Match normal import semantics, including imports during execution.
+            sys.modules[name] = mod
+            try:
+                spec.loader.exec_module(mod)
+            except BaseException:
+                if sys.modules.get(name) is mod:
+                    del sys.modules[name]
+                raise
+
+    if mod is None:
         _error("_initPythonPlugin", f"Couldn't find Python module {name}")
+
+    if name in _plugins:
+        if _plugins[name].mod is mod:
+            return
+        _error("_initPythonPlugin", f"Plugin name '{name}' is already registered with another module")
 
     if not hasattr(mod, "loadOmegaPlugin"):
         _error("_initPythonPlugin", f"No loadOmegaPlugin() function is implemented by plugin {name}")
     plugin_loader = getattr(mod, "loadOmegaPlugin")
-    plugin_loader()
+    _plugins[name] = PythonPlugin(mod)
+    try:
+        plugin_loader()
+    except BaseException:
+        del _plugins[name]
+        raise
