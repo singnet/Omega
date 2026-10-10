@@ -183,10 +183,12 @@ def test_missing_entrypoint_is_not_registered_as_loaded(plugin_file):
 
 
 def test_shipped_providers_preserve_openai_sdk(plugin_file, monkeypatch):
-    import openai
     import providers
 
-    sdk = openai
+    # The CI host has no provider SDKs; only module identity is under test.
+    sdk = types.ModuleType("openai")
+    sdk.OpenAI = type("OpenAI", (), {})
+    monkeypatch.setitem(sys.modules, "openai", sdk)
     monkeypatch.setattr(providers, "_llmProviderRegistry", {})
     monkeypatch.syspath_prepend(str(REPO_ROOT))
     for name in ("lib_llm_ext", "openaiapi", "asione", "openrouter", "omega_openai", "mockprovider"):
