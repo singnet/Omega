@@ -72,22 +72,22 @@ Ensure that you have [Docker installed](https://docs.docker.com/engine/install/)
 
 Run Omega using the next command:
 ```
-curl -fsSL https://github.com/singnet/Omega/raw/refs/tags/v0.1.19/scripts/omegaclaw | bash -s -- singularitynet/omega:v0.1.19
+curl -fsSL https://github.com/singnet/Omega/raw/refs/tags/v0.1.20/scripts/omega | bash -s -- singularitynet/omega:v0.1.20
 ```
 
 To run a specific version of Omega set version in `TAG` environment variable and run the following command:
 ```
-export TAG=<version>; curl -fsSL  https://github.com/singnet/Omega/raw/refs/tags/$TAG/scripts/omegaclaw | bash -s -- singularitynet/omegaclaw:$TAG
+export TAG=<version>; curl -fsSL  https://github.com/singnet/Omega/raw/refs/tags/$TAG/scripts/omega | bash -s -- singularitynet/omega:$TAG
 ```
 
 To stop the Omega Docker container:
 ```
-docker stop omegaclaw
+docker stop omega
 ```
 
 To restart the Omega Docker container:
 ```
-docker start omegaclaw
+docker start omega
 ```
 
 ### Memory portability
@@ -108,7 +108,7 @@ transfer_gid="$(stat -c %g "$HOME/omega-transfers")"
 scripts/omega start -d singularitynet/omega:<tag> -p OpenAI -t telegram \
   --memory-transfer-dir "$HOME/omega-transfers" \
   --memory-transfer-gid "$transfer_gid" \
-  --memory-import omegaclaw-memory-<timestamp>.tar.gz \
+  --memory-import omega-memory-<timestamp>.tar.gz \
   --memory-mode overwrite
 ```
 
