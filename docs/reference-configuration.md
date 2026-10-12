@@ -1,14 +1,14 @@
 # Reference — Configuration
 
-Every tunable in Omega is declared as `(= (name) (empty))` and later bound by a `configure` call inside an `init*` function. The `configure` helper in `src/utils.metta` is:
+Every tunable in Omega is declared as `(= (name) (empty))` and later bound by a `configure` call inside an `init*` function. The `configure` helper in `src/config.metta` is:
 
 ```metta
 (= (configure $name $default)
-   (let $value (argk $name $default)
+   (let $value (configGetByKey $name $default)
         (add-atom &self (= ($name) $value))))
 ```
 
-This reads a command-line override via `argk` (`name=value` on the MeTTa command line) if present, otherwise falls back to the default.
+This resolves the value through the Python configuration layer, using command-line overrides, environment variables, YAML configuration, and the caller's default in that order.
 
 ## Loop (`src/loop.metta`, `initLoop`)
 
@@ -74,6 +74,16 @@ Configuration values are resolved in this order: command-line `key=value`,
 `OMEGA_<KEY>` environment variable, `config/config.yaml`, then the caller's
 default. `TG_BOT_TOKEN` and `OMEGA_AUTH_SECRET` are read directly from the
 environment and must be placed before the `metta`/`petta` command.
+
+For numeric settings, unambiguous integer and floating-point command-line values
+are parsed as numbers: `maxFeedback=25000` and `sleepInterval=0.5` can be used in
+arithmetic. The caller's default determines the setting's type; when no default is
+provided, the YAML value is used. String settings and settings without a known
+type keep their CLI text unchanged, including `IRC_channel=123`,
+`IRC_channel=001`, and `OPENROUTER_SESSION_ID=123`.
+A bare argument remains a boolean flag, but a numeric setting requires
+`key=<number>`. For example,
+`maxFeedback` without a value raises an error naming the parameter when resolved.
 
 Telegram example:
 

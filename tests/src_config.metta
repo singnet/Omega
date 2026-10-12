@@ -20,6 +20,18 @@
 !(test (configGetByKey arg_env val_default) val_env)
 !(test (configGetByKey arg_notexist val_default) val_default)
 
+; Numeric CLI values must survive configure and Prolog arithmetic.
+!(cleanup)
+(= (command-line)
+   ("config=./tests/res/src_config_empty.yaml"
+    "maxFeedback=25000"
+    "sleepInterval=0.5"))
+!(initConfig)
+!(configure maxFeedback 50000)
+!(configure sleepInterval 1)
+!(test (+ (maxFeedback) 1) 25001)
+!(test (+ (sleepInterval) 0.5) 1.0)
+
 !(cleanup)
 
 ; filled configuration
