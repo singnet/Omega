@@ -78,11 +78,11 @@ When possible, write premises in two ways and see if both produce the same concl
 
 ## 6. Structure multi-cycle reasoning
 
-**Rule:** budget cycles — one cycle cannot both gather data and act on it because the LLM commits all commands before seeing results.
+**Rule:** budget cycles — one cycle cannot both gather data and act on it because the LLM commits all tool calls before seeing results.
 
 A canonical decomposition for a non-trivial question:
 
-| Cycle | Commands |
+| Cycle | Tool calls |
 |---|---|
 | 1 | `query` memory, `websearch` for missing facts, `pin` the plan. |
 | 2 | Atomize verified facts, run first `(metta (\|- ...))` step. |

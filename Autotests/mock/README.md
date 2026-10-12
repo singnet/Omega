@@ -69,7 +69,7 @@ The `LlmMockController`, `CommMockServer`, and the OpenClaw Gateway stub are pro
 
 ## 5a. OpenClaw plugin (`test_openclaw_delegate_mock.py`)
 
-`mock/test_openclaw_delegate_mock.py` exercises the `openclaw` plugin (`plugins/openclaw/`), whose `delegate-task-to-openclaw-agent` skill talks HTTP to an **OpenClaw Gateway**. The suite brings its own: the session-scoped `openclaw_gateway` fixture in `conftest.py` starts the stub in `mock/ocgw_stub.py`, which implements the same OpenResponses `POST /v1/responses` contract on port 18789. No external Gateway, no manual setup, and the file runs under a plain `pytest mock/test_*_mock.py` like everything else here.
+`mock/test_openclaw_delegate_mock.py` exercises the `openclaw` plugin (`plugins/openclaw/`), whose `delegate-task-to-openclaw-agent` tool talks HTTP to an **OpenClaw Gateway**. The suite brings its own: the session-scoped `openclaw_gateway` fixture in `conftest.py` starts the stub in `mock/ocgw_stub.py`, which implements the same OpenResponses `POST /v1/responses` contract on port 18789. No external Gateway, no manual setup, and the file runs under a plain `pytest mock/test_*_mock.py` like everything else here.
 
 The stub is what makes the interesting cases reachable at all. Its behaviour is steered by markers inside the delegated task, so a test can ask for a Gateway that stalls, refuses, or answers with nothing:
 
@@ -108,7 +108,7 @@ This removes the `omega` container and the `omega-memory` volume created by the 
 
 # Tests description
 
-All 42 tests follow the same pattern: the test registers a fixed mock-LLM answer for the prompt via `llm.set_answer(prompt, response)`, delivers the prompt to the agent over the test channel via `comm.send_message(prompt)`, then verifies the resulting skill calls and side effects (filesystem, `history.metta`, ChromaDB, docker logs). The OpenClaw group additionally drives the stub Gateway, whose replies are real rather than scripted. Because the LLM is deterministic, no `try_with_clarification` retries are needed; every test either passes on the first attempt or fails outright.
+All 42 tests follow the same pattern: the test registers a fixed mock-LLM answer for the prompt via `llm.set_answer(prompt, response)`, delivers the prompt to the agent over the test channel via `comm.send_message(prompt)`, then verifies the resulting tool calls and side effects (filesystem, `history.metta`, ChromaDB, docker logs). The OpenClaw group additionally drives the stub Gateway, whose replies are real rather than scripted. Because the LLM is deterministic, no `try_with_clarification` retries are needed; every test either passes on the first attempt or fails outright.
 
 ## Creating files
 
@@ -176,7 +176,7 @@ Runs a syntactically broken pre-created script and captures stdout and stderr to
 
 Runs `dateupdate.sh` exactly 10 times in a row.
 
-- Mock answer: ten consecutive `(shell "{SCRIPT_FILE}")` calls (one per run).
+- Mock answer: ten consecutive `(shell "sh {SCRIPT_FILE}")` calls (one per run).
 - Checks: `update.txt` exists with mtime ≥ start, has ≥ 10 lines, every line contains date-like digits.
 
 ## Internet search
@@ -218,14 +218,14 @@ Sends "Acknowledge with one short line that you received marker `<run_id>`." and
 - Mock answer: `(send "Acknowledged marker <run_id>.")`.
 - Checks: an s-exp record referencing `REQ-<run_id>` appears in history; the agent issued `(send ...)`; file mtime and size grew.
 
-## Skills
+## Tools
 
 ### 15. test_skill_metta_mock.py
 
 Asks the agent to evaluate a short MeTTa expression and report the result.
 
 - Mock answer: `(metta "(+ 2 2)") (send "The metta skill evaluated (+ 2 2) and returned 4.")`.
-- Checks: `(metta ...)` was invoked; the agent then issued a `(send ...)`. Semantic correctness of the MeTTa expression is not checked; the goal is to exercise the skill.
+- Checks: `(metta ...)` was invoked; the agent then issued a `(send ...)`. Semantic correctness of the MeTTa expression is not checked; the goal is to exercise the tool.
 
 ### 16. test_skill_pin_mock.py
 
@@ -240,14 +240,14 @@ Gives a multi-step task ("restarting servers alpha → beta → gamma, just fini
 
 Agent clones a public repository over anonymous HTTPS, no token.
 
-- Mock answer: `(shell "rm -rf {TARGET_DIR} && git clone {remote} {TARGET_DIR}")`.
+- Mock answer: one `(shell ...)` that runs `git clone --depth 1 {remote} {TARGET_DIR}` in the background, with up to three attempts and a log file, so that the call returns before the 5-second `shell` timeout.
 - Checks: `.git/` appears, HEAD points to a real commit, ≥ 1 tracked file in HEAD, origin matches the expected remote URL (normalized, trailing `/` and `.git` ignored).
 
 ### 18. test_git_local_commit_mock.py
 
 Agent runs `git init`, `git add`, `git commit` locally inside the container.
 
-- Mock answer: chain of `(shell "git -C {TARGET_DIR} init") (shell "...write file...") (shell "git -C {TARGET_DIR} add -A") (shell "git -C {TARGET_DIR} commit -m 'add hello <run_id>'")`.
+- Mock answer: chain of `(shell "git -C {TARGET_DIR} init") (write-file "<file>" "<marker>") (shell "git -C {TARGET_DIR} add -A") (shell "git -C {TARGET_DIR} commit -m \"add hello <run_id>\"")`.
 - Checks: HEAD has at least one commit, commit subject contains the `run_id` (warning, not failure), the file is present in the tree.
 
 ### 19. test_git_push_to_remote_mock.py
@@ -258,13 +258,13 @@ Agent clones a remote, creates branch `qa/run-<id>`, adds a file, commits, and p
 - Parameters via env vars: `OMEGA_GIT_TOKEN` (token; never appears in code) and `OMEGA_GIT_REMOTE` (default `https://github.com/OmegaSing/Test-Repopo`). Test is skipped if the token variable is unset.
 - Checks: branch present on remote (GitHub API 200), file present on branch, the shell call included `git push`, credentials wiped on teardown.
 
-## Multi-skill tests
+## Multi-tool tests
 
 ### 20. test_run_create_dirs_mock.py
 
 Agent writes `mkdirs.sh` and runs it. The script must create `test1`, `test2`, `test3` inside `/tmp/test_dirs/`.
 
-- Mock answer: `(write-file "{SCRIPT_PATH}" "#!/bin/bash\nmkdir -p .../test1 .../test2 .../test3\n") (shell "chmod +x {SCRIPT_PATH}") (shell "{SCRIPT_PATH}")`.
+- Mock answer: `(write-file "{SCRIPT_PATH}" "#!/bin/bash\nmkdir -p .../test1 .../test2 .../test3\n") (shell "chmod +x {SCRIPT_PATH}") (shell "sh {SCRIPT_PATH}")`.
 - Checks: all three directories exist with fresh mtimes; agent invoked `(write-file ...)` referencing `mkdirs.sh`; agent invoked `(shell ...)` to run the script. Diagnostics print `wf=<count>, sh=<count>, perms=<...>` to make stalls obvious.
 
 ### 21. test_memory_episode_mock.py
@@ -293,57 +293,57 @@ Two-turn flow: send a message tagged with a unique keyword (no `remember`), capt
 
 ### 24. test_complex_weather_flow_mock.py
 
-Four-step pipeline: search NY weather → write `w.txt` with the forecast → write `p.sh` extracting the first Celsius number into `t.txt` → run `p.sh`. Because the mock controls only the LLM dispatch (the network-bound `search` skill is not exercised), the mocked response provides the forecast text directly.
+Four-step pipeline: search NY weather → write `w.txt` with the forecast → write `p.sh` extracting the first Celsius number into `t.txt` → run `p.sh`. Because the mock controls only the LLM dispatch (the network-bound `websearch` tool is not exercised), the mocked response provides the forecast text directly.
 
-- Mock answer: `(write-file "/tmp/wflow/w.txt" "New York tomorrow: clear, high 22 degrees Celsius.") (write-file "/tmp/wflow/p.sh" "#!/bin/bash\ngrep -oE '[0-9]+' /tmp/wflow/w.txt | head -1 > /tmp/wflow/t.txt\n") (shell "chmod +x /tmp/wflow/p.sh") (shell "/tmp/wflow/p.sh")`.
+- Mock answer: `(write-file "/tmp/wflow/w.txt" "New York tomorrow: clear, high 22 degrees Celsius.") (write-file "/tmp/wflow/p.sh" "#!/bin/bash\ngrep -oE '[0-9]+' /tmp/wflow/w.txt | head -1 > /tmp/wflow/t.txt\n") (shell "chmod +x /tmp/wflow/p.sh") (shell "sh /tmp/wflow/p.sh")`.
 - Checks: `w.txt` exists; history contains `(write-file ...)` referencing `w.txt`; `p.sh` exists with executable bit; history contains `(write-file ...)` or `(shell ...)` referencing `p.sh`; `t.txt` exists; history contains `(shell ...)` running `p.sh`; `t.txt` content is a number in the range [-60; 120]; content length ≤ 40 characters.
 
 ## Memory tiers and transitions
 
 ### 25. test_last_skill_results_visible_next_turn_mock.py
 
-Verifies the one-iteration carry of `LAST_SKILL_USE_RESULTS`. Output of a skill call in turn N is exposed to the LLM at turn N+1 via this prompt section. The test does not require the agent to "behave intelligently"; it confirms the carry exists.
+Verifies the one-iteration carry of `LAST_SKILL_USE_RESULTS`. The result of a tool call in turn N is exposed to the LLM at turn N+1 via this prompt section. The test does not require the agent to "behave intelligently"; it confirms the carry exists.
 
-- Mock answer (turn 1): `(metta "(+ 1 1)")`.
-- Checks: the docker log line `CHARS_SENT:` for the next iteration contains a `LAST_SKILL_USE_RESULTS` section that reflects the metta output.
+- Mock answer (turn 1): `(metta "(quote <sentinel>)") (send "computed")`.
+- Checks: the `CHARS_SENT:` line for the next iteration contains the `LAST_SKILL_USE_RESULTS` marker and the sentinel.
 
 ### 26. test_memory_history_byte_window_truncation_mock.py
 
 Verifies that `history.metta` is a sliding byte-window. A marker placed early in the trace, then pushed past the `maxHistory` boundary by a large follow-up entry, must remain in the file on disk yet be absent from the trailing `maxHistory` bytes (the slice fed back to the agent as HISTORY).
 
-- Mock answer: an initial `(remember ...)` with the marker, followed by a sequence that emits enough bytes to evict it from the trailing window.
+- Turn 1 mock answer: `(send "<early_marker>")`. Turn 2 mock answer: `(remember "<padding_marker>+~35K bytes of A") (send "padded")`, which pushes the marker out of the trailing window.
 - Checks: marker present in `history.metta` on disk; marker absent from the trailing `maxHistory` bytes returned by `getHistory`.
 
 ### 27. test_memory_pin_window_visibility_mock.py
 
 A `(pin ...)` emitted in turn 1 must land in `history.metta` and remain inside the agent's rolling HISTORY window when turn 2 fires.
 
-- Turn 1 mock answer: `(pin "<marker>")`.
-- Turn 2 mock answer: `(send "ack")`.
+- Turn 1 mock answer: `(pin "<marker>") (send "Pinned <marker>.")`.
+- Turn 2 mock answer: `(send "I pinned <marker> previously.")`.
 - Checks: the pin block is on disk; the pin block sits within the trailing `maxHistory` byte window at turn 2.
 
 ### 28. test_pin_invisible_within_iteration_mock.py
 
-Negative test: a `(pin ...)` emitted within an iteration is NOT visible inside that same iteration's HISTORY context. The prompt is assembled before skill evaluation, so the pin block, written by `addToHistory` at the end of the iteration, only enters HISTORY at the next prompt-build.
+Negative test: a `(pin ...)` emitted within an iteration is NOT visible inside that same iteration's HISTORY context. The prompt is assembled before the tool calls run, so the pin block, written by `addToHistory` at the end of the iteration, only enters HISTORY at the next prompt-build.
 
 - Mock answer: `(pin "<marker>")` followed by a `(send ...)`.
 - Checks: the `CHARS_SENT` line carrying the PROMPT for the iteration that contained the pin does NOT contain the pin's unique marker; the next iteration's `CHARS_SENT` line does.
 
 ### 29. test_transition_episodes_after_eviction_mock.py
 
-A marker pushed out of the trailing `maxHistory` window is still recoverable via the `episodes` skill (timestamp-based history scan).
+A marker pushed out of the trailing `maxHistory` window is still recoverable via the `episodes` tool (timestamp-based history scan).
 
 - Turn 1 mock answer: a beacon `(send "<marker>")`; the test captures the timestamp.
 - Turn 2 mock answer: ~35K bytes of padding designed to evict the beacon from the trailing HISTORY window.
 - Turn 3 mock answer: `(episodes "<seed_ts>")` against the captured timestamp.
-- Checks: `(episodes ...)` was invoked with the captured timestamp. The skill's return value itself is mock-irrelevant; the test exercises the path against history the agent can no longer see in HISTORY.
+- Checks: `(episodes ...)` was invoked with the captured timestamp. The tool result itself is mock-irrelevant; the test exercises the path against history the agent can no longer see in HISTORY.
 
 ### 30. test_transition_metta_to_remember_mock.py
 
 Tier-3 to Tier-2 transition. A reasoning conclusion produced inside an AtomSpace via `(metta ...)` is ephemeral by design; if the agent wants to keep it, it must call `(remember ...)` on the conclusion.
 
 - Mock answer: a `(metta ...)` inference call AND a `(remember "<conclusion>")` call.
-- Checks: both skill calls fired; ChromaDB vector count grew by exactly one.
+- Checks: both tool calls fired; ChromaDB vector count grew by exactly one.
 
 ### 31. test_transition_pin_to_remember_mock.py
 
@@ -351,7 +351,7 @@ Explicit working-memory to long-term-memory transition.
 
 - Turn 1 mock answer: `(pin "<checklist>")` into working memory.
 - Turn 2 mock answer: `(remember "<checklist>")`, committing the pin to long-term memory.
-- Checks: both skill calls landed; ChromaDB vector count grew by exactly one (the working-memory item was promoted to the persistent embedding store).
+- Checks: both tool calls landed; ChromaDB vector count grew by exactly one (the working-memory item was promoted to the persistent embedding store).
 
 ## Security
 
@@ -364,7 +364,7 @@ Verifies that provider keys, channel tokens, and the auth secret are scrubbed fr
 
 ## OpenClaw plugin (`test_openclaw_delegate_mock.py`)
 
-The Gateway is the stub started by the `openclaw_gateway` fixture - see "5a. OpenClaw plugin" above. Unlike every other test in this file, the mocked LLM only decides *to call* `delegate-task-to-openclaw-agent`; the skill itself is not scripted and makes a real HTTP call, so its result is genuine, not canned.
+The Gateway is the stub started by the `openclaw_gateway` fixture - see "5a. OpenClaw plugin" above. Unlike every other test in this file, the mocked LLM only decides *to call* `delegate-task-to-openclaw-agent`; the tool itself is not scripted and makes a real HTTP call, so its result is genuine, not canned.
 
 Delegation is asynchronous, so these tests assert two stages: the acceptance envelope returned immediately (captured with `write-file`), and the `OPENCLAW_RESULT ...` line the plugin appends to `history.metta` once the Gateway answers (polled with `wait_for_history_keyword`).
 
@@ -372,14 +372,14 @@ Delegation is asynchronous, so these tests assert two stages: the acceptance env
 
 Two phases:
 
-- Phase 1 - mock answer: `(send "Delegating task <run_id>") (delegate-task-to-openclaw-agent "Reply with exactly: unused")`. Checks: the `send` argument does not swallow the following skill call (parser regression guard).
-- Phase 2 - mock answer: `(metta (write-file "<out>.json" (delegate-task-to-openclaw-agent "Reply with exactly: PONG-<run_id>"))) (send "Delegation saved <run_id>")`. Checks: the acknowledging `send` lands within 30s; the saved envelope has `status: "accepted"`, a non-empty `id`, and a `task` echo containing `PONG-<run_id>`; an `id=<task id> status=ok` record later reaches history; that line sits inside a well-formed `("YYYY-MM-DD HH:MM:SS"` block, so the `episodes` skill can still parse the file.
+- Phase 1 - mock answer: `(send "Delegating task <run_id>") (delegate-task-to-openclaw-agent "Reply with exactly: unused")`. Checks: the `send` argument does not swallow the following tool call (parser regression guard).
+- Phase 2 - mock answer: `(metta (write-file "<out>.json" (delegate-task-to-openclaw-agent "Reply with exactly: PONG-<run_id>"))) (send "Delegation saved <run_id>")`. Checks: the acknowledging `send` lands within 30s; the saved envelope has `status: "accepted"`, a non-empty `id`, and a `task` echo containing `PONG-<run_id>`; an `id=<task id> status=ok` record later reaches history; that line sits inside a well-formed `("YYYY-MM-DD HH:MM:SS"` block, so the `episodes` tool can still parse the file.
 
-  The wait keys on the task id rather than on the `PONG-<run_id>` marker alone: history also stores the agent's own response text, which quotes the `delegate-task-to-openclaw-agent "…PONG-<run_id>"` command verbatim, so the marker is present immediately and would satisfy a marker-only wait before any reply exists.
+  The wait keys on the task id rather than on the `PONG-<run_id>` marker alone: history also stores the agent's own response text, which quotes the `delegate-task-to-openclaw-agent "…PONG-<run_id>"` tool call verbatim, so the marker is present immediately and would satisfy a marker-only wait before any reply exists.
 
 ### 34. test_delegate_empty_message_mock
 
-Delegates an empty message - no network call and no worker thread, since the skill rejects it before queueing:
+Delegates an empty message - no network call and no worker thread, since the tool rejects it before queueing:
 
 - Mock answer: `(metta (write-file "<out>.json" (delegate-task-to-openclaw-agent ""))) (send "Empty delegation checked <run_id>")`.
 - Checks: the agent doesn't crash; the JSON result has `status: "error"`, `type: "invalid_input"`. Validation stays synchronous precisely so this failure is still reported in the same turn.
@@ -389,7 +389,7 @@ Delegates an empty message - no network call and no worker thread, since the ski
 Verifies the "new session per delegation" contract from the plugin README: two independent delegations in the same turn must not share a Gateway session:
 
 - Mock answer: two `(metta (write-file ... (delegate-task-to-openclaw-agent "Reply with exactly: FIRST-<run_id>" / "SECOND-<run_id>")))` calls, then `(send "Both delegations saved <run_id>")`.
-- Checks: both envelopes are `accepted` with different `id` values; an `id=<task id> status=ok` record for each of them later reaches history (keyed on the task id for the reason given under test 35); the run's slice of history carries two distinct `responseId=` values. The scoping to this run's window keeps ids left by test 35 from satisfying the check on their own.
+- Checks: both envelopes are `accepted` with different `id` values; an `id=<task id> status=ok` record for each of them later reaches history (keyed on the task id for the reason given under test 33); the run's slice of history carries two distinct `responseId=` values. The scoping to this run's window keeps ids left by test 33 from satisfying the check on their own.
 
 ### 36. test_delegate_stays_async_under_a_slow_gateway_mock
 
@@ -400,7 +400,7 @@ The one test that can tell an asynchronous delegation from a synchronous one. Th
 
 ### 37. test_delegate_reports_gateway_rejection_mock
 
-A Gateway rejection must reach the agent instead of disappearing, since the skill returns before the call is made.
+A Gateway rejection must reach the agent instead of disappearing, since the tool returns before the call is made.
 
 - Mock answer: `(metta (write-file "<out>.json" (delegate-task-to-openclaw-agent "OCGW_UNAUTHORIZED <run_id>"))) (send "Refused delegation checked <run_id>")`.
 - Checks: the envelope still says `accepted`; an `id=<task id> status=error` record carrying `401` later reaches history; the agent stays responsive throughout.

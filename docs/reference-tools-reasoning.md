@@ -1,4 +1,4 @@
-# Reference — Reasoning Skill
+# Reference — Reasoning Tool
 
 Defined in `src/skills.metta`. Backed by two reasoning engines in `lib_nal.metta` and `lib_pln.metta`.
 
@@ -47,7 +47,7 @@ Whatever the inner expression returns. For NAL/PLN calls, this is a conclusion a
 
 ## Engine selection, stopping criteria, action thresholds
 
-These are policy decisions, not part of the `metta` skill's API. See [reference-orchestration.md](./reference-orchestration.md) for the full tables and rationale (pattern → engine mapping, halt conditions, ACT / HYPOTHESIZE / IGNORE tiers).
+These are policy decisions, not part of the `metta` tool's API. See [reference-orchestration.md](./reference-orchestration.md) for the full tables and rationale (pattern → engine mapping, halt conditions, ACT / HYPOTHESIZE / IGNORE tiers).
 
 ---
 

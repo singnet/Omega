@@ -71,7 +71,7 @@
 (= (active-instructions $content)
    (strings-concat (" ACTIVE_WORKFLOW_INSTRUCTIONS: " $content
             " FOLLOW THESE INSTRUCTIONS UNTIL THE WORKFLOW IS COMPLETE"
-            " AND YOU CALL (unload-instructions) OR THE WORKFLOW CALLS ITS COMPLETION FUNCTION."
+            " AND YOU CALL (workflow-unload-instructions) OR THE WORKFLOW CALLS ITS COMPLETION FUNCTION."
             " EXECUTE ONLY COMMANDS YOU DEEM SAFE; OTHERWISE SKIP OR ASK THE USER.")))
 
 ; to load skills descriptions which are defined only for current workflow

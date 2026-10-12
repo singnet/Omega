@@ -1,6 +1,6 @@
-# Reference — Communication Skills
+# Reference — Communication Tools
 
-Defined in `src/channels.metta`. Dispatch depends on the `commchannel` configuration parameter (see [reference-configuration.md](./reference-configuration.md)).
+`send` and `receive` are defined in `src/channels.metta`, `websearch` in `src/skills.metta`. The `commchannel` configuration parameter selects the channel that `send` and `receive` use (see [reference-configuration.md](./reference-configuration.md)).
 
 ---
 
@@ -39,7 +39,7 @@ No meaningful return value. Used for its side effect.
 ```
 
 ### Purpose
-Return the latest message received on the active channel since the previous call. Invoked once per loop iteration by `src/loop.metta`.
+Return the latest message received on the active channel since the previous call. `receive` is not a tool. It is not in the tool list or among the names the parser accepts, so the LLM cannot call it as a tool, only from inside a `metta` expression. `src/loop.metta` calls it once per loop iteration.
 
 ### Parameters
 None.
@@ -48,14 +48,14 @@ None.
 A string. Empty if nothing new has arrived.
 
 ### Examples
-The agent does not normally call `receive` itself; the loop wraps it:
+The loop calls `receive` itself:
 
 ```metta
 (let $msgrcv (string-safe (repr (receive))) ...)
 ```
 
 ### Notes / Limits
-- Delegates to `wschat.getLastMessage`, `irc.getLastMessage`, `telegram.getLastMessage`, `slack.getLastMessage`, or `mattermost.getLastMessage`.
+- Delegates to `channels.commChannelReceive` in `src/channels.py`, which calls `receive` on the channel that the `commchannel` parameter selects (see [reference-plugin-api.md](./reference-plugin-api.md#communication-channel-integration)). The built-in channels implement it with their module's `getLastMessage`, for example `irc.getLastMessage`.
 - The loop treats an unchanged message as "no new input" via the `&prevmsg` state.
 
 ---

@@ -8,7 +8,7 @@ The `loadOmegaPlugin` function calls the Omega plugin API in order to
 implement new agent's features. The plugin API provides functions to:
 - add communication channel integrations
 - add LLM provider integrations
-- add new skills or remove added skills
+- add new tools or remove added tools
 - extend LLM prompt by adding new information or removing it
 - etc
 
@@ -168,13 +168,24 @@ sh run.sh run.metta provider=Example
 
 ## Other agent related APIs
 
-A plugin can dynamically add new skills or modify the agent's prompt if it is
+A plugin can dynamically add new tools or modify the agent's prompt if it is
 required. This ability is provided by the following MeTTa functions:
-- `(add-skill $function $description $arguments)` - adds the skill
-- `(remove-skill $function)` - removes the skill by its function name
+- `(add-skill $function $description $arguments)` - adds a tool
+- `(remove-skill $function)` - removes a tool by its function name
 - `(add-prompt-extension $handle $text)` - adds text to the prompt
 - `(remove-prompt-extension $handle)` - removes text from the prompt by the
   handle
+
+`add-skill` puts the line `- $description: $function $arguments` into the
+`SKILLS:` section of the prompt and registers `$function` with the parser in
+`src/helper.py`, so the LLM can call the tool starting with the next prompt.
+`$arguments` is a tuple of symbols that name the arguments, or `()` for a tool
+without arguments. The parser passes everything after the tool name as one
+string. A tool with several arguments receives them separately only when the
+LLM puts each one in double quotes, which is what argument names such as
+`research_name_in_quotes` in the workflow plugin tell the LLM to do.
+`remove-skill` removes the line from the prompt and the name from the parser,
+and has no effect on built-in tools.
 
 One can look at [source code](/src/skills.metta) for a detailed description.
 Please also look at [workflow plugin](/plugins/workflow/workflow.metta) for

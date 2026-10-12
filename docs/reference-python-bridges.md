@@ -59,29 +59,30 @@ sh run.sh run.metta logConfigPath=/path/to/logging.conf
 
 If no custom config is provided, Omega uses `config/logging.conf`. If the configured file is missing, Omega falls back to basic stderr logging.
 
-## `lib_llm_ext.py`
+## `providers/lib_llm_ext.py`
 
-LLM and embedding bridges.
+Embedding bridges and the LLM clients that the provider plugins delegate to.
 
 | Function | Purpose |
 |---|---|
-| `useClaude(prompt)` | Call an Anthropic Claude model. Used when `provider = Anthropic`. |
-| `useMiniMax(prompt)` | Call MiniMax. Used when `provider = ASICloud` (or similar routing). |
-| `useAsi1(prompt)` | Call ASI1. Used when `provider = ASIOne`. |
 | `useLocalEmbedding(str)` | Compute an embedding with a locally loaded model. Used when `embeddingprovider = Local`. |
 | `initLocalEmbedding()` | Load the local embedding model once at startup. |
 
-OpenAI calls go through MeTTa-side helpers (`useGPT`, `useGPTEmbedding`) that are defined elsewhere in the library but use the same LLM call pattern.
+The module also defines `AIProvider`, an OpenAI-compatible client, and its base class `AbstractAIProvider`. The provider plugins in `providers/` derive from `providers.LLMProvider` and delegate their chat calls to objects of these classes. The loop does not call this module for the LLM. It calls `llmProviderChat` (`src/providers.metta`), which goes to the provider plugin selected by `provider` (see [reference-plugin-api.md](./reference-plugin-api.md#llm-provider-integration)).
 
 ## `src/helper.py`
 
-String and time utilities used by the loop.
+String and time utilities used by the loop, including the parser for tool calls.
 
 | Function | Purpose |
 |---|---|
-| `balance_parentheses(str)` | Attempt to repair mismatched parentheses in LLM output before `sread` parses it. |
-| `normalize_string(obj)` | Render a skill return value into a string safe to embed in the next prompt. |
-| `around_time(ts, n)` | Backs `(episodes ts)` — returns `n` lines of `memory/history.metta` around `ts`. |
+| `balance_parentheses(str)` | Turn the LLM reply into one s-expression with a sub-expression per tool call and quote the arguments. Text up to the first call becomes an `UNKNOWN_SKILL_CALL` error, or a `pin` call when it starts with `-`. A line with an unknown name after a call stays in that call's argument. Despite the name, it does not balance parentheses (see [reference-internals-tool-dispatch.md](./reference-internals-tool-dispatch.md)). |
+| `add_llm_command(name)` | Add a tool name to the names the parser accepts. Called by `add-skill`. |
+| `remove_llm_command(name)` | Remove a name added by `add_llm_command`. Built-in names stay. Called by `remove-skill`. |
+| `normalize_string(obj)` | Render a tool result into a string safe to embed in the next prompt. |
+| `around_time(ts, n)` | Backs `(episodes ts)`. Finds the line of `memory/history.metta` whose timestamp is closest to `ts` and returns it with up to `n` lines before and after it, at most `2n+1` lines, each prefixed with its line number. |
+
+The parser takes the built-in tool names from `STATIC_LLM_COMMANDS`. `TWO_ARG_COMMANDS` lists the tools that take a file name and content.
 
 ## `src/skills.pl`
 
@@ -89,8 +90,8 @@ Prolog helpers imported via `import_prolog_functions_from_file`.
 
 | Predicate | Purpose |
 |---|---|
-| `shell/2` | Run a shell command and capture stdout. Rejects apostrophes. |
-| `first_char/2` | Return the first character of a string — used by the loop to detect whether the LLM produced a valid s-expression. |
+| `shell/2` | Run a shell command as `timeout -k 1s 5s sh -c <command>`, passing the command unchanged, and capture stdout and stderr together. Returns `timeout_error` if the command is still running after 5 seconds. |
+| `first_char/2` | Return the first character of a string — used by the loop to check that the converted reply starts with `(`. |
 
 ## `src/websearch.py`
 

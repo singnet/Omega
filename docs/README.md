@@ -25,7 +25,7 @@ Numbered in suggested reading order. Each tutorial is self-contained.
 
 - [tutorial-01-teaching-memories.md](./tutorial-01-teaching-memories.md) — Use `remember`, `query`, `episodes`, and `pin`
 - [tutorial-02-shell-and-files.md](./tutorial-02-shell-and-files.md) — `shell`, `read-file`, `write-file`, `append-file`
-- [tutorial-03-writing-a-custom-skill.md](./tutorial-03-writing-a-custom-skill.md) — Add a new MeTTa skill end-to-end
+- [tutorial-03-writing-a-custom-tool.md](./tutorial-03-writing-a-custom-tool.md) — Add a new MeTTa tool end-to-end
 - [tutorial-04-adding-a-channel.md](./tutorial-04-adding-a-channel.md) — Build a new communication channel adapter
 - [tutorial-05-reasoning-with-nal-pln.md](./tutorial-05-reasoning-with-nal-pln.md) — Invoke NAL and PLN through `(metta ...)` with worked examples
 - [tutorial-07-grounded-reasoning.md](./tutorial-07-grounded-reasoning.md) — External grounding — the primary reliability mitigation
@@ -43,19 +43,21 @@ Numbered in suggested reading order. Each tutorial is self-contained.
 - [reference-orchestration.md](./reference-orchestration.md) — Engine selection, stopping criteria, action thresholds, defense stack
 - [reference-failure-modes.md](./reference-failure-modes.md) — Documented failures, error rates, mitigations
 
-### Skills
+### Tools
 
-User-facing MeTTa skills the agent invokes. Each page follows the template **Signature → Purpose → Parameters → Returns → Examples → Notes/Limits**.
+Built-in tools the agent can call. Each page follows the template **Signature → Purpose → Parameters → Returns → Examples → Notes/Limits**.
 
-- [reference-skills-memory.md](./reference-skills-memory.md) — `remember`, `query`, `episodes`, `pin`
-- [reference-skills-io.md](./reference-skills-io.md) — `shell`, `read-file`, `write-file`, `write-file-b64`, `append-file`
-- [reference-skills-communication.md](./reference-skills-communication.md) — `send`, `receive`, `websearch`
-- [reference-skills-reasoning.md](./reference-skills-reasoning.md) — `metta` (NAL/PLN invocation surface)
+- [reference-tools-memory.md](./reference-tools-memory.md) — `remember`, `query`, `episodes`, `pin`
+- [reference-tools-io.md](./reference-tools-io.md) — `shell`, `read-file`, `write-file`, `write-file-b64`, `append-file`, `get-io-policy`
+- [reference-tools-communication.md](./reference-tools-communication.md) — `send`, `websearch`, and `receive` (called by the loop)
+- [reference-tools-reasoning.md](./reference-tools-reasoning.md) — `metta` (NAL/PLN invocation surface)
+
+`delete-file` and `version` are built-in tools too and have no reference page yet.
 
 ### Configuration & Adapters
 
 - [reference-configuration.md](./reference-configuration.md) — `configure` form and all runtime parameters
-- [reference-channels.md](./reference-channels.md) — IRC, Telegram, Slack, Mattermost, WebSocket, and websearch adapters plus the channel contract
+- [reference-channels.md](./reference-channels.md) — IRC, Telegram, Slack, Mattermost, and WebSocket adapters plus the channel contract, and the backend of the `websearch` tool
 - [reference-python-bridges.md](./reference-python-bridges.md) — `lib_llm_ext.py`, `src/helper.py`, `src/skills.pl`
 - [reference-memory-portability.md](./reference-memory-portability.md) — Operator backup, restore, and archive-transfer workflow
 
@@ -71,5 +73,5 @@ User-facing MeTTa skills the agent invokes. Each page follows the template **Sig
 
 - [reference-internals-loop.md](./reference-internals-loop.md) — `src/loop.metta` lifecycle and turn structure
 - [reference-internals-memory-store.md](./reference-internals-memory-store.md) — The three-tier memory architecture, including `knowledge-priors` markdown seeding into ChromaDB
-- [reference-internals-skill-dispatch.md](./reference-internals-skill-dispatch.md) — How `(skill args)` calls resolve
-- [reference-internals-extension-points.md](./reference-internals-extension-points.md) — Where to hook in new skills, tools, channels, LLMs, engines
+- [reference-internals-tool-dispatch.md](./reference-internals-tool-dispatch.md) — How tool calls are parsed and dispatched
+- [reference-internals-extension-points.md](./reference-internals-extension-points.md) — Where to hook in new tools, channels, LLM providers, and engines
