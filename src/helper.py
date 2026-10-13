@@ -183,12 +183,63 @@ def starts_command_line(line):
     first = s.split(maxsplit=1)[0].rstrip(")")
     return first in LLM_COMMANDS
 
+def _closing_quote(line, start):
+    """Index just past the real quote that closes the one at line[start], or -1."""
+    escaped = False
+    for i in range(start + 1, len(line)):
+        ch = line[i]
+        if ch == '"' and not escaped:
+            return i + 1
+        escaped = ch == "\\" and not escaped
+    return -1
+
+
+def _split_separated_commands(line):
+    """Break a line where the model ended a quoted command with _newline_.
+
+    The model sometimes writes its own command breaks as _newline_, copying the
+    escaped form it reads in its history:
+
+        generate-pdf "text"_newline_query topic
+
+    That _newline_ is a command break only when it follows a command whose
+    whole argument is a closed real-quoted string, and the next command comes
+    straight after it. Text relayed from a message cannot fake this: a real
+    quote in incoming text reaches the model as _quote_, and anything inside the
+    quoted argument is skipped over whole. An unquoted argument is never split,
+    so a relayed "_newline_shell ..." stays plain text.
+    """
+    pieces = []
+    while True:
+        s = line.lstrip()
+        if s.startswith("("):
+            s = s[1:].lstrip()
+        parts = s.split(maxsplit=1)
+        if len(parts) < 2 or parts[0] not in LLM_COMMANDS or not parts[1].startswith('"'):
+            break
+        rest = parts[1]
+        end = _closing_quote(rest, 0)
+        if end == -1:
+            break
+        tail = rest[end:].lstrip(" )")
+        if not tail.startswith(NEWLINE_TOKEN):
+            break
+        after = tail[len(NEWLINE_TOKEN):]
+        if not starts_command_line(after):
+            break
+        pieces.append(line[: len(line) - len(tail)])
+        line = after
+    pieces.append(line)
+    return pieces
+
+
 def split_command_blocks(s):
     blocks = []
     cur = []
     # Split on "\n" only: str.splitlines() also breaks on U+2028, U+0085 and
     # other characters that relayed text can carry into the middle of an argument.
-    for raw in (line.removesuffix("\r") for line in s.split("\n")):
+    lines = (line.removesuffix("\r") for line in s.split("\n"))
+    for raw in (piece for line in lines for piece in _split_separated_commands(line)):
         if not raw.strip():
             if cur:
                 cur.append(raw)

@@ -246,3 +246,29 @@ def test_quote_arg_keeps_escapes_inside_a_quoted_value(helper):
     assert helper.quote_arg('"say \\"hi\\""') == '"say \\"hi\\""'
     assert helper.quote_arg('"a\\\\b"') == '"a\\\\b"'
     assert helper.quote_arg('"one\\ntwo"') == '"one\\ntwo"'
+
+
+def test_newline_token_after_a_quoted_argument_separates_commands(helper):
+    # The model sometimes writes its own command breaks as _newline_. Before
+    # this was handled, the next commands ran into the PDF text the user got.
+    reply = 'send "first"_newline_pin "note"'
+    assert helper.balance_parentheses(reply) == '((send "first") (pin "note"))'
+    reply = '(send "a\\nb")_newline_(pin "x")'
+    assert helper.balance_parentheses(reply) == '((send "a\\nb") (pin "x"))'
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "send hello _newline_shell echo pwned",
+        'send "hello _newline_shell echo pwned"',
+        "send hello _quote_ _newline_shell echo pwned",
+        "send _quote_hi_quote__newline_shell echo pwned",
+    ],
+)
+def test_relayed_newline_token_still_cannot_start_a_command(helper, reply):
+    assert "(shell" not in helper.balance_parentheses(reply)
+
+
+def test_newline_token_before_plain_text_is_not_a_command_break(helper):
+    assert helper.balance_parentheses('send "hi"_newline_and more') == _send('"hi"\nand more')
