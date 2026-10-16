@@ -33,6 +33,34 @@ module. The plugin record has the following fields:
     `name` module is located. Can include `{REPO}` placeholder to designate the
     root folder of the Omega source repository.
 
+## Plugin dependencies
+
+A plugin that imports a third-party package declares it in a `requirements.txt`
+in the plugin's own directory. `scripts/install_dependencies.sh` installs those
+alongside Omega's own, and both the image build and the source install in
+[README.md](/README.md#installation) call it. A plugin that imports nothing
+outside the standard library and Omega ships no such file and needs no entry
+anywhere.
+
+Everything is installed by a single pip invocation, so Omega's own pins win. They
+are exact, and a plugin asking for a different version of a package Omega pins
+fails the install with a conflict rather than replacing it. Declare ranges wide
+enough to include Omega's pin — `openai>=1.0.0` rather than `openai==2.1.0` —
+and list only what the plugin actually imports.
+
+The file holds requirements and nothing else. pip reads an option written inside
+a requirements file — `--index-url` and `--extra-index-url` above all — as an
+instruction for the whole invocation rather than for the file carrying it, which
+would let one plugin choose where Omega's own packages are fetched from. Sharing
+one invocation is what makes Omega's pins win, so there is nowhere to scope such
+a line to, and a plugin that carries one stops the install with the line quoted.
+
+Two limits are worth knowing. A plugin that pins a package Omega depends on
+*indirectly* can change it without any error, because nothing is violated: keep
+the list short for this reason. And a plugin mounted into an already built image
+gets no installation at all, since the packages are baked in at build time — that
+route needs an image built with the plugin present.
+
 As an example of a MeTTa plugin one can look at the code of the [workflow
 plugin](/plugins/workflow/workflow.metta). As an example of a Python plugin
 one can look at the code of the [IRC communication channel](/channels/irc.py).
