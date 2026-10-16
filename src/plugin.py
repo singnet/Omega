@@ -4,12 +4,14 @@ Most of the functions here calls corresponding functions of the registered
 plugins.
 """
 
-import pathlib
-import yaml
 import importlib
 import importlib.util
-import sys
 import logging
+import pathlib
+import sys
+from types import ModuleType
+
+import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +74,35 @@ def addLocationToPath(location):
     global _REPO
     sys.path.append(str(pathlib.Path(location.format(REPO=_REPO)).resolve()))
 
-def loadPythonPlugin(name, location):
+
+def _load_python_module(name: str, modpath: pathlib.Path) -> ModuleType:
+    """Load a plugin file with shared module identity where possible."""
+    cached = sys.modules.get(name)
+    cached_file = getattr(cached, "__file__", None)
+    if cached_file and pathlib.Path(cached_file).resolve() == modpath:
+        return cached
+
+    spec = importlib.util.spec_from_file_location(name, modpath)
+    mod = importlib.util.module_from_spec(spec)
+    cache_module = name not in sys.modules
+    if cache_module:
+        imported_spec = importlib.util.find_spec(name)
+        cache_module = imported_spec is None or (
+            imported_spec.origin is not None
+            and pathlib.Path(imported_spec.origin).resolve() == modpath
+        )
+    if cache_module:
+        sys.modules[name] = mod
+    try:
+        spec.loader.exec_module(mod)
+    except BaseException:
+        if cache_module:
+            sys.modules.pop(name, None)
+        raise
+    return mod
+
+
+def loadPythonPlugin(name: str, location: str | None) -> None:
     """Python plugin loader implementation. If location of the plugin is
     specified it imports "<location>/<name>.py" file. Imports <name> Python
     module otherwise. Calls "loadOmegaPlugin" function from the imported
@@ -91,9 +121,7 @@ def loadPythonPlugin(name, location):
         location = pathlib.Path(location.format(REPO=_REPO)).resolve()
         modpath = location.joinpath(f"{name}.py").resolve()
         logger.info(f"_initPythonPlugin: loading {name} plugin from {modpath} using Python module loader")
-        spec = importlib.util.spec_from_file_location(name, modpath)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
+        mod = _load_python_module(name, modpath)
 
     if mod is not None:
         _plugins[name] = PythonPlugin(mod)
