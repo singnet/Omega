@@ -184,6 +184,51 @@ This means that the final tags point to the same image that was built and approv
 
 ---
 
+# Versioning strategy
+
+Project versioning should be compatible to [Semantic versioning specification](https://semver.org/).
+Each version consists of three numbers major, minor and patch version.
+The whole version name looks like `v<major>.<minor>.<patch>`.
+
+Patch version is incremented when small, time-sensitive changes and production fixes are made (see [Patch release](#patch_release)).
+Patch cannot include non-backward compatible changes which trigger major version change (see below).
+Once a version tag has been created for a release, its version number must not be reused, even if the release is not promoted to production.
+Each subsequent release attempt must use a new version number to avoid ambiguity and potential inconsistencies for users or automation that may already have referenced the original release tag.
+
+If release contains new functionality or features which are backward-compatible then minor version should be incremented.
+If release contains breaking or incompatible changes that require consumers to adapt then major version should be incremented.
+The breaking changes include changes to the following areas:
+- all APIs available to the plugins
+- format of the configuration files
+- the format of the imported exported data such as knowledge base or exported memory
+- the layout of the directories and files which keep the state of the agent between sessions
+
+For this project, major version 0 is reserved for the beta version of software.
+During this phase, breaking changes trigger a minor version increment rather than a major one, until the project is explicitly promoted out of beta with version 1.0.0.
+
+---
+
+# Patch release
+
+There are two situations which require adding changes via a patch release to a major or minor release candidate version:
+1. critical bug is found before current release tag is promoted to the latest version
+2. hotfix is required after release is published and tag is promoted to the latest version
+
+In both situations there is a chance other PRs are merged to the `main` branch after the release tag.
+It means we cannot create a patch release from the `main` branch because it may contain changes merged after the current release tag, including changes that are not intended to be part of the patch release.
+The proper way to handle it is making patch release branch from the release tag.
+The name of the branch should be `patch-to-<current release version>`.
+All release fixes should be merged into the patch release branch.
+
+When the branch includes all necessary fixes new patch release is initiated from the branch.
+The release process is similar to [Release publication process](#phase-2-release-publication-and-promotion) but the patch release branch is used instead of `main` branch.
+Patch version should be chosen according to the [Versioning strategy](#versioning_strategy).
+After release is promoted to the production the patch release branch should be merged into the `main` branch of the repository by separate PR.
+
+The processes described in this document allow a patch release to be prepared while development of the next major or minor release continues on the main branch. However, only one release process should be active at a time, and each release process must be completed by promoting the release to production or cancelling it before another release process can begin.
+
+---
+
 # Key Points
 
 * QA builds and tests the PR code locally before it is merged into `main`.
