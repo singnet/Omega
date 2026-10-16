@@ -6,6 +6,7 @@
 (= (reasoningMode) (empty))
 (= (wakeupInterval) (empty))
 (= (memoryDirectory) (empty))
+(= (router) (empty))
 
 (= (initLoop)
    (progn (configure maxNewInputLoops 50) ;20
@@ -17,6 +18,7 @@
           (configure wakeupInterval 600) ;600=10 minutes
           (configure memoryDirectory
                (joinPath ((py-call (helper.projectRootDirectory)) memory)))
+          (configure router no_router)
           (change-state! &prevmsg "")
           (change-state! &loops (maxNewInputLoops))
           (messagesClear)
@@ -104,7 +106,7 @@
                                        ($_ (messagesAppend (llmRequestMessage role "user" content $lastmessage)))
                                        ($request (llmRequest $system (messagesGet) (maxOutputToken) (reasoningMode) (collectTools)))
                                        ($_ (log INFO "loop" (REQUEST: (py-str ($request)))))
-                                       ($response (llmProviderChat $request))
+                                       ($response (llmProviderChat $request (router)))
                                        ($_ (log INFO "loop" (RESPONSE: (py-str ($response)))))
                                        ($respstr (py-call (providers.llmResponseToSExpr $response)))
                                        ($resp (catch (sread $respstr)))
