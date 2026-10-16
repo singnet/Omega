@@ -37,6 +37,15 @@ This resolves the value through the Python configuration layer, using command-li
 | `embeddingModel` | empty | Model asked of a non-`Local` `embeddingprovider`. Empty means the provider default: `text-embedding-3-large` for `OpenAI`, `WhereIsAI/UAE-Large-V1` for `ASICloud`. |
 | `embeddingBatchSize` | `32` | Positive integer: maximum texts per cloud embedding request during runtime knowledge loading. Lower it for providers with smaller request limits. The default keeps valid OpenAI inputs below the 300,000-token request limit (32 × 8192 = 262,144 tokens). Larger values must fit the provider's input-count and total-token limits. This does not split or truncate individual texts that exceed the model's context limit. |
 
+### Startup knowledge indexing
+
+`knowledgeIndexingBackground` defaults to `false`, keeping synchronous startup.
+Set it to `true` to index `knowledge-priors/*.md` in a background thread while
+plugins and channels start. Completed files become available to `query`
+progressively in the runtime memory collection. Background errors are logged.
+
+Local model loading still happens before indexing and can delay cold startup.
+
 ## Channels (`src/channels.metta`, `initChannels`)
 
 | Parameter | Default | Meaning |

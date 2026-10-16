@@ -2,7 +2,8 @@ import os
 import re
 import glob
 import hashlib
-import chromadb
+import threading
+from pathlib import Path
 import openai
 from   lib_llm_ext import initLocalEmbedding, useLocalEmbedding
 from src.logger import get_logger
@@ -13,35 +14,37 @@ logger = get_logger(__name__)
 
 # --- Constants -----------------------------------------------------------
 
-COLLECTION_NAME = "memories"
 TOP_K = 5
 MIN_CHUNK_CHARS = 100
 MAX_CHUNK_CHARS = 6000
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-DB_PATH = os.environ.get(
-    "CHROMA_DB_PATH",
-    "/PeTTa/chroma_db" if os.path.isdir("/PeTTa/chroma_db") else
-    os.path.join(_PROJECT_ROOT, "..", "..","chroma_db")
-)
-
-# --- Lazy ChromaDB client ------------------------------------------------
-
-_client = None
-_collection = None
-
 
 def _get_collection():
-    global _client, _collection
-    if _collection is None:
-        os.makedirs(DB_PATH, exist_ok=True)
-        _client = chromadb.PersistentClient(path=DB_PATH)
-        _collection = _client.get_or_create_collection(
-            name=COLLECTION_NAME,
-            embedding_function=None,
-        )
-    return _collection
+    # Share the collection used by runtime remember/query.
+    import lib_chromadb
+
+    return lib_chromadb.COLLECTION
+
+
+def _configure_chroma_from_env():
+    """Apply the custom database path to the shared bridge before indexing."""
+    path = os.environ.get("CHROMA_DB_PATH")
+    if path is None:
+        return
+    import lib_chromadb
+
+    path = Path(path).resolve()
+    if Path(lib_chromadb.CLIENT.get_settings().persist_directory).resolve() == path:
+        return
+    import chromadb
+
+    client = chromadb.PersistentClient(path=str(path))
+    collection = client.get_or_create_collection(
+        name="memories", embedding_function=None
+    )
+    lib_chromadb.CLIENT, lib_chromadb.COLLECTION = client, collection
 
 
 # --- Helpers -------------------------------------------------------------
@@ -223,7 +226,46 @@ _last_query = None
 _last_result = None
 
 
+_knowledge_lock = threading.Lock()
+_knowledge_worker = None
+
+
 def init_knowledge(embedding_selection):
+    """Index knowledge synchronously or in an opt-in background thread."""
+    global _knowledge_worker
+    value = config_get_by_key("knowledgeIndexingBackground", False)
+    background = value is True or (
+        isinstance(value, str) and value.strip().lower() == "true"
+    )
+    with _knowledge_lock:
+        if _knowledge_worker is not None and _knowledge_worker.is_alive():
+            return "Knowledge indexing already running"
+        try:
+            _configure_chroma_from_env()
+        except Exception as e:
+            logger.exception(f"Knowledge init failed: {e}")
+            return f"Knowledge init failed: {e}"
+        if background:
+            try:
+                _knowledge_worker = threading.Thread(
+                    target=_index_knowledge_background,
+                    args=(embedding_selection,),
+                    daemon=True,
+                )
+                _knowledge_worker.start()
+            except Exception as e:
+                _knowledge_worker = None
+                logger.exception(f"Knowledge worker could not start: {e}")
+                return f"Knowledge init failed: {e}"
+            return "Knowledge indexing started in background"
+    return _index_knowledge(embedding_selection)
+
+
+def _index_knowledge_background(embedding_selection):
+    logger.info(_index_knowledge(embedding_selection))
+
+
+def _index_knowledge(embedding_selection):
     """Chunk, embed, and store knowledge files. Skips unchanged files."""
     global _embedding_dim, _last_query, _last_result
     _last_query = None
