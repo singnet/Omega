@@ -46,7 +46,7 @@ def _get_collection():
 
 # --- Helpers -------------------------------------------------------------
 
-HEADING_RE = re.compile(r"^(#{1,4})\s+(.+)$", re.MULTILINE)
+HEADING_RE = re.compile(r"^(#{1,4})[ \t]+(.+)$", re.MULTILINE)
 
 
 def _resolve_knowledge_dir():
@@ -65,14 +65,34 @@ def _decode_metta(s):
 
 # --- Chunking ------------------------------------------------------------
 
-def _chunk_markdown(text, filename):
-    """Heading-aware markdown chunking with breadcrumb tracking."""
-    matches = list(HEADING_RE.finditer(text))
-    if not matches:
-        return [{"text": text.strip(), "breadcrumb": filename}]
+def _cut_to_limit(text, breadcrumb):
+    """Split text that is still over MAX_CHUNK_CHARS."""
+    pieces = []
+    text = text.strip()
+    while len(text) > MAX_CHUNK_CHARS:
+        window = text[:MAX_CHUNK_CHARS]
+        # Cut mid-token only when there is no whitespace.
+        cut = max(window.rfind("\n"), window.rfind(" "))
+        if cut <= 0:
+            cut = MAX_CHUNK_CHARS
+        head = text[:cut].strip()
+        if head:
+            pieces.append({"text": head, "breadcrumb": breadcrumb})
+        text = text[cut:].strip()
+    if text:
+        pieces.append({"text": text, "breadcrumb": breadcrumb})
+    return pieces
 
+
+def _sections_from_headings(text, filename, matches):
+    """Split on headings and merge sections under MIN_CHUNK_CHARS."""
     sections = []
     stack = {}  # level -> heading text
+
+    # Text before the first heading belongs to no section, so add it as one.
+    preamble = text[:matches[0].start()].strip()
+    if preamble:
+        sections.append({"text": preamble, "breadcrumb": filename, "heading": ""})
 
     for i, m in enumerate(matches):
         level = len(m.group(1))
@@ -116,8 +136,22 @@ def _chunk_markdown(text, filename):
         else:
             merged.append({"text": carry, "breadcrumb": carry_bc})
 
-    # Split large sections on paragraph boundaries
+    return merged
+
+
+def _chunk_markdown(text, filename):
+    """Heading-aware markdown chunking with breadcrumb tracking."""
+    matches = list(HEADING_RE.finditer(text))
+    if matches:
+        merged = _sections_from_headings(text, filename, matches)
+    else:
+        # No headings: one section, still goes through the size pass below.
+        logger.warning(f"{filename}: no headings, chunking on paragraphs")
+        merged = [{"text": text.strip(), "breadcrumb": filename}]
+
+    # Split large sections on paragraph boundaries, then on characters if needed.
     final = []
+    hard_cuts = 0
     for s in merged:
         if len(s["text"]) <= MAX_CHUNK_CHARS:
             final.append(s)
@@ -125,13 +159,21 @@ def _chunk_markdown(text, filename):
         paragraphs = s["text"].split("\n\n")
         chunk_text = ""
         for p in paragraphs:
-            if chunk_text and len(chunk_text) + len(p) > MAX_CHUNK_CHARS:
-                final.append({"text": chunk_text.strip(), "breadcrumb": s["breadcrumb"]})
+            # Count the "\n\n" join, else the chunk overshoots and leaves a fragment.
+            if chunk_text and len(chunk_text) + 2 + len(p) > MAX_CHUNK_CHARS:
+                pieces = _cut_to_limit(chunk_text, s["breadcrumb"])
+                hard_cuts += len(pieces) - 1
+                final.extend(pieces)
                 chunk_text = p
             else:
                 chunk_text = (chunk_text + "\n\n" + p).strip()
         if chunk_text.strip():
-            final.append({"text": chunk_text.strip(), "breadcrumb": s["breadcrumb"]})
+            pieces = _cut_to_limit(chunk_text, s["breadcrumb"])
+            hard_cuts += len(pieces) - 1
+            final.extend(pieces)
+
+    if hard_cuts:
+        logger.warning(f"{filename}: {hard_cuts} chunk(s) cut to MAX_CHUNK_CHARS")
 
     return final
 
