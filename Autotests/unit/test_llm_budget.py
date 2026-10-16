@@ -39,7 +39,7 @@ def _load_modules():
     try:
         loaded = {"providers": _exec("providers", os.path.join(_SRC_DIR, "providers.py"), True)}
         for name in ("lib_llm_ext", "openrouter", "openai_provider", "asione"):
-            file_name = "openai.py" if name == "openai_provider" else f"{name}.py"
+            file_name = "omega_openai.py" if name == "openai_provider" else f"{name}.py"
             loaded[name] = _exec(name, os.path.join(_PROVIDERS_DIR, file_name), name == "lib_llm_ext")
         return loaded
     finally:

@@ -33,6 +33,36 @@ module. The plugin record has the following fields:
     `name` module is located. Can include `{REPO}` placeholder to designate the
     root folder of the Omega source repository.
 
+### Python module identity and names
+
+Python plugins are registered in `sys.modules` under their configured `name`,
+including when loaded from a `location`. After loading, `import <name>` returns
+the same module object used by Omega, sharing its initialized state and queues.
+The module is registered before its code executes, so imports made during
+initialization can find it. As with ordinary Python imports, code must not use
+attributes that have not been initialized yet.
+
+If the same file was already imported under that name, Omega reuses the module
+and calls `loadOmegaPlugin`. Loading an already registered plugin again does
+not execute its code or call its entry point again. This is not a hot-reload API.
+For location-based loading, a name occupied by a different module, or by a
+module without a file path, causes an error instead of replacing that module.
+Choose plugin names that do not conflict with dependencies or standard-library
+modules, even if those modules have not been imported yet.
+
+If module execution fails, its newly added `sys.modules` entry is removed and
+the original exception is propagated. A missing or failing `loadOmegaPlugin`
+does not leave a successful entry in Omega's plugin registry. Once module
+execution succeeds, the module stays imported even if its entry point fails;
+callbacks or other side effects already performed by that entry point are not
+automatically undone.
+
+The built-in OpenAI plugin file is now `providers/omega_openai.py`. If you keep
+a custom `plugins.yaml`, change its Python plugin entry from `name: openai` to
+`name: omega_openai`, retaining `location: "{REPO}/providers"`. The provider
+identifier remains `OpenAI`, so `provider=OpenAI` and API key configuration do
+not change. `import openai` continues to refer to the OpenAI SDK.
+
 As an example of a MeTTa plugin one can look at the code of the [workflow
 plugin](/plugins/workflow/workflow.metta). As an example of a Python plugin
 one can look at the code of the [IRC communication channel](/channels/irc.py).
