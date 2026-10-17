@@ -2,7 +2,9 @@ import os
 import shutil
 import subprocess
 import sys
-from types import SimpleNamespace
+import tarfile
+import time
+import uuid
 from pathlib import Path
 
 import pytest
@@ -11,6 +13,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LAUNCHER = REPO_ROOT / "scripts" / "omega"
 CONTAINER_TEST_IMAGE = os.environ.get("OMEGA_LAUNCHER_TEST_IMAGE", "")
+UPLOAD_PREFIX_SIZE = 1024
 
 
 def _load_installer_namespace():
@@ -23,11 +26,7 @@ def _load_installer_namespace():
     return namespace
 
 
-def _stub_docker_environment(
-    tmp_path: Path, transfer_gid: int | None = None, stub_runtime_validator: bool = True
-) -> dict:
-    if transfer_gid is None:
-        transfer_gid = tmp_path.stat().st_gid
+def _stub_docker_environment(tmp_path: Path) -> dict:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     docker = bin_dir / "docker"
@@ -40,228 +39,220 @@ def _stub_docker_environment(
     )
 
     docker.chmod(0o755)
-    uname = bin_dir / "uname"
-    uname.write_text("#!/bin/sh\necho Linux\n", encoding="utf-8")
-    uname.chmod(0o755)
-    if stub_runtime_validator:
-        python3 = bin_dir / "python3"
-        python3.write_text(
-            "#!/bin/sh\n"
-            "case \"$1\" in\n"
-            "  *omega-memory-transfer-validator*) exit 0 ;;\n"
-            "esac\n"
-            f"exec {sys.executable!s} \"$@\"\n",
-            encoding="utf-8",
-        )
-        python3.chmod(0o755)
     environment = os.environ.copy()
     environment["ASI_API_KEY"] = "test-token"
-    environment["PATH"] = f"{bin_dir}{os.pathsep}{environment['PATH']}"
+    environment["PATH"] = (
+        f"{bin_dir}{os.pathsep}{Path(sys.executable).parent}"
+        f"{os.pathsep}{environment['PATH']}"
+    )
     return environment
 
 
 def _run_launcher(
-    tmp_path: Path,
-    *component_options: str,
-    transfer_dir: Path | None = None,
-    transfer_gid: int | None = None,
-    memory_import: bool = True,
-    stub_runtime_validator: bool = True,
+    tmp_path: Path, *options: str, memory_import: bool = True
 ) -> subprocess.CompletedProcess:
-    if transfer_dir is None:
-        transfer_dir = tmp_path
-        transfer_dir.chmod(0o2770)
-    transfer_gid = transfer_gid if transfer_gid is not None else transfer_dir.stat().st_gid
-    launcher_options = [
-        "--memory-transfer-dir",
-        str(transfer_dir),
-        "--memory-transfer-gid",
-        str(transfer_gid),
+    import_options = ["--memory-import", "memory.tar.gz"] if memory_import else []
+    return subprocess.run(
+        [str(LAUNCHER), "start", *import_options, *options],
+        cwd=REPO_ROOT,
+        env=_stub_docker_environment(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _memory_upload_command(directory: Path, size: int) -> list[str]:
+    source = LAUNCHER.read_text(encoding="utf-8").split("memory_upload() {", 1)[1]
+    script = source.split("memory_transfer_run rw -c '\n", 1)[1].split("\n' ", 1)[0]
+    return [
+        sys.executable, "-B", "-c", script.replace("/memory-transfer", str(directory)),
+        "memory.tar.gz", str(size),
     ]
-    if memory_import:
-        archive = transfer_dir / "memory.tar.gz"
-        archive.touch()
-        launcher_options.extend(["--memory-import", archive.name])
 
-    environment = _stub_docker_environment(
-        tmp_path, transfer_gid, stub_runtime_validator=stub_runtime_validator
+
+@pytest.fixture
+def pending_upload(tmp_path):
+    content = b"(memory archive)\x00\xff\n" * 8192
+    command = _memory_upload_command(tmp_path, len(content))
+    process = subprocess.Popen(
+        command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )
-
-    return subprocess.run(
-        [
-            str(LAUNCHER),
-            "start",
-            *launcher_options,
-            *component_options,
-        ],
-        cwd=REPO_ROOT,
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-
-def _run_runtime_validator(tmp_path: Path, transfer_dir: str, transfer_gid: int) -> subprocess.CompletedProcess:
-    environment = _stub_docker_environment(
-        tmp_path, transfer_gid, stub_runtime_validator=False
-    )
-    return subprocess.run(
-        [
-            str(LAUNCHER),
-            "start",
-            "--memory-transfer-dir",
-            transfer_dir,
-            "--memory-transfer-gid",
-            str(transfer_gid),
-        ],
-        cwd=REPO_ROOT,
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        process.stdin.write(content[:UPLOAD_PREFIX_SIZE])
+        process.stdin.flush()
+        deadline = time.monotonic() + 5
+        while not any(tmp_path.rglob("*.tar.gz")):
+            assert process.poll() is None
+            if time.monotonic() >= deadline:
+                pytest.fail("upload did not start")
+            time.sleep(0.01)
+        assert not (tmp_path / "memory.tar.gz").exists()
+        yield process, command, content
+    finally:
+        if process.poll() is None:
+            process.kill()
+        process.communicate(timeout=5)
 
 
-def test_installer_records_private_group_for_existing_transfer_directory(tmp_path, monkeypatch):
-    transfer_dir = tmp_path / "memory-transfer"
-    transfer_dir.mkdir()
-    group_id = transfer_dir.stat().st_gid
-    answers = iter(["y", str(transfer_dir), str(group_id), "n"])
-    monkeypatch.setattr("builtins.input", lambda _: next(answers))
-
+@pytest.mark.parametrize("enabled", ["0", "1"])
+def test_installer_preserves_volume_and_explicit_export_setting(tmp_path, monkeypatch, enabled):
     installer = _load_installer_namespace()
-    monkeypatch.setitem(installer, "validate_memory_transfer_dir", lambda *_: None)
-    memory_transfer_dir, memory_transfer_gid, memory_export_enabled = installer["_choose_memory_transfer"]()
-
-    assert memory_transfer_dir == str(transfer_dir)
-    assert memory_transfer_gid == str(group_id)
-    assert memory_export_enabled == "0"
-
-
-def test_installer_explains_how_to_skip_unprepared_transfer_directory(tmp_path, monkeypatch, capsys):
-    transfer_dir = tmp_path / "memory-transfer"
-    transfer_dir.mkdir()
-    group_id = transfer_dir.stat().st_gid
-    answers = iter(["y", str(transfer_dir), str(group_id)])
-    prompts = []
-    monkeypatch.setattr("builtins.input", lambda prompt: prompts.append(prompt) or next(answers))
-    installer = _load_installer_namespace()
+    monkeypatch.setitem(installer, "require_license_acceptance", lambda: None)
+    monkeypatch.setitem(installer, "_choose_channel", lambda: {"commchannel": "test"})
     monkeypatch.setitem(
-        installer,
-        "validate_memory_transfer_dir",
-        lambda *_: "--memory-transfer-dir must enable setgid",
+        installer, "_choose_provider", lambda: ("Test", "Local", "TEST_SERVER_IP", "", "", "localhost")
     )
-
-    with pytest.raises(StopIteration):
-        installer["_choose_memory_transfer"]()
-
-    assert "Enable memory export for this instance? [y/N]: " not in prompts
-    error_output = capsys.readouterr().err
-    assert "answer n at the next prompt to continue without memory transfer" in error_output
-    assert "docs/reference-memory-portability.md" in error_output
-
-
-def test_installer_uses_shared_memory_transfer_validator(tmp_path, monkeypatch):
-    transfer_dir = tmp_path / "memory-transfer"
-    transfer_dir.mkdir()
-    group_id = transfer_dir.stat().st_gid
-    installer = _load_installer_namespace()
-    captured = {}
+    monkeypatch.setitem(installer, "_choose_import_kb", lambda: "0")
     monkeypatch.setattr(
-        installer["subprocess"],
-        "run",
-        lambda command, **kwargs: captured.update(command=command, kwargs=kwargs)
-        or SimpleNamespace(returncode=0, stderr=""),
+        "builtins.input", lambda _: "n" if enabled == "0" else pytest.fail("unexpected prompt")
     )
-    monkeypatch.setattr(installer["sys"], "argv", ["installer", "config", "", "", "", "validator"])
+    output = tmp_path / "config"
 
-    assert installer["validate_memory_transfer_dir"](
-        str(transfer_dir), str(group_id)
-    ) is None
-    assert captured["command"] == [
-        sys.executable,
-        "validator",
-        str(transfer_dir),
-        str(group_id),
-    ]
-    assert captured["kwargs"] == {"capture_output": True, "text": True, "check": False}
+    installer["config_run_omega"](str(output), "test-archives", enabled)
+
+    config = output.read_text(encoding="utf-8")
+    assert "memory_transfer_volume_name=test-archives\n" in config
+    assert f"memory_export_enabled={enabled}\n" in config
 
 
-def test_installer_reports_shared_memory_transfer_validator_error(tmp_path, monkeypatch):
-    transfer_dir = tmp_path / "memory-transfer"
-    transfer_dir.mkdir()
-    installer = _load_installer_namespace()
-    monkeypatch.setattr(
-        installer["subprocess"],
-        "run",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            returncode=1, stderr="--memory-transfer-dir is supported only on Linux hosts\n"
-        ),
+@pytest.mark.parametrize("export_enabled", [False, True])
+@pytest.mark.parametrize("memory_import", [False, True])
+def test_launcher_mounts_archive_volume_only_for_export_or_import(
+    tmp_path, export_enabled, memory_import
+):
+    options = ["--memory-transfer-volume", "test-archives"]
+    if export_enabled:
+        options.append("--enable-memory-export")
+    result = _run_launcher(
+        tmp_path, *options, memory_import=memory_import
     )
-    monkeypatch.setattr(installer["sys"], "argv", ["installer", "config", "", "", "", "validator"])
-
-    assert installer["validate_memory_transfer_dir"](
-        str(transfer_dir), str(transfer_dir.stat().st_gid)
-    ) == "--memory-transfer-dir is supported only on Linux hosts"
-
-
-def test_launcher_uses_private_group_for_preflight_and_entrypoint(tmp_path):
-    transfer_dir = tmp_path / "memory-transfer"
-    transfer_dir.mkdir()
-    transfer_dir.chmod(0o2770)
-
-    result = _run_launcher(tmp_path, transfer_dir=transfer_dir, memory_import=False)
 
     assert result.returncode == 0, result.stderr
-    group_id = transfer_dir.stat().st_gid
-    assert f"<--user> <65534:65534> <--group-add> <{group_id}>" in result.stdout
-    assert f"<-e> <MEMORY_TRANSFER_GID={group_id}>" in result.stdout
+    agent_run = next(
+        line for line in result.stdout.splitlines()
+        if line.startswith("docker <run> ") and "<--name> <omega>" in line
+    )
+    uses_archive_volume = export_enabled or memory_import
+    assert (
+        "<type=volume,source=test-archives,target=/memory-transfer>" in agent_run
+    ) == uses_archive_volume
+    if uses_archive_volume:
+        assert "<--user> <65534:65534>" in result.stdout
+    else:
+        assert "/memory-transfer" not in result.stdout
+    assert ("<memoryExportEnabled=true>" in agent_run) == export_enabled
+    assert ("<MEMORY_IMPORT_FILE=memory.tar.gz>" in agent_run) == memory_import
+    assert "MEMORY_TRANSFER_GID" not in result.stdout
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="memory transfer directories are Linux-only")
-def test_launcher_executes_runtime_memory_transfer_validation(tmp_path):
-    transfer_dir = tmp_path / "memory-transfer"
-    transfer_dir.mkdir()
-    transfer_dir.chmod(0o750)
+@pytest.mark.parametrize("volume", ["/tmp/archives", "../archives", "archives:/host", "archives,readonly"])
+def test_launcher_rejects_host_paths_as_volume_names(tmp_path, volume):
+    result = _run_launcher(tmp_path, "--memory-transfer-volume", volume, memory_import=False)
 
-    result = _run_launcher(
-        tmp_path,
-        transfer_dir=transfer_dir,
-        memory_import=False,
-        stub_runtime_validator=False,
+    assert result.returncode != 0
+    assert "must be a Docker volume name" in result.stderr
+    assert "docker <" not in result.stdout
+
+
+@pytest.mark.parametrize("volume", ["omega-memory", "omegaclaw-memory"])
+def test_launcher_rejects_live_memory_volume_names(tmp_path, volume):
+    result = _run_launcher(tmp_path, "--memory-transfer-volume", volume, memory_import=False)
+
+    assert result.returncode != 0
+    assert "must not use a live memory volume" in result.stderr
+    assert "docker <" not in result.stdout
+
+
+@pytest.mark.parametrize("option", ["--memory-transfer-dir", "--memory-transfer-gid"])
+def test_launcher_explains_migration_from_bind_mount_options(tmp_path, option):
+    result = _run_launcher(tmp_path, option, "old-value", memory_import=False)
+
+    assert result.returncode != 0
+    assert "has been replaced by --memory-transfer-volume" in result.stderr
+    assert "docker <" not in result.stdout
+
+
+def test_clean_preserves_memory_archives(tmp_path):
+    result = subprocess.run(
+        [str(LAUNCHER), "clean"], env=_stub_docker_environment(tmp_path), capture_output=True, text=True
     )
 
-    assert result.returncode == 1
-    assert "--memory-transfer-dir must enable setgid" in result.stderr
+    assert result.returncode == 0, result.stderr
+    assert "docker <volume> <rm> <omega-memory>" in result.stdout
+    assert "omega-memory-transfer" not in result.stdout
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="memory transfer directories are Linux-only")
-def test_launcher_rejects_root_as_transfer_group(tmp_path):
-    transfer_dir = tmp_path / "memory-transfer"
-    transfer_dir.mkdir()
-    transfer_dir.chmod(0o2770)
-
-    result = _run_runtime_validator(tmp_path, str(transfer_dir), 0)
-
-    assert result.returncode == 1
-    assert "--memory-transfer-gid must be a non-zero numeric private group ID" in result.stderr
-
-
-@pytest.mark.skipif(sys.platform != "linux", reason="memory transfer directories are Linux-only")
-def test_launcher_rejects_symlink_with_trailing_slash(tmp_path):
-    transfer_dir = tmp_path / "memory-transfer"
-    transfer_dir.mkdir()
-    transfer_dir.chmod(0o2770)
-    transfer_link = tmp_path / "memory-transfer-link"
-    transfer_link.symlink_to(transfer_dir, target_is_directory=True)
-
-    result = _run_runtime_validator(
-        tmp_path, f"{transfer_link}/", transfer_dir.stat().st_gid
+@pytest.mark.parametrize("command", ["memory-download", "memory-delete"])
+@pytest.mark.parametrize("filename", ["../memory.tar.gz", "/tmp/memory.tar.gz", "*.tar.gz", "memory.txt"])
+def test_archive_commands_reject_invalid_filenames(tmp_path, command, filename):
+    arguments = [filename]
+    if command == "memory-download":
+        arguments.append(str(tmp_path / "download"))
+    result = subprocess.run(
+        [str(LAUNCHER), command, *arguments],
+        env=_stub_docker_environment(tmp_path), capture_output=True, text=True,
     )
 
-    assert result.returncode == 1
-    assert "--memory-transfer-dir must not be a symbolic link" in result.stderr
+    assert result.returncode != 0
+    assert "must be a plain .tar.gz filename" in result.stderr
+    assert "docker <" not in result.stdout
+
+
+@pytest.mark.parametrize("command", ["memory-upload", "memory-download", "memory-delete"])
+def test_archive_commands_require_arguments_before_docker(tmp_path, command):
+    result = subprocess.run(
+        [str(LAUNCHER), command], env=_stub_docker_environment(tmp_path),
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode != 0
+    assert f"{command} requires" in result.stderr
+    assert "docker <" not in result.stdout
+
+
+def test_memory_delete_rejects_extra_filenames(tmp_path):
+    result = subprocess.run(
+        [str(LAUNCHER), "memory-delete", "first.tar.gz", "second.tar.gz"],
+        env=_stub_docker_environment(tmp_path), capture_output=True, text=True,
+    )
+
+    assert result.returncode != 0
+    assert "memory-delete requires one archive filename" in result.stderr
+    assert "docker <" not in result.stdout
+
+
+def test_download_preserves_existing_destination(tmp_path):
+    destination = tmp_path / "memory.tar.gz"
+    destination.write_bytes(b"existing archive")
+    result = subprocess.run(
+        [str(LAUNCHER), "memory-download", "memory.tar.gz", str(destination)],
+        env=_stub_docker_environment(tmp_path), capture_output=True, text=True,
+    )
+
+    assert result.returncode != 0
+    assert "destination already exists" in result.stderr
+    assert destination.read_bytes() == b"existing archive"
+
+
+def test_failed_download_removes_partial_destination(tmp_path):
+    environment = _stub_docker_environment(tmp_path)
+    (tmp_path / "bin" / "docker").write_text(
+        "#!/bin/sh\n"
+        "case \"$1\" in\n"
+        "  volume) exit 0 ;;\n"
+        "  run) printf partial; exit 1 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    destination = tmp_path / "download.tar.gz"
+    result = subprocess.run(
+        [str(LAUNCHER), "memory-download", "memory.tar.gz", str(destination)],
+        env=environment, capture_output=True, text=True,
+    )
+
+    assert result.returncode != 0
+    assert not destination.exists()
 
 
 def test_launcher_warns_before_overwrite_memory_import(tmp_path):
@@ -278,56 +269,123 @@ def test_launcher_does_not_warn_for_append_memory_import(tmp_path):
     assert "WARNING:" not in result.stderr
 
 
-def test_entrypoint_resolves_transfer_gid_to_a_supplementary_group_name():
-    entrypoint = (REPO_ROOT / "entrypoint.sh").read_text(encoding="utf-8")
+def test_upload_publishes_only_completed_archive(pending_upload, tmp_path):
+    process, _, content = pending_upload
+    _, error = process.communicate(input=content[UPLOAD_PREFIX_SIZE:], timeout=5)
 
-    assert 'getent group "${MEMORY_TRANSFER_GID}" 2>/dev/null || true' in entrypoint
-    assert 'groupadd --gid "${MEMORY_TRANSFER_GID}" "${memory_transfer_group}"' in entrypoint
-    assert 'su --group nogroup --supp-group "${memory_transfer_group}" nobody' in entrypoint
+    assert process.returncode == 0, error.decode()
+    assert (tmp_path / "memory.tar.gz").read_bytes() == content
+    assert [path.name for path in tmp_path.iterdir()] == ["memory.tar.gz"]
 
 
-def test_entrypoint_rejects_root_as_transfer_group():
-    entrypoint = (REPO_ROOT / "entrypoint.sh").read_text(encoding="utf-8")
+def test_incomplete_upload_is_cleaned_up(pending_upload, tmp_path):
+    process, _, _ = pending_upload
+    _, error = process.communicate(timeout=5)
 
-    assert '[[ ! "${MEMORY_TRANSFER_GID}" =~ ^[1-9][0-9]*$ ]]' in entrypoint
+    assert process.returncode != 0
+    assert b"Archive upload was incomplete" in error
+    assert not list(tmp_path.iterdir())
+
+
+def test_interrupted_upload_can_be_retried(pending_upload, tmp_path):
+    process, command, content = pending_upload
+    process.kill()
+    process.communicate(timeout=5)
+    assert not (tmp_path / "memory.tar.gz").exists()
+
+    result = subprocess.run(command, input=content, capture_output=True, timeout=5)
+
+    assert result.returncode == 0, result.stderr.decode()
+    assert (tmp_path / "memory.tar.gz").read_bytes() == content
+
+
+def test_upload_preserves_competing_archive(pending_upload, tmp_path):
+    process, command, content = pending_upload
+    competing = b"B" * len(content)
+    result = subprocess.run(command, input=competing, capture_output=True, timeout=5)
+    assert result.returncode == 0, result.stderr.decode()
+
+    _, error = process.communicate(input=content[UPLOAD_PREFIX_SIZE:], timeout=5)
+
+    assert process.returncode != 0
+    assert b"Archive already exists" in error
+    assert (tmp_path / "memory.tar.gz").read_bytes() == competing
+    assert [path.name for path in tmp_path.iterdir()] == ["memory.tar.gz"]
 
 
 @pytest.mark.skipif(
-    sys.platform != "linux" or not CONTAINER_TEST_IMAGE or shutil.which("docker") is None,
-    reason="needs Linux, Docker, and OMEGA_LAUNCHER_TEST_IMAGE",
+    not CONTAINER_TEST_IMAGE or shutil.which("docker") is None,
+    reason="needs Docker and OMEGA_LAUNCHER_TEST_IMAGE",
 )
-def test_container_user_can_write_group_protected_transfer_directory(tmp_path):
-    transfer_dir = tmp_path / "memory-transfer"
-    transfer_dir.mkdir()
-    transfer_dir.chmod(0o2770)
+def test_memory_volume_upload_download_round_trip(tmp_path):
+    volume = "omega-transfer-test-" + uuid.uuid4().hex
+    directory = tmp_path / "archives with spaces"
+    directory.mkdir()
+    content = directory / "history.metta"
+    content.write_bytes(b"(sample history)\n\x00\xff\r\n")
+    source = directory / "memory.tar.gz"
+    with tarfile.open(source, "w:gz") as archive:
+        archive.add(content, arcname="history.metta")
+    original = source.read_bytes()
 
-    result = subprocess.run(
-        [
-            "docker",
-            "run",
-            "--rm",
-            "--user",
-            "65534:65534",
-            "--group-add",
-            str(transfer_dir.stat().st_gid),
-            "--entrypoint",
-            "/bin/sh",
-            "--volume",
-            f"{transfer_dir}:/memory-transfer",
-            CONTAINER_TEST_IMAGE,
-            "-c",
-            (
-                "touch /memory-transfer/probe && "
-                f"test \"$(stat -c %g /memory-transfer/probe)\" = \"{transfer_dir.stat().st_gid}\" && "
-                "rm /memory-transfer/probe"
-            ),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    def run(command, *arguments):
+        return subprocess.run(
+            [str(LAUNCHER), command, *map(str, arguments), "-d", CONTAINER_TEST_IMAGE,
+             "--memory-transfer-volume", volume],
+            capture_output=True, text=True, check=False,
+        )
 
-    assert result.returncode == 0, result.stderr
+    try:
+        uploaded = run("memory-upload", source)
+        assert uploaded.returncode == 0, uploaded.stderr
+        listed = run("memory-list")
+        assert listed.returncode == 0, listed.stderr
+        assert listed.stdout.strip() == source.name
+
+        permissions = subprocess.run(
+            ["docker", "run", "--rm", "--pull=never", "--user", "65534:65534",
+             "--mount", f"type=volume,source={volume},target=/memory-transfer,readonly",
+             "--entrypoint", "/bin/sh", CONTAINER_TEST_IMAGE, "-c",
+             "stat -c '%u:%g %a' /memory-transfer /memory-transfer/memory.tar.gz"],
+            capture_output=True, text=True, check=False,
+        )
+        assert permissions.returncode == 0, permissions.stderr
+        assert permissions.stdout.splitlines() == ["65534:65534 700", "65534:65534 600"]
+
+        source.write_bytes(b"replacement must not overwrite the archive")
+        duplicate = run("memory-upload", source)
+        assert duplicate.returncode != 0
+        assert "Archive already exists" in duplicate.stderr
+
+        destination = directory / "downloaded archive.tar.gz"
+        downloaded = run("memory-download", source.name, destination)
+        assert downloaded.returncode == 0, downloaded.stderr
+        assert destination.read_bytes() == original
+        assert destination.stat().st_mode & 0o777 == 0o600
+        existing = run("memory-download", source.name, destination)
+        assert existing.returncode != 0
+        assert destination.read_bytes() == original
+
+        missing = directory / "missing archive.tar.gz"
+        failed = run("memory-download", "missing.tar.gz", missing)
+        assert failed.returncode != 0
+        assert not missing.exists()
+
+        kept = directory / "kept.tar.gz"
+        kept.write_bytes(original)
+        uploaded = run("memory-upload", kept)
+        assert uploaded.returncode == 0, uploaded.stderr
+        deleted = run("memory-delete", source.name)
+        assert deleted.returncode == 0, deleted.stderr
+        listed = run("memory-list")
+        assert listed.returncode == 0, listed.stderr
+        assert listed.stdout.strip() == kept.name
+        kept_destination = directory / "kept copy.tar.gz"
+        downloaded = run("memory-download", kept.name, kept_destination)
+        assert downloaded.returncode == 0, downloaded.stderr
+        assert kept_destination.read_bytes() == original
+    finally:
+        subprocess.run(["docker", "volume", "rm", volume], capture_output=True, check=False)
 
 
 @pytest.mark.parametrize(
@@ -357,7 +415,7 @@ def test_only_component_options_are_mutually_exclusive(tmp_path):
     assert "--only-history and --only-vector cannot be combined" in result.stderr
 
 
-@pytest.mark.parametrize("command", ["start", "stop", "clean"])
+@pytest.mark.parametrize("command", ["start", "stop", "clean", "memory-download", "memory-delete"])
 @pytest.mark.parametrize(
     ("flag", "expected_output"),
     [

@@ -1,88 +1,11 @@
 #!/usr/bin/env bash
 
-tmp_memory_transfer_validator="$(mktemp "${TMPDIR:-/tmp}/omega-memory-transfer-validator.XXXXXX")"
-chmod 0600 "$tmp_memory_transfer_validator"
-trap 'rm -f "$tmp_memory_transfer_validator"' EXIT
-
-cat >"$tmp_memory_transfer_validator" <<'PY'
-import errno
-import os
-import platform
-import stat
-import sys
-
-
-def has_posix_acl(path):
-    missing = {errno.ENODATA}
-    unsupported = {errno.ENOTSUP, errno.EOPNOTSUPP}
-    for name in ("system.posix_acl_access", "system.posix_acl_default"):
-        try:
-            os.getxattr(path, name, follow_symlinks=False)
-        except OSError as exc:
-            if exc.errno in missing:
-                continue
-            if exc.errno in unsupported:
-                raise RuntimeError("Could not verify ACLs") from exc
-            raise RuntimeError("Could not verify ACLs") from exc
-        else:
-            return True
-    return False
-
-
-def validate_memory_transfer_dir(path, group_id):
-    if platform.system() != "Linux":
-        return "--memory-transfer-dir is supported only on Linux hosts"
-    if not os.path.isabs(path):
-        return f"--memory-transfer-dir must be an absolute path: {path}"
-    path = os.path.normpath(path)
-    if os.path.islink(path):
-        return f"--memory-transfer-dir must not be a symbolic link: {path}"
-    if not os.path.isdir(path):
-        return f"--memory-transfer-dir must be a directory: {path}"
-    if not group_id.isdecimal() or int(group_id) == 0:
-        return "--memory-transfer-gid must be a non-zero numeric private group ID"
-
-    try:
-        directory_stat = os.stat(path)
-    except OSError:
-        return f"Could not inspect --memory-transfer-dir: {path}"
-
-    if directory_stat.st_uid not in (os.geteuid(), 0):
-        return f"--memory-transfer-dir must be owned by the launching user or root: {path}"
-    mode = stat.S_IMODE(directory_stat.st_mode)
-    if not mode & stat.S_ISGID:
-        return f"--memory-transfer-dir must enable setgid so archives inherit its private group: {path}"
-    if has_posix_acl(path):
-        return f"--memory-transfer-dir must not grant access through ACL: {path}"
-    if directory_stat.st_gid != int(group_id):
-        return f"--memory-transfer-dir group must match --memory-transfer-gid: {path}"
-    if mode & 0o007 or mode & 0o070 != 0o070:
-        return (
-            "--memory-transfer-dir must grant rwx to its private group and no access to other users: "
-            f"{path}"
-        )
-    return None
-
-
-if len(sys.argv) != 3:
-    raise SystemExit("Usage: memory-transfer-validator <directory> <group-id>")
-
-try:
-    error = validate_memory_transfer_dir(sys.argv[1], sys.argv[2])
-except RuntimeError as exc:
-    error = f"{exc} for --memory-transfer-dir: {sys.argv[1]}"
-
-if error:
-    print(error, file=sys.stderr)
-    raise SystemExit(1)
-PY
-
 bootstrap() {
 
 # Create temporary files
 tmp_config_file="$(mktemp)"
 tmp_py_file="$(mktemp)"
-trap 'rm -f "$tmp_config_file" "$tmp_py_file" "$tmp_memory_transfer_validator"' EXIT
+trap 'rm -f "$tmp_config_file" "$tmp_py_file"' EXIT
 
 # Lock down permissions immediately after creation
 chmod 0600 "$tmp_config_file"
@@ -91,12 +14,10 @@ chmod 0600 "$tmp_py_file"
 cat >"$tmp_py_file" <<'PY'
 import getpass
 import json
-import os
 import secrets
 import string
 import shlex
 import shutil
-import subprocess
 import sys
 import textwrap
 import urllib.error
@@ -361,71 +282,16 @@ def _choose_import_kb():
         print("Please enter y or n.")
 
 
-def validate_memory_transfer_dir(path, group_id):
-    result = subprocess.run(
-        [sys.executable, sys.argv[5], path, group_id],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return result.stderr.strip() if result.returncode else None
-
-
-def _choose_memory_transfer():
+def _choose_memory_export():
     while True:
-        answer = input("Set up a directory for memory transfer archives? [y/N]: ").strip().lower()
+        answer = input("Enable memory export for this instance? [y/N]: ").strip().lower()
         if answer in ("", "n", "no"):
-            return "", "", "0"
+            return "0"
+        if answer in ("y", "yes"):
+            return "1"
         if answer == "q":
             sys.exit(1)
-        if answer not in ("y", "yes"):
-            print("Please enter y or n.")
-            continue
-
-        value = input("Host directory for memory archives: ").strip()
-        if not value:
-            print("A directory is required.", file=sys.stderr)
-            continue
-        path = os.path.abspath(os.path.expanduser(value))
-        if os.path.islink(path) or not os.path.isdir(path):
-            print("Use an existing, non-symbolic-link directory prepared for memory archives.", file=sys.stderr)
-            continue
-
-        while True:
-            group_id = input("Private host group ID for memory archives: ").strip()
-            if group_id == "q":
-                sys.exit(1)
-            if group_id.isdecimal() and int(group_id) != 0:
-                break
-            print("Enter a non-zero numeric group ID or q to exit.", file=sys.stderr)
-
-        try:
-            validation_error = validate_memory_transfer_dir(path, group_id)
-        except RuntimeError as exc:
-            validation_error = f"{exc} for --memory-transfer-dir: {path}"
-        if validation_error:
-            print(validation_error, file=sys.stderr)
-            print(
-                "Prepare the directory and try again, or answer n at the next prompt "
-                "to continue without memory transfer.",
-                file=sys.stderr,
-            )
-            print(
-                "Setup instructions: https://github.com/singnet/Omega/blob/main/"
-                "docs/reference-memory-portability.md",
-                file=sys.stderr,
-            )
-            continue
-
-        while True:
-            enable = input("Enable memory export for this instance? [y/N]: ").strip().lower()
-            if enable in ("", "n", "no"):
-                return path, group_id, "0"
-            if enable in ("y", "yes"):
-                return path, group_id, "1"
-            if enable == "q":
-                sys.exit(1)
-            print("Please enter y or n.")
+        print("Please enter y or n.")
 
 
 def _prompt_llm_token():
@@ -448,8 +314,7 @@ def _write_kv(fp, key, value):
 
 def config_run_omega(
     config_output_path,
-    configured_memory_transfer_dir="",
-    configured_memory_transfer_gid="",
+    configured_memory_transfer_volume="omega-memory-transfer",
     configured_memory_export_enabled="0",
 ):
     print(" ")
@@ -460,13 +325,10 @@ def config_run_omega(
     channel_config = _choose_channel()
     provider, embeddingprovider, api_token_var, model, openaiapi_url, token = _choose_provider()
     import_kb_on_start = _choose_import_kb()
-    if configured_memory_transfer_dir:
-        memory_transfer_dir = configured_memory_transfer_dir
-        memory_transfer_gid = configured_memory_transfer_gid
-        memory_export_enabled = configured_memory_export_enabled
-        print(f"Using memory transfer directory: {memory_transfer_dir}")
-    else:
-        memory_transfer_dir, memory_transfer_gid, memory_export_enabled = _choose_memory_transfer()
+    print(f"Using memory transfer volume: {configured_memory_transfer_volume}")
+    memory_export_enabled = (
+        "1" if configured_memory_export_enabled == "1" else _choose_memory_export()
+    )
 
     with open(config_output_path, "w", encoding="utf-8") as f:
         _write_kv(f, "api_token_var", api_token_var)
@@ -477,20 +339,18 @@ def config_run_omega(
         _write_kv(f, "model", model)
         _write_kv(f, "openaiapi_url", openaiapi_url)
         _write_kv(f, "IMPORT_KB_ON_START", import_kb_on_start)
-        _write_kv(f, "memory_transfer_dir", memory_transfer_dir)
-        _write_kv(f, "memory_transfer_gid", memory_transfer_gid)
+        _write_kv(f, "memory_transfer_volume_name", configured_memory_transfer_volume)
         _write_kv(f, "memory_export_enabled", memory_export_enabled)
         for key, value in channel_config.items():
             _write_kv(f, key, value)
 
 
 if __name__ == "__main__":
-    config_run_omega(*sys.argv[1:5])
+    config_run_omega(*sys.argv[1:4])
 PY
 
 python3 "$tmp_py_file" "$tmp_config_file" \
-    "${memory_transfer_dir:-}" "${memory_transfer_gid:-}" \
-    "${memory_export_enabled:-0}" "$tmp_memory_transfer_validator" </dev/tty
+    "${memory_transfer_volume_name}" "${memory_export_enabled:-0}" </dev/tty
 
 . "$tmp_config_file"
 
@@ -644,7 +504,11 @@ help() {
     echo -e "Commands:"
     echo -e "\tstart start new docker container"
     echo -e "\tstop stop docker container"
-    echo -e "\tclean remove container and clean up memory"
+    echo -e "\tclean remove container and live memory (preserves memory archives)"
+    echo -e "\tmemory-list list available memory archives"
+    echo -e "\tmemory-upload <host-archive> copy an archive into the transfer volume"
+    echo -e "\tmemory-download <filename> <host-destination> copy an archive to your computer"
+    echo -e "\tmemory-delete <filename> delete an archive from the transfer volume"
     echo
     echo -e "Options:"
     echo -e "\t-s <auth secret> set secret for the communication channel (default is 0000)"
@@ -662,10 +526,9 @@ help() {
     echo -e "\t--help, -h show this help"
     echo
     echo -e "Memory portability options:"
-    echo -e "\t--memory-transfer-dir <absolute-path> mount prepared host directory for memory export/import archives"
-    echo -e "\t--memory-transfer-gid <gid> private host group ID allowed to access transfer archives"
+    echo -e "\t--memory-transfer-volume <name> Docker volume for archives (default: omega-memory-transfer)"
     echo -e "\t--enable-memory-export enable memory export"
-    echo -e "\t--memory-import <filename> restore archive from transfer directory before startup"
+    echo -e "\t--memory-import <filename> restore archive from transfer volume before startup"
     echo -e "\t--memory-mode overwrite|append import mode (default: overwrite)"
     echo -e "\t--only-history restore history only"
     echo -e "\t--only-vector restore long-term memory only"
@@ -694,8 +557,8 @@ options() {
     OMEGA_OPENCLAW_TOKEN="${OMEGA_OPENCLAW_TOKEN:-}"
     commchannel=irc
     log_config_path=""
-    memory_transfer_dir=""
-    memory_transfer_gid=""
+    memory_transfer_volume_name="omega-memory-transfer"
+    memory_archive_arguments=()
     memory_import_file=""
     memory_import_mode="overwrite"
     memory_import_only_history=0
@@ -721,7 +584,7 @@ options() {
             -d?*) image=${1:2}; shift; continue;;
             -l?*) log_config_path=${1:2}; shift; continue;;
             -m?*) model=${1:2}; shift; continue;;
-            -s|-t|-p|-u|-g|-c|-d|-l|-m|--memory-transfer-dir|--memory-transfer-gid|--memory-import|--memory-mode)
+            -s|-t|-p|-u|-g|-c|-d|-l|-m|--memory-transfer-volume|--memory-import|--memory-mode)
                 require_option_value "${1}" "${2:-}" || return 1
                 ;;
         esac
@@ -735,13 +598,13 @@ options() {
             -d) image=${2}; shift 2;;
             -l) log_config_path=${2}; shift 2;;
             -m) model=${2}; shift 2;;
-            --memory-transfer-dir)
-                memory_transfer_dir="${2}"
+            --memory-transfer-volume)
+                memory_transfer_volume_name="${2}"
                 shift 2
                 ;;
-            --memory-transfer-gid)
-                memory_transfer_gid="${2}"
-                shift 2
+            --memory-transfer-dir|--memory-transfer-gid)
+                echo "${1} has been replaced by --memory-transfer-volume; use memory-upload for host archives" >&2
+                return 1
                 ;;
             --enable-memory-export)
                 memory_export_enabled=1
@@ -765,11 +628,44 @@ options() {
                 ;;
             --version|-v) version; exit 0;;
             --help|-h) help; exit 0;;
-            *) help
-               return 1
-               ;;
+            *)
+                if [[ ( "${command}" == "memory-upload" ||
+                        "${command}" == "memory-download" ||
+                        "${command}" == "memory-delete" ) && "${1}" != -* ]]; then
+                    memory_archive_arguments+=("${1}")
+                    shift
+                else
+                    help
+                    return 1
+                fi
+                ;;
         esac
     done
+
+    if [[ ! "${memory_transfer_volume_name}" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
+        echo "--memory-transfer-volume must be a Docker volume name, not a host path" >&2
+        return 1
+    fi
+    if [[ "${memory_transfer_volume_name}" == "omega-memory" ||
+          "${memory_transfer_volume_name}" == "omegaclaw-memory" ]]; then
+        echo "--memory-transfer-volume must not use a live memory volume: ${memory_transfer_volume_name}" >&2
+        return 1
+    fi
+    if [[ "${command}" == "memory-upload" &&
+          ( -z "${memory_archive_arguments[*]+set}" || "${#memory_archive_arguments[@]}" != "1" ) ]]; then
+        echo "memory-upload requires a host archive path" >&2
+        return 1
+    fi
+    if [[ "${command}" == "memory-download" &&
+          ( -z "${memory_archive_arguments[*]+set}" || "${#memory_archive_arguments[@]}" != "2" ) ]]; then
+        echo "memory-download requires an archive filename and a host destination" >&2
+        return 1
+    fi
+    if [[ "${command}" == "memory-delete" &&
+          ( -z "${memory_archive_arguments[*]+set}" || "${#memory_archive_arguments[@]}" != "1" ) ]]; then
+        echo "memory-delete requires one archive filename" >&2
+        return 1
+    fi
 
     case "${provider}" in
         Anthropic)
@@ -807,30 +703,14 @@ options() {
     if [[ -n "${!api_token_var:-}" ]]; then
         api_token="${!api_token_var}"
     else
-        if [ ${command} == "start" ]; then
+        if [ "${command}" == "start" ]; then
             echo "${api_token_var} is not set"
             return 1
         fi
     fi
 
     if [[ -n "${memory_import_file}" ]]; then
-        if [[ ! "${memory_import_file}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*\.tar\.gz$ ]]; then
-            echo "--memory-import must be a plain filename, not a path: ${memory_import_file}" >&2
-            return 1
-        fi
-        if [[ -z "${memory_transfer_dir}" ]]; then
-            echo "--memory-import requires --memory-transfer-dir to be set" >&2
-            return 1
-        fi
-        if [[ ! -f "${memory_transfer_dir}/${memory_import_file}" ]]; then
-            echo "--memory-import archive not found: ${memory_transfer_dir}/${memory_import_file}" >&2
-            return 1
-        fi
-    fi
-
-    if [[ "${memory_export_enabled}" == "1" && -z "${memory_transfer_dir}" ]]; then
-        echo "--enable-memory-export requires --memory-transfer-dir" >&2
-        return 1
+        validate_memory_archive_name "${memory_import_file}" "--memory-import" || return 1
     fi
 
     if [[ "${memory_import_only_history}" == "1" && "${memory_import_only_vector}" == "1" ]]; then
@@ -926,15 +806,148 @@ migrate_omegaclaw_memory() {
     return 1
 }
 
-prepare_memory_transfer_dir() {
-    python3 "$tmp_memory_transfer_validator" "${memory_transfer_dir}" "${memory_transfer_gid}"
+prepare_memory_transfer_volume() {
+    docker run --rm --pull=missing --network none --read-only --user 0:0 \
+        --entrypoint /bin/sh \
+        --mount "type=volume,source=${memory_transfer_volume_name},target=/memory-transfer" \
+        "${image}" -c 'chown 65534:65534 /memory-transfer && chmod 0700 /memory-transfer'
+}
+
+require_memory_transfer_volume() {
+    if ! docker volume inspect "${memory_transfer_volume_name}" >/dev/null 2>&1; then
+        echo "Memory transfer volume not found: ${memory_transfer_volume_name}" >&2
+        return 1
+    fi
+}
+
+memory_transfer_run() {
+    local mode="${1}"
+    shift
+    local mount="type=volume,source=${memory_transfer_volume_name},target=/memory-transfer"
+    local input=()
+    if [[ "${mode}" == "ro" ]]; then
+        mount+=",readonly"
+    else
+        input=(-i)
+    fi
+    docker run --rm --pull=missing --network none --read-only --user 65534:65534 \
+        --security-opt no-new-privileges:true \
+        ${input[@]+"${input[@]}"} --mount "${mount}" \
+        --entrypoint python3 "${image}" -B "$@"
+}
+
+validate_memory_archive_name() {
+    if [[ ! "${1}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*\.tar\.gz$ ]]; then
+        echo "${2:-Memory archive} must be a plain .tar.gz filename: ${1}" >&2
+        return 1
+    fi
+}
+
+memory_list() {
+    require_memory_transfer_volume
+    memory_transfer_run ro -c '
+from pathlib import Path
+
+for archive in sorted(Path("/memory-transfer").glob("*.tar.gz")):
+    if archive.is_file() and not archive.is_symlink():
+        print(archive.name)
+'
+}
+
+memory_upload() {
+    local source="${memory_archive_arguments[0]}"
+    local filename="${source##*/}"
+    local size
+    validate_memory_archive_name "${filename}" || return 1
+    if [[ ! -f "${source}" || -L "${source}" ]]; then
+        echo "memory-upload requires a regular archive file: ${source}" >&2
+        return 1
+    fi
+    size="$(python3 -c 'import os, sys; print(os.stat(sys.argv[1]).st_size)' "${source}")"
+    prepare_memory_transfer_volume
+    memory_transfer_run rw -c '
+import fcntl
+import os
+from pathlib import Path
+import shutil
+import sys
+import tempfile
+
+os.umask(0o077)
+path = Path("/memory-transfer") / sys.argv[1]
+with tempfile.TemporaryDirectory(prefix=".upload-", dir=path.parent) as staging:
+    temporary = Path(staging) / path.name
+    with temporary.open("xb") as archive:
+        shutil.copyfileobj(sys.stdin.buffer, archive)
+        if archive.tell() != int(sys.argv[2]):
+            raise SystemExit("Archive upload was incomplete")
+    directory_fd = os.open(path.parent, os.O_RDONLY)
+    try:
+        fcntl.flock(directory_fd, fcntl.LOCK_EX)
+        if path.exists() or path.is_symlink():
+            raise SystemExit(f"Archive already exists: {path.name}")
+        temporary.rename(path)
+    finally:
+        os.close(directory_fd)
+' "${filename}" "${size}" <"${source}"
+    echo "Uploaded ${filename} to ${memory_transfer_volume_name}"
+}
+
+memory_download() {
+    local filename="${memory_archive_arguments[0]}"
+    local destination="${memory_archive_arguments[1]}"
+    validate_memory_archive_name "${filename}" || return 1
+    require_memory_transfer_volume
+    if [[ -d "${destination}" ]]; then
+        destination="${destination%/}/${filename}"
+    fi
+    if [[ -e "${destination}" || -L "${destination}" ]]; then
+        echo "Download destination already exists: ${destination}" >&2
+        return 1
+    fi
+    (
+        umask 077
+        set -o noclobber
+        exec 3>"${destination}" || exit 1
+        if ! memory_transfer_run ro -c '
+from pathlib import Path
+import shutil
+import sys
+
+path = Path("/memory-transfer") / sys.argv[1]
+if path.is_symlink() or not path.is_file():
+    raise SystemExit(f"Archive not found: {path.name}")
+with path.open("rb") as archive:
+    shutil.copyfileobj(archive, sys.stdout.buffer)
+' "${filename}" >&3; then
+            exec 3>&-
+            rm -f -- "${destination}"
+            exit 1
+        fi
+    ) || return 1
+    echo "Downloaded ${destination}"
+}
+
+memory_delete() {
+    local filename="${memory_archive_arguments[0]}"
+    validate_memory_archive_name "${filename}" || return 1
+    require_memory_transfer_volume
+    memory_transfer_run rw -c '
+from pathlib import Path
+import sys
+
+path = Path("/memory-transfer") / sys.argv[1]
+if path.is_symlink() or not path.is_file():
+    raise SystemExit(f"Archive not found: {path.name}")
+path.unlink()
+' "${filename}"
+    echo "Deleted ${filename} from ${memory_transfer_volume_name}"
 }
 
 start() {
     container_log_config_path=""
     log_config_volume=()
     memory_transfer_volume=()
-    memory_transfer_env=()
     memory_import_env=()
     memory_export_option=()
 
@@ -949,21 +962,26 @@ start() {
         log_config_volume=(--volume "${log_config_abs}:${container_log_config_path}:ro")
     fi
 
-    if [ -n "${memory_transfer_dir}" ]; then
-        prepare_memory_transfer_dir || return 1
-        memory_transfer_volume=(--volume "${memory_transfer_dir}:/memory-transfer")
-        memory_transfer_env=(-e "MEMORY_TRANSFER_GID=${memory_transfer_gid}")
-    fi
-
     docker pull "${image}" 2>/dev/null || true
 
-    if [ -n "${memory_transfer_dir}" ]; then
-        if ! docker run --rm --user 65534:65534 --group-add "${memory_transfer_gid}" --entrypoint /bin/sh \
-            --volume "${memory_transfer_dir}:/memory-transfer" "${image}" \
-            -c 'test -d /memory-transfer && test -w /memory-transfer'; then
-            echo "--memory-transfer-dir must be writable by container user 65534 with group ${memory_transfer_gid}" >&2
+    if [[ "${memory_export_enabled}" == "1" || -n "${memory_import_file}" ]]; then
+        prepare_memory_transfer_volume || return 1
+        if ! memory_transfer_run rw -c '
+import os
+from pathlib import Path
+import sys
+
+directory = Path("/memory-transfer")
+if not os.access(directory, os.R_OK | os.W_OK | os.X_OK):
+    raise SystemExit("Memory transfer volume must be accessible to container user 65534")
+if sys.argv[1]:
+    archive = directory / sys.argv[1]
+    if archive.is_symlink() or not archive.is_file() or not os.access(archive, os.R_OK):
+        raise SystemExit(f"--memory-import archive not found or unreadable: {archive.name}")
+' "${memory_import_file}"; then
             return 1
         fi
+        memory_transfer_volume=(--mount "type=volume,source=${memory_transfer_volume_name},target=/memory-transfer")
     fi
 
     if [[ -n "${memory_import_file}" && "${memory_import_mode}" == "overwrite" ]]; then
@@ -1003,7 +1021,6 @@ start() {
             --volume omega-memory:/PeTTa/repos/Omega/memory
             ${log_config_volume[@]+"${log_config_volume[@]}"}
             ${memory_transfer_volume[@]+"${memory_transfer_volume[@]}"}
-            ${memory_transfer_env[@]+"${memory_transfer_env[@]}"}
             -e "${api_token_var}"="${api_token}"
             -e "TG_BOT_TOKEN=${TG_BOT_TOKEN:-}"
             -e "SL_BOT_TOKEN=${SL_BOT_TOKEN:-}"
@@ -1072,6 +1089,10 @@ case "${command}" in
     start) start ;;
     stop) stop ;;
     clean) clean ;;
+    memory-list) memory_list ;;
+    memory-upload) memory_upload ;;
+    memory-download) memory_download ;;
+    memory-delete) memory_delete ;;
     --version|-v) version ;;
     -h|--help) help ;;
     *) image="${command}"

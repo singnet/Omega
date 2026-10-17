@@ -100,15 +100,19 @@ for setup, export controls, archive contents, and import modes.
 > using `scripts/omega`, because both operations run from the container
 > entrypoint before the agent loop starts.
 
-To restore an archive while upgrading to a tagged image on Linux, use the same
-prepared transfer directory. Its group ID is required by the launcher:
+Archives are stored in the Docker volume `omega-memory-transfer`. Use the
+launcher to list, download, upload, or delete them; no host directory or group
+setup is required. The archive volume survives `scripts/omega clean`.
+
+To restore a host archive while upgrading, choose the target image and replace
+the archive filename below with your own. Missing images are pulled automatically:
 
 ```sh
-transfer_gid="$(stat -c %g "$HOME/omega-transfers")"
-scripts/omega start -d singularitynet/omega:<tag> -p OpenAI -t telegram \
-  --memory-transfer-dir "$HOME/omega-transfers" \
-  --memory-transfer-gid "$transfer_gid" \
-  --memory-import omega-memory-<timestamp>.tar.gz \
+image="singularitynet/omega:<tag>"
+archive="memory-archive.tar.gz"
+scripts/omega memory-upload "$HOME/Downloads/$archive" -d "$image"
+scripts/omega start -d "$image" -p OpenAI -t telegram \
+  --memory-import "$archive" \
   --memory-mode overwrite
 ```
 
