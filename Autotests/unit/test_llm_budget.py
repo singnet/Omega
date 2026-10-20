@@ -232,6 +232,24 @@ def test_openrouter_reasoning_body(effort, want):
     assert create.calls[0]["extra_body"]["reasoning"] == want
 
 
+@pytest.mark.parametrize("effort, want", [
+    ("medium", "medium"),
+    ("none", "none"),
+])
+def test_base_provider_forwards_reasoning_effort(effort, want):
+    create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls",
+                                      completion_tokens=40, reasoning_tokens=30))
+    make_anthropic(create).chat(make_request(reasoning=effort))
+    assert create.calls[0]["extra_body"]["reasoning_effort"] == want
+
+
+def test_base_provider_omits_reasoning_when_unset():
+    create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls",
+                                      completion_tokens=40, reasoning_tokens=30))
+    make_anthropic(create).chat(make_request(reasoning=None))
+    assert "extra_body" not in create.calls[0]
+
+
 def test_usage_is_logged_at_info(caplog):
     caplog.set_level(logging.INFO)
     create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls",

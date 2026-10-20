@@ -338,13 +338,20 @@ class AIProvider(AbstractAIProvider):
         }
 
     def convert_request(self, request: LLMRequest) -> Dict[str, Any]:
-        return {
+        result = {
             "model": self._model_name,
             "messages": [self.convert_message(msg) for msg in request.messages],
             "max_tokens": request.max_tokens,
             "tools": [self.convert_tool(tool) for tool in request.tools],
             "tool_choice": "required",
         }
+        reasoning = getattr(request, "reasoning_mode", None)
+        if reasoning:
+            # OpenAI-compatible servers (llama.cpp, vLLM, Strata, ...) accept
+            # reasoning_effort; "none" disables thinking. Plain OpenAI chat
+            # completions endpoints ignore unknown fields.
+            result["extra_body"] = {"reasoning_effort": str(reasoning).lower()}
+        return result
 
     def convert_response(self, raw):
         response = LLMResponse()
