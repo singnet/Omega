@@ -18,8 +18,8 @@
              (log INFO "workflow-plugin" "Adding plugin's skills")
              (add-skill workflow-load-instructions "Load an existing workflow instructions into the active context" (workflow_name))
              (add-skill workflow-unload-instructions "Unload active workflow from the active context" ())
-             (let $workflows (join (newline) (cons-atom "Available workflows: " (workflow-list-available)))
-               (add-prompt-extension workflows-available $workflows))
+             (add-skill workflow-refresh-list "Re-read available workflows from disk; use when a workflow was added or is missing from the list" ())
+             (workflow-refresh-list)
              ())
            $rc)))))
 
@@ -52,7 +52,7 @@
          (Error (quote (workflow-load-instructions $name)) (strings-concat ("ERROR: invalid workflow name: " $name)))
          (let $path (joinPath ((instructionsDir) $name "SKILL.md"))
            (if (not (exists-file $path))
-             (Error (quote (workflow-load-instructions $name)) (strings-concat ("ERROR: skill file not found: " $path)))
+             (Error (quote (workflow-load-instructions $name)) (strings-concat ("ERROR: skill file not found: " $path ". Try to call workflow-refresh-list")))
              (let $content (read-file $path)
                (progn
                  (log INFO "workflow-plugin" (strings-concat ("Loading workflow instructions for: " $name)))
@@ -107,6 +107,13 @@
    (let*  ( ($base (instructionsDir))
             ($dirs (directory-dirs $base)))
         (collect-description $dirs $base)))
+
+;; re-reads available workflows into the prompt
+(= (workflow-refresh-list)
+   (let $text (join (newline) (cons-atom "Available workflows: " (workflow-list-available)))
+     (progn
+       (remove-prompt-extension workflows-available)
+       (add-prompt-extension workflows-available $text))))
 
 ;; collects workflow description from description.txt
 (= (collect-description () $base) ())

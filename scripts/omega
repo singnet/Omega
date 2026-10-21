@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 bootstrap() {
+ensure_launcher_matches_image || return 1
 
 # Create temporary files
 tmp_config_file="$(mktemp)"
@@ -483,16 +484,156 @@ start
 
 }
 
-version() {
-    local script_dir
-    local repo_root
+_trim() {
+    local value="${1-}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    printf '%s' "$value"
+}
 
-    script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+bare_omega_version() {
+    local script_path script_dir repo_root
+
+    # A piped `curl | bash` has no script file. Do not treat the working
+    # directory, or a helper.py above it, as the checkout.
+    script_path="${BASH_SOURCE[0]}"
+    if [[ ! -f "$script_path" ]]; then
+        return 0
+    fi
+    script_dir="$(cd -- "$(dirname -- "$script_path")" && pwd)"
     repo_root="$(cd -- "${script_dir}/.." && pwd)"
-    (
-        cd -- "$repo_root"
-        python3 -c 'from src.helper import omega_version; print(omega_version())'
-    )
+    if [[ -e "${repo_root}/.git" ]]; then
+        git -C "$repo_root" describe --tags --dirty --always 2>/dev/null || true
+        return 0
+    fi
+    if [[ -f "${repo_root}/version" ]]; then
+        cat "${repo_root}/version"
+    fi
+}
+
+strip_legacy_version_prefix() {
+    local version="$1"
+    local prefix
+    for prefix in "Omega version=" "OmegaClaw version="; do
+        if [[ "$version" == "$prefix"* ]]; then
+            version="${version#"$prefix"}"
+            version="$(_trim "$version")"
+            break
+        fi
+    done
+    printf '%s' "$version"
+}
+
+version() {
+    local bare
+    bare="$(_trim "$(bare_omega_version 2>/dev/null || true)")"
+    bare="${bare%$'\r'}"
+    bare="$(strip_legacy_version_prefix "$bare")"
+    if [[ -z "$bare" || "$bare" == "unknown" || "$bare" == "Omega unknown" ]]; then
+        printf '%s\n' "Omega unknown"
+    else
+        printf 'Omega version=%s\n' "$bare"
+    fi
+}
+
+strip_dirty_suffix() {
+    local version="$1"
+    if [[ "$version" == *-dirty ]]; then
+        version="${version%-dirty}"
+    fi
+    printf '%s' "$version"
+}
+
+comparable_omega_version() {
+    local version
+    version="$(_trim "${1-}")"
+    version="${version%$'\r'}"
+    version="$(strip_legacy_version_prefix "$version")"
+    if [[ -z "$version" || "$version" == "unknown" || "$version" == "Omega unknown" ]]; then
+        printf ''
+        return 0
+    fi
+    strip_dirty_suffix "$version"
+}
+
+version_commit_id() {
+    local version="$1"
+    if [[ "$version" =~ -[0-9]+-g([0-9a-fA-F]{7,})$ ]]; then
+        printf '%s' "${BASH_REMATCH[1]}"
+        return 0
+    fi
+    if [[ "$version" =~ ^[0-9a-fA-F]{7,}$ ]]; then
+        printf '%s' "$version"
+    fi
+    return 0
+}
+
+commit_abbreviations_match() {
+    local left right short long
+    left="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+    right="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
+    if [[ ${#left} -le ${#right} ]]; then
+        short="$left"
+        long="$right"
+    else
+        short="$right"
+        long="$left"
+    fi
+    [[ "$long" == "$short"* ]]
+}
+
+same_described_commit() {
+    local left="$1" right="$2" left_id right_id
+    if [[ "$left" == "$right" ]]; then
+        return 0
+    fi
+    left_id="$(version_commit_id "$left")"
+    right_id="$(version_commit_id "$right")"
+    if [[ -z "$left_id" || -z "$right_id" ]]; then
+        return 1
+    fi
+    commit_abbreviations_match "$left_id" "$right_id"
+}
+
+read_image_omega_version() {
+    local raw="" path
+    for path in /PeTTa/repos/Omega/version /PeTTa/repos/OmegaClaw-Core/version; do
+        raw="$(docker run --rm --entrypoint cat "${image}" "$path" 2>/dev/null || true)"
+        raw="$(_trim "$raw")"
+        if [ -n "$raw" ]; then
+            printf '%s' "$raw"
+            return 0
+        fi
+    done
+}
+
+ensure_launcher_matches_image() {
+    local script_version image_version
+    script_version="$(comparable_omega_version "$(bare_omega_version 2>/dev/null || true)")"
+    if [ -z "$script_version" ]; then
+        echo "Could not determine the launcher script version; skipping version check." >&2
+        echo "Use the same tag for scripts/omega and the Docker image." >&2
+        return 0
+    fi
+
+    image_version="$(comparable_omega_version "$(read_image_omega_version)")"
+    if [ -z "$image_version" ]; then
+        echo "Could not determine the Docker image version; skipping version check." >&2
+        echo "Use the same tag for scripts/omega and the Docker image." >&2
+        return 0
+    fi
+
+    if ! same_described_commit "$script_version" "$image_version"; then
+        cat >&2 <<EOF
+The launcher script and Docker image versions do not match.
+  Script: Omega version=${script_version}
+  Image (${image}): Omega version=${image_version}
+
+Update the script or the image so both are the same tag/commit. For example:
+  curl -fsSL https://github.com/singnet/Omega/raw/refs/tags/<tag>/scripts/omega | bash -s -- singularitynet/omega:<tag>
+EOF
+        return 1
+    fi
 }
 
 help() {
@@ -963,6 +1104,7 @@ start() {
     fi
 
     docker pull "${image}" 2>/dev/null || true
+    ensure_launcher_matches_image || return 1
 
     if [[ "${memory_export_enabled}" == "1" || -n "${memory_import_file}" ]]; then
         prepare_memory_transfer_volume || return 1

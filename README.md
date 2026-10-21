@@ -75,9 +75,9 @@ Run Omega using the next command:
 curl -fsSL https://github.com/singnet/Omega/raw/refs/tags/v0.1.20/scripts/omega | bash -s -- singularitynet/omega:v0.1.20
 ```
 
-To run a specific version of Omega set version in `TAG` environment variable and run the following command:
+To run a specific release, set the `TAG` environment variable to the desired release tag (e.g., v0.1.20) and run the following command:
 ```
-export TAG=<version>; curl -fsSL  https://github.com/singnet/Omega/raw/refs/tags/$TAG/scripts/omega | bash -s -- singularitynet/omega:$TAG
+export TAG=v0.1.20; curl -fsSL  https://github.com/singnet/Omega/raw/refs/tags/$TAG/scripts/omega | bash -s -- singularitynet/omega:$TAG
 ```
 
 To stop the Omega Docker container:
@@ -89,6 +89,13 @@ To restart the Omega Docker container:
 ```
 docker start omega
 ```
+
+The `scripts/omega` launcher and the Docker image must be the same version.
+`scripts/omega start` (and the interactive bootstrap) compare the host script
+version with the version baked into the image and abort when both are known
+and differ. A `curl | bash` install has no checkout, so that path warns and
+continues. Use the same release tag for the checkout and the image, for example
+`git checkout v0.1.20` with `singularitynet/omega:v0.1.20`.
 
 ### Memory portability
 

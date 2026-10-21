@@ -1,4 +1,6 @@
 import os
+import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -14,6 +16,45 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 LAUNCHER = REPO_ROOT / "scripts" / "omega"
 CONTAINER_TEST_IMAGE = os.environ.get("OMEGA_LAUNCHER_TEST_IMAGE", "")
 UPLOAD_PREFIX_SIZE = 1024
+FAKE_DOCKER = """\
+#!/bin/sh
+version_path=""
+for arg in "$@"; do
+  case "$arg" in
+    /PeTTa/repos/Omega/version|/PeTTa/repos/OmegaClaw-Core/version)
+      version_path="$arg"
+      ;;
+  esac
+done
+if [ -n "$version_path" ]; then
+  case "$version_path" in
+    /PeTTa/repos/Omega/version)
+      if [ -n "${OMEGA_TEST_OMEGA_VERSION+x}" ]; then
+        printf '%s\\n' "${OMEGA_TEST_OMEGA_VERSION}"
+      else
+        printf '%s\\n' "${OMEGA_TEST_IMAGE_VERSION}"
+      fi
+      ;;
+    *)
+      printf '%s\\n' "${OMEGA_TEST_LEGACY_VERSION}"
+      ;;
+  esac
+  exit 0
+fi
+printf 'docker'
+printf ' <%s>' "$@"
+printf '\\n'
+"""
+
+
+def _host_omega_version() -> str:
+    result = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "describe", "--tags", "--dirty", "--always"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.strip()
 
 
 def _load_installer_namespace():
@@ -26,19 +67,27 @@ def _load_installer_namespace():
     return namespace
 
 
-def _stub_docker_environment(tmp_path: Path) -> dict:
+def _stub_docker_environment(
+    tmp_path: Path, script_version: str | None = None
+) -> dict:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     docker = bin_dir / "docker"
-    docker.write_text(
-        "#!/bin/sh\n"
-        "printf 'docker'\n"
-        "printf ' <%s>' \"$@\"\n"
-        "printf '\\n'\n",
-        encoding="utf-8",
-    )
-
+    docker.write_text(FAKE_DOCKER, encoding="utf-8")
     docker.chmod(0o755)
+    if script_version is not None:
+        real_git = shutil.which("git")
+        git = bin_dir / "git"
+        git.write_text(
+            "#!/bin/sh\n"
+            "if [ \"$1\" = \"-C\" ] && [ \"$3\" = \"describe\" ]; then\n"
+            f"  printf '%s\\n' {shlex.quote(script_version)}\n"
+            "  exit 0\n"
+            "fi\n"
+            f"exec {shlex.quote(real_git)} \"$@\"\n",
+            encoding="utf-8",
+        )
+        git.chmod(0o755)
     environment = os.environ.copy()
     environment["ASI_API_KEY"] = "test-token"
     environment["PATH"] = (
@@ -49,13 +98,26 @@ def _stub_docker_environment(tmp_path: Path) -> dict:
 
 
 def _run_launcher(
-    tmp_path: Path, *options: str, memory_import: bool = True
+    tmp_path: Path,
+    *options: str,
+    memory_import: bool = True,
+    image_version: str | None = None,
+    legacy_version: str | None = None,
+    script_version: str | None = None,
 ) -> subprocess.CompletedProcess:
     import_options = ["--memory-import", "memory.tar.gz"] if memory_import else []
+    environment = _stub_docker_environment(tmp_path, script_version=script_version)
+    if legacy_version is not None:
+        environment["OMEGA_TEST_OMEGA_VERSION"] = ""
+        environment["OMEGA_TEST_LEGACY_VERSION"] = legacy_version
+    else:
+        environment["OMEGA_TEST_IMAGE_VERSION"] = (
+            image_version if image_version is not None else _host_omega_version()
+        )
     return subprocess.run(
         [str(LAUNCHER), "start", *import_options, *options],
         cwd=REPO_ROOT,
-        env=_stub_docker_environment(tmp_path),
+        env=environment,
         capture_output=True,
         text=True,
         check=False,
@@ -447,3 +509,101 @@ def test_removed_component_options_are_rejected(tmp_path, removed_option):
     assert result.returncode != 0
     assert "Usage:" in result.stdout
     assert "docker <" not in result.stdout
+
+
+def test_matching_image_version_allows_start(tmp_path):
+    result = _run_launcher(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert "docker <rm>" in result.stdout
+    assert "docker <run>" in result.stdout
+    assert "The launcher script and Docker image versions do not match." not in result.stderr
+
+
+def test_mismatched_image_version_aborts_before_container_replace(tmp_path):
+    result = _run_launcher(tmp_path, image_version="v0.0.0-test")
+
+    assert result.returncode != 0
+    assert "The launcher script and Docker image versions do not match." in result.stderr
+    assert "Omega version=v0.0.0-test" in result.stderr
+    assert "docker <rm>" not in result.stdout
+    assert "<--name>" not in result.stdout
+
+
+def test_legacy_prefixed_image_version_prints_prefix_once(tmp_path):
+    result = _run_launcher(tmp_path, image_version="Omega version=v0.0.0-test")
+
+    assert result.returncode != 0
+    assert "Omega version=v0.0.0-test" in result.stderr
+    assert "Omega version=Omega version=" not in result.stderr
+    assert "docker <rm>" not in result.stdout
+
+
+def test_legacy_omegaclaw_prefix_prints_once(tmp_path):
+    result = _run_launcher(tmp_path, image_version="OmegaClaw version=v0.1.19")
+
+    assert result.returncode != 0
+    assert "Image (singularitynet/omega:latest): Omega version=v0.1.19" in result.stderr
+    assert "OmegaClaw version=" not in result.stderr
+    assert "docker <rm>" not in result.stdout
+
+
+def _describe_commit(version: str) -> tuple[str, str] | None:
+    described = re.fullmatch(r"(.+-\d+-g)([0-9a-fA-F]{7,})", version.removesuffix("-dirty"))
+    if described is None:
+        return None
+    return described.group(1), described.group(2)
+
+
+def test_longer_abbreviation_matches_same_commit(tmp_path):
+    described = _describe_commit(_host_omega_version())
+    if described is None:
+        pytest.skip("checkout describe has no commit abbreviation")
+    prefix, commit = described
+    result = _run_launcher(
+        tmp_path,
+        script_version=f"{prefix}{commit}705ea",
+        image_version=f"{prefix}{commit}",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "The launcher script and Docker image versions do not match." not in result.stderr
+    assert "docker <rm>" in result.stdout
+
+
+def test_shallow_clone_hash_matches_described_commit(tmp_path):
+    described = _describe_commit(_host_omega_version())
+    if described is None:
+        pytest.skip("checkout describe has no commit abbreviation")
+    prefix, commit = described
+    result = _run_launcher(
+        tmp_path,
+        script_version=commit,
+        image_version=f"{prefix}{commit}",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "The launcher script and Docker image versions do not match." not in result.stderr
+    assert "docker <rm>" in result.stdout
+
+
+def test_different_commit_abbreviation_is_refused(tmp_path):
+    result = _run_launcher(
+        tmp_path,
+        script_version="v0.1.20-11-g9cdcbfe705ea",
+        image_version="v0.1.20-11-gdeadbee",
+    )
+
+    assert result.returncode != 0
+    assert "Omega version=v0.1.20-11-g9cdcbfe705ea" in result.stderr
+    assert "Omega version=v0.1.20-11-gdeadbee" in result.stderr
+    assert "docker <rm>" not in result.stdout
+
+
+def test_legacy_image_path_version_is_compared(tmp_path):
+    result = _run_launcher(tmp_path, legacy_version="v0.0.0-test")
+
+    assert result.returncode != 0
+    assert "Omega version=v0.0.0-test" in result.stderr
+    assert "Could not determine the Docker image version" not in result.stderr
+    assert "docker <rm>" not in result.stdout
