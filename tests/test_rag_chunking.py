@@ -142,6 +142,18 @@ def test_long_preamble_becomes_its_own_section(rag):
     assert chunks[1]["breadcrumb"] == "t.md > Heading"
 
 
+def test_preamble_over_the_cap_is_split_without_losing_text(rag):
+    preamble = "a" * 12001
+    after = "b" * 200
+    chunks = rag._chunk_markdown(preamble + "\n\n# Heading\n\n" + after, "t.md")
+
+    preamble_chunks = [c for c in chunks if c["breadcrumb"] == "t.md"]
+    assert len(preamble_chunks) > 1
+    assert all(len(c["text"]) <= rag.MAX_CHUNK_CHARS for c in chunks)
+    assert "".join(c["text"] for c in preamble_chunks) == preamble
+    assert after in "".join(c["text"] for c in chunks)
+
+
 def test_bare_hash_line_is_not_a_heading(rag):
     chunks = rag._chunk_markdown("Body text.\n\n#\n35\n", "t.md")
 
