@@ -33,6 +33,52 @@ module. The plugin record has the following fields:
     `name` module is located. Can include `{REPO}` placeholder to designate the
     root folder of the Omega source repository.
 
+## Plugin dependencies
+
+A plugin that imports a third-party package declares it in a `requirements.txt`
+in the plugin's own directory. `scripts/install_dependencies.sh` installs those
+alongside Omega's own, and both the image build and the source install in
+[README.md](/README.md#installation) call it. A plugin that imports nothing
+outside the standard library and Omega ships no such file and needs no entry
+anywhere.
+
+Everything is installed by a single pip invocation, so Omega's own pins win. They
+are exact, and a plugin asking for a different version of a package Omega pins
+fails the install with a conflict rather than replacing it. Declare ranges wide
+enough to include Omega's pin — `openai>=1.0.0` rather than `openai==2.1.0` —
+and list only what the plugin actually imports.
+
+The file holds requirements and nothing else. pip reads an option written inside
+a requirements file — `--index-url` and `--extra-index-url` above all — as an
+instruction for the whole invocation rather than for the file carrying it, which
+would let one plugin choose where Omega's own packages are fetched from. Sharing
+one invocation is what makes Omega's pins win, so there is nowhere to scope such
+an option to. A plugin file that carries one, at the start of a line or after a
+requirement (`foo==1.0 --hash=...`), stops the install with the line quoted. The
+file must be UTF-8.
+
+Some limits are worth knowing:
+  - Only the exact versions in Omega's own `requirements.txt` are protected. A
+    package Omega installs without pinning, because something it pins pulls it
+    in, can be moved by a plugin with no error, since nothing is violated: a
+    plugin asking for `tqdm==4.67.1` replaces the newer one Omega would get.
+    List only what the plugin imports, with ranges, to keep this rare.
+  - Only `plugins/<name>/requirements.txt` is read. Every directory under
+    `plugins/` is installed whether or not `config/plugins.yaml` enables it, and
+    a plugin loaded from anywhere else gets nothing installed.
+  - A relative path in the file, such as a wheel shipped inside the plugin, is
+    resolved from the directory the install runs in, not the plugin's, and the
+    image build copies only `requirements.txt` from each plugin. Install such a
+    package from an index or a URL instead.
+  - After installing, `pip check` checks the whole environment. In a source
+    install into an environment that already holds a broken package, the
+    install succeeds and the script then fails naming that package.
+  - A plugin mounted into an already built image gets no installation at all,
+    since the packages are baked in at build time. That route needs an image
+    built with the plugin present.
+  - A plugin whose packages are missing does not fail on its own: the import
+    error stops the agent at startup with `ModuleNotFoundError`.
+
 As an example of a MeTTa plugin one can look at the code of the [workflow
 plugin](/plugins/workflow/workflow.metta). As an example of a Python plugin
 one can look at the code of the [IRC communication channel](/channels/irc.py).
