@@ -19,6 +19,7 @@ mock/test_memory_missing_history_file_mock.py
 mock/test_memory_pin_window_visibility_mock.py
 mock/test_openclaw_delegate_mock.py
 mock/test_pin_invisible_within_iteration_mock.py
+mock/test_policy_resolve_mock.py
 mock/test_prompt_missing_files_mock.py
 mock/test_rpc.py
 mock/test_run_error_script_mock.py
@@ -28,6 +29,7 @@ mock/test_search_invalid_mock.py
 mock/test_search_weather_mock.py
 mock/test_skill_metta_mock.py
 mock/test_skill_pin_mock.py
+mock/test_tool_result_for_every_call_mock.py
 mock/test_transition_episodes_after_eviction_mock.py
 mock/test_transition_metta_to_remember_mock.py
 mock/test_transition_pin_to_remember_mock.py

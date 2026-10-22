@@ -34,7 +34,10 @@ def test_skill_metta_slack_mock(llm, sl):
         # concrete number is communicated back.
         llm.set_answer(
             prompt,
-            '(metta "(+ 2 2)") (send "The metta skill evaluated (+ 2 2) and returned 4.")',
+            [
+                ("metta", { "sexpression": "(+ 2 2)" }),
+                ("send", { "content": "The metta skill evaluated (+ 2 2) and returned 4." }),
+            ],
         )
         sl_send_prompt(sl, prompt)
         c.ok("slack", f"run-id={c.run_id}")

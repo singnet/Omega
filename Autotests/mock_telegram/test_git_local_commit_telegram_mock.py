@@ -54,10 +54,12 @@ def test_git_local_commit_telegram_mock(llm, tg):
         # arg itself is double-quoted, so we escape inner quotes.
         llm.set_answer(
             prompt,
-            f'(shell "git -C {TARGET_DIR} init") '
-            f'(write-file "{commit_path}" "{marker}") '
-            f'(shell "git -C {TARGET_DIR} add -A") '
-            f'(shell "git -C {TARGET_DIR} commit -m \\"add hello {c.run_id}\\"")',
+            [
+                ("shell", { "cmd": f"git -C {TARGET_DIR} init" }),
+                ("write-file", { "filename": f"{commit_path}", "content": f"{marker}" }),
+                ("shell", { "cmd": f"git -C {TARGET_DIR} add -A" }),
+                ("shell", { "cmd": f"git -C {TARGET_DIR} commit -m \"add hello {c.run_id}\"" }),
+            ],
         )
         tg_send_prompt(tg, prompt)
         c.ok("telegram", f"run-id={c.run_id}")

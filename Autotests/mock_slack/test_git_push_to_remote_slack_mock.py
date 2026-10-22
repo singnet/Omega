@@ -108,7 +108,7 @@ def test_git_push_to_remote_slack_mock(llm, sl):
             f"git commit -m 'qa run {c.run_id}' && "
             f"git push -u origin {branch}"
         )
-        llm.set_answer(prompt, f'(shell "{chain}")')
+        llm.set_answer(prompt, [("shell", { "cmd": f"{chain}" })])
         sl_send_prompt(sl, prompt)
         c.ok("slack", f"run-id={c.run_id}")
 

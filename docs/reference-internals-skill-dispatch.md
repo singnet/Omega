@@ -16,14 +16,13 @@ With the hard rules that every argument is a quoted string and no MeTTa variable
 
 From `src/loop.metta`:
 
-1. **Raw LLM string** → `$respi`.
-2. **Parenthesis repair** — `helper.balance_parentheses $respi` → `$resp`. Common LLM mistakes (missing closers) are fixed here.
-3. **First-character check** — if `$resp` does not start with `(`, the agent receives a reminder prompt instead of a real dispatch; the LLM tries again next turn.
-4. **Parse** — `catch (sread $response)` → `$sexpr`. On parse failure, `HandleError` records `MULTI_COMMAND_FAILURE_...`.
-5. **Fan out** — `(superpose $sexpr)` produces one binding per skill call in the tuple.
-6. **Evaluate each** — `(catch (eval $s))`. On success, the result is normalized via `helper.normalize_string`. On failure, `HandleError` records `SINGLE_COMMAND_FORMAT_ERROR_...`.
-7. **Aggregate** — all results are collapsed into `RESULTS: ((COMMAND_RETURN: (cmd result)) ...)`.
-8. **Feedback** — stored as `&lastresults`, fed back into the next prompt as `LAST_SKILL_USE_RESULTS`.
+1. **Raw LLM string** → `$respstr`.
+2. **Parse** — `catch (sread $respstr)` → `$resp`. On parse failure, `HandleError` records error.
+3. **Fan out** — `(superpose $resp)` produces one binding per tool call in the tuple.
+4. **Evaluate each** — `(catch (eval $s))`. On success, the result is normalized via `helper.normalize_string`. On failure, `HandleError` records error. 
+5. **Feedback** - `(llmToolCallResponseMessage role "tool" callid $callid content (last_chars $result (maxFeedback)))`. Add tool call result to the request.
+6. **Aggregate** — all results are collapsed into `$sexpr`.
+7. **History** — `$sexpr` is stored in the history.
 
 ## How `eval $s` resolves to a skill
 

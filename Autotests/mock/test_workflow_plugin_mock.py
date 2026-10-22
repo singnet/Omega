@@ -73,7 +73,9 @@ class TestWorkflowPlugin:
                 "Demonstrate the workflow plugin: load the test-workflow "
                 "instructions.",
             )
-            llm.set_answer(prompt1, f'(workflow-load-instructions "{WORKFLOW}")')
+            llm.set_answer(prompt1,
+                [("workflow-load-instructions", { "workflow_name": f"{WORKFLOW}" })]
+            )
             if not comm.send_message(prompt1):
                 c.fail("comm-1", "could not deliver turn 1 prompt within 60s")
             loaded = _recv_contains(comm, f"Loaded workflow: {WORKFLOW}", timeout=60)
@@ -89,7 +91,8 @@ class TestWorkflowPlugin:
             prompt2 = make_prompt(skill_id, "Continue the workflow: perform step 1.")
             llm.set_answer(
                 prompt2,
-                f'({WORKFLOW_SKILL} "{DEMO_MESSAGE}") (workflow-unload-instructions)',
+                [(f"{WORKFLOW_SKILL}", { "message": f"{DEMO_MESSAGE}" }),
+                ("workflow-unload-instructions", {})]
             )
             if not comm.send_message(prompt2):
                 c.fail("comm-2", "could not deliver turn 2 prompt within 60s")
@@ -116,7 +119,7 @@ class TestWorkflowPlugin:
 
             c.step("turn 1: load the test-workflow")
             prompt1 = make_prompt(c.run_id, "Load the test-workflow instructions.")
-            llm.set_answer(prompt1, f'(workflow-load-instructions "{WORKFLOW}")')
+            llm.set_answer(prompt1, [("workflow-load-instructions", { "workflow_name": f"{WORKFLOW}" })])
             if not comm.send_message(prompt1):
                 c.fail("comm-1", "could not deliver turn 1 prompt within 60s")
             if _recv_contains(comm, f"Loaded workflow: {WORKFLOW}", timeout=60) is None:
@@ -127,7 +130,7 @@ class TestWorkflowPlugin:
             unload_id = c.run_id + 1
             time.sleep(5)
             prompt2 = make_prompt(unload_id, "The workflow is done, unload it now.")
-            llm.set_answer(prompt2, "(workflow-unload-instructions)")
+            llm.set_answer(prompt2, [("workflow-unload-instructions", {})])
             if not comm.send_message(prompt2):
                 c.fail("comm-2", "could not deliver turn 2 prompt within 60s")
             time.sleep(12)   # let the unload turn complete
@@ -139,7 +142,7 @@ class TestWorkflowPlugin:
             marker = f"gone-{c.run_id}"
             time.sleep(2)
             prompt3 = make_prompt(gone_id, "Please run the workflow step again.")
-            llm.set_answer(prompt3, f'({WORKFLOW_SKILL} "{marker}")')
+            llm.set_answer(prompt3, [(f"{WORKFLOW_SKILL}", { "message": f"{marker}" })])
             if not comm.send_message(prompt3):
                 c.fail("comm-3", "could not deliver turn 3 prompt within 60s")
             still = _recv_contains(comm, marker, timeout=25)
@@ -161,7 +164,7 @@ class TestWorkflowPlugin:
 
             c.step("turn 1: load research-workflow")
             prompt1 = make_prompt(c.run_id, f"Load the {RESEARCH_WORKFLOW} instructions.")
-            llm.set_answer(prompt1, f'(workflow-load-instructions "{RESEARCH_WORKFLOW}")')
+            llm.set_answer(prompt1, [("workflow-load-instructions", { "workflow_name": f"{RESEARCH_WORKFLOW}" })])
             if not comm.send_message(prompt1):
                 c.fail("comm-1", "could not deliver turn 1 prompt within 60s")
             if _recv_contains(comm, f"Loaded workflow: {RESEARCH_WORKFLOW}", timeout=60) is None:
@@ -173,7 +176,10 @@ class TestWorkflowPlugin:
             topic = f"iris via mock {c.run_id}"
             time.sleep(5)
             prompt2 = make_prompt(start_id, "Start the research project.")
-            llm.set_answer(prompt2, f'(research-start "{RESEARCH_NAME}" "{topic}")')
+            llm.set_answer(prompt2, [("research-start", {
+                "research_name": f"{RESEARCH_NAME}",
+                "topic": f"{topic}"
+            })])
             if not comm.send_message(prompt2):
                 c.fail("comm-2", "could not deliver turn 2 prompt within 60s")
             created = _recv_contains(comm, "Created project:", timeout=60)

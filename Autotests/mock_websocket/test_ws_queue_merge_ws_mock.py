@@ -40,7 +40,7 @@ def test_ws_queue_merge_ws_mock(llm, ws):
         p2 = make_prompt(c.run_id, "fragment BRAVO")
         p3 = make_prompt(c.run_id, "fragment CHARLIE")
         joined = " | ".join([p1, p2, p3])
-        llm.set_answer(joined, f'(send "{answer}")')
+        llm.set_answer(joined, [("send", { "content": f"{answer}" })])
         s1 = ws.inject_user_message(p1)
         s2 = ws.inject_user_message(p2)
         s3 = ws.inject_user_message(p3)

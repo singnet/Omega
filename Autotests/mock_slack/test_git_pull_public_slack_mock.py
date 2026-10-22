@@ -56,7 +56,7 @@ def test_git_pull_public_slack_mock(llm, sl):
         # clone into the path directly.
         llm.set_answer(
             prompt,
-            f'(shell "rm -rf {TARGET_DIR} && git clone {remote} {TARGET_DIR}")',
+            [("shell", { "cmd": f"rm -rf {TARGET_DIR} && git clone {remote} {TARGET_DIR}" })]
         )
         sl_send_prompt(sl, prompt)
         c.ok("slack", f"run-id={c.run_id}")

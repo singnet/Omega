@@ -53,7 +53,7 @@ def test_edit_add_timestamp_telegram_mock(llm, tg):
         # real test.
         llm.set_answer(
             prompt,
-            f'(shell "date -Iseconds >> {TARGET_FILE}")',
+            [("shell", { "cmd": f"date -Iseconds >> {TARGET_FILE}" })],
         )
         tg_send_prompt(tg, prompt)
         c.ok("telegram", f"run-id={c.run_id}")

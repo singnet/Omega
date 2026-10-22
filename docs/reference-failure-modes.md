@@ -89,7 +89,6 @@ Measured across 4,500+ operational cycles, the top error categories are:
 
 1. **Commands not executed** (`NOTHING_WAS_DONE`) — the LLM produced output that was not a valid skill tuple.
 2. **Multi-command parsing failures.**
-3. **Parenthesis mismatches** — repaired best-effort by `helper.balance_parentheses`, but not always successfully.
 
 These are **the most frequent failure mode in the entire system**, not occasional glitches.
 

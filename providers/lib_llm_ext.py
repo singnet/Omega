@@ -1,16 +1,15 @@
 import os, hashlib, time
+import threading
 from datetime import datetime
 import openai
+from providers import *
 from typing import Optional, Tuple, Dict, Any
 from config import config_get_by_key
-from src.helper import quote_arg
+import json
 from src.logger import get_logger
+import uuid
 
-PROMPT_DELIMITER = ":-:-:-:"
-# The loop tags the human message it appends after the delimiter. Everything else
-# that can land there, the spamShield reminder or nothing at all, is not a turn of
-# its own.
-HUMAN_MESSAGE_MARKER = "HUMAN-MSG:"
+NO_HUMAN_MESSAGE_MARKER = "NO NEW USER INPUT"
 LLM_EMPTY_RESPONSE_MESSAGE = (
     "The agent didn\'t return an answer: reasoning exceeded the token limit for "
     "this response before it could produce one."
@@ -66,8 +65,8 @@ CHAT_RETRY_BACKOFF_SECONDS = 0.5
 
 logger = get_logger(__name__)
 
-def _log_raw(provider: str, model: str, raw: str) -> None:
-    logger.debug(f"[LLM_RAW] provider={provider} model={model} chars={len(raw or '')} raw={raw!r}")
+def _log_raw(kind: str, provider: str, model: str, raw: Dict) -> None:
+    logger.debug(f"[{kind}] provider={provider} model={model} raw={raw!r}")
 
 def _log_chat_completion(provider: str, model: str, response) -> None:
     """Report how the completion budget was actually spent (Chat Completions API)."""
@@ -103,11 +102,13 @@ def _log_responses_completion(provider: str, model: str, response) -> None:
     )
     logger.info(line)
 
-def _llm_empty_response_command() -> str:
+def _llm_empty_response_tool_call() -> LLMToolCall:
     """Return an explanatory message as a MeTTa `send` command when the LLM
     spends the entire output token budget on reasoning and returns no content.
     """
-    return f"(send {quote_arg(LLM_EMPTY_RESPONSE_MESSAGE)})"
+    return (LLMToolCall().with_name("send")
+            .with_id(f"call_{uuid.uuid4().hex}")
+            .add_argument("content", LLM_EMPTY_RESPONSE_MESSAGE))
 
 def _is_timeout_error(error: BaseException) -> bool:
     """True when the request ran out of time rather than failing outright: the
@@ -137,7 +138,9 @@ def _llm_timeout_command() -> str:
     stamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
     message = LLM_TIMEOUT_MESSAGE.format(
         time=stamp, count=_timeout_notices, timeout=CHAT_REQUEST_TIMEOUT_SECONDS)
-    return f"(send {quote_arg(message)})"
+    return (LLMToolCall().with_name("send")
+            .with_id(f"call_{uuid.uuid4().hex}")
+            .add_argument("content", message))
 
 def _is_transient_error(error: BaseException) -> bool:
     """True for a failure that another attempt may get past. A timeout is not
@@ -190,31 +193,12 @@ def _retrying(call, provider: str):
                 f"[{provider}.chat]: transient failure, retrying in {delay:.1f}s: {error}")
             time.sleep(delay)
 
-def _split_system_user(content: str) -> Tuple[str, str]:
-    """
-    MeTTa sends:
-        <system/context> :-:-:-: <last human/wakeup message>
-
-    Keep the split intact so providers receive a real system prompt.
-    """
-    if PROMPT_DELIMITER not in content:
-        return "", content.strip()
-
-    sysmsg, _, usermsg = content.partition(PROMPT_DELIMITER)
-    sysmsg = sysmsg.strip()
-    usermsg = usermsg.strip()
-
-    if not usermsg:
-        usermsg = "EMPTY / NO NEW USER INPUT."
-
-    return sysmsg, usermsg
-
 def _stable_cache_key(provider: str, model: str, sysmsg: str) -> str:
     """
     Stable key for requests sharing the same system-prefix family.
     Do not include the user message here.
     """
-    marker = " LAST_SKILL_USE_RESULTS: "
+    marker = " HISTORY: "
     stable = sysmsg.split(marker, 1)[0].strip()
     digest = hashlib.sha256(stable.encode("utf-8")).hexdigest()[:24]
     return f"{provider.lower()}:{model}:{digest}"
@@ -233,7 +217,7 @@ class AbstractAIProvider:
     def name(self) -> str:
         return self._name
 
-    def chat(self, content: str, max_tokens: int = 6000, reasoning: str = "medium", **kwargs) -> str:
+    def chat(self, request: LLMRequest) -> LLMResponse:
         raise NotImplementedError
 
     @property
@@ -254,7 +238,7 @@ class AIProvider(AbstractAIProvider):
         self._client = None  # lazy initialization
         self._timeout_notice_sent = False
 
-    def _start_of_turn(self, content: str) -> None:
+    def _start_of_turn(self, request: LLMRequest) -> None:
         """A prompt carrying a human message starts a fresh turn, which deserves
         its own answer even if the previous cycle already timed out.
 
@@ -264,10 +248,11 @@ class AIProvider(AbstractAIProvider):
         straight from the prompt rather than through _split_system_user, which
         substitutes a placeholder when it is empty.
         """
-        _, delimiter, tail = content.partition(PROMPT_DELIMITER)
-        tail = (tail if delimiter else content).lstrip(" ([\"'")
-        if tail.startswith(HUMAN_MESSAGE_MARKER):
-            self._timeout_notice_sent = False
+        user = [m for m in request.messages if m.role == "user"]
+        if len(user) > 0:
+            content = user[-1].content
+            if not NO_HUMAN_MESSAGE_MARKER in content:
+                self._timeout_notice_sent = False
 
     def _answered(self) -> None:
         """The provider answered, so the next timeout is a new run."""
@@ -284,9 +269,9 @@ class AIProvider(AbstractAIProvider):
         if self._timeout_notice_sent:
             logger.warning(
                 f"[{self.name}.chat]: timed out again, the user was already told")
-            return ""
+            return LLMResponse().with_error("Timeout out more than once")
         self._timeout_notice_sent = True
-        return _llm_timeout_command()
+        return LLMResponse().add_tool_call(_llm_timeout_command())
 
     def _ensure_client(self):
         """Initialize client on first use."""
@@ -318,57 +303,98 @@ class AIProvider(AbstractAIProvider):
         """Check if provider is configured (without initializing)."""
         return bool(config_get_by_key("GATEWAY_URL")) or bool(os.environ.get(self._var_name))
 
-    def _build_messages(self, content: str):
-        sysmsg, usermsg = _split_system_user(content)
+    def convert_message(self, message: LLMMessage) -> Dict:
+        result = { "role": message.role, "content": message.content }
+        if isinstance(message, LLMToolCallResponseMessage):
+            result["tool_call_id"] = message.callid
+        if isinstance(message, LLMToolCallMessage):
+            result["tool_calls"] = [self.convert_tool_call(call) for call in message.calls]
+        return result
 
-        if sysmsg:
-            return [
-                {"role": "system", "content": sysmsg},
-                {"role": "user", "content": usermsg},
-            ]
+    def convert_tool_call(self, call: LLMToolCall) -> Dict:
+        return {
+            "type": "function",
+            "id": call.id,
+            "function": {
+                "name": call.name,
+                "arguments": json.dumps(call.arguments)
+            }
+        }
 
-        return [{"role": "user", "content": usermsg}]
+    def convert_tool(self, tool: LLMTool) -> Dict:
+        return {
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": tool.description,
+                "strict": True,
+                "parameters": {
+                    "type": "object",
+                    "properties": { param.name: { "type": "string" } for param in tool.parameters },
+                    "required": [ param.name for param in tool.parameters ],
+                    "additionalProperties": False
+                }
+            }
+        }
 
-    def chat(self, content: str, max_tokens: int = 6000, reasoning: str = "medium", **kwargs) -> str:
+    def convert_request(self, request: LLMRequest) -> Dict[str, Any]:
+        return {
+            "model": self._model_name,
+            "messages": [self.convert_message(msg) for msg in request.messages],
+            "max_tokens": request.max_tokens,
+            "tools": [self.convert_tool(tool) for tool in request.tools],
+            "tool_choice": "required",
+        }
+
+    def convert_response(self, raw):
+        response = LLMResponse()
+
+        choice = raw.choices[0]
+        message = choice.message
+
+        if not message.tool_calls:
+            logger.warning("LLM returned an empty response")
+            finish_reason = getattr(choice, "finish_reason", None)
+            if finish_reason == "length":
+                response.add_tool_call(_llm_empty_response_tool_call())
+            return response
+
+        for tool_call in message.tool_calls:
+            tc = LLMToolCall().with_name(tool_call.function.name).with_id(tool_call.id)
+            try:
+                arguments = json.loads(tool_call.function.arguments)
+            except json.JSONDecodeError as error:
+                response.add_tool_call(tc.with_error(f"Invalid tool arguments from model: {error}"))
+            else:
+                if isinstance(arguments, dict):
+                    response.add_tool_call(tc.with_arguments(arguments))
+                else:
+                    response.add_tool_call(tc.with_error("Tool arguments must be a JSON object"))
+
+        return response
+
+    def chat(self, request: LLMRequest) -> LLMResponse:
         """Send chat request, initializing client if needed."""
-        self._start_of_turn(content)
+        self._start_of_turn(request)
         self._ensure_client()
 
         if self._client is None:
             raise RuntimeError(f"{self.name} not configured (set {self._var_name})")
 
         try:
-            response = _retrying(
-                lambda: self._client.chat.completions.create(
-                    model=self._model_name,
-                    messages=self._build_messages(content),
-                    max_tokens=max_tokens,
-                    **kwargs
-                ),
-                self._name,
-            )
-
+            raw_request = self.convert_request(request)
+            _log_raw("LLM_RAW_REQUEST", self._name, self._model_name, raw_request)
+            raw_response = _retrying(lambda: self._client.chat.completions.create(**raw_request), self._name)
             self._answered()
-            raw = response.choices[0].message.content or ""
-            finish_reason = getattr(response.choices[0], "finish_reason", None)
-            _log_raw(self._name, self._model_name, raw)
-            _log_chat_completion(self._name, self._model_name, response)
-            if not raw:
-                logger.warning("LLM returned an empty response")
-                if finish_reason == "length":
-                    raw = _llm_empty_response_command()
-            resp = self._clean_text(raw)
-            return resp
+            _log_raw("LLM_RAW_RESPONSE", self._name, self._model_name, raw_response)
+            _log_chat_completion(self._name, self._model_name, raw_response)
+            return self.convert_response(raw_response)
         except Exception as e:
-            logger.exception(f"[AIProvider.chat]: Exception while communicating with LLM: {e}")
+            error = f"Exception while communicating with LLM: {e}"
+            logger.exception(f"[AIProvider.chat]: {error}")
             if _is_timeout_error(e):
                 return self._timeout_reply()
-            return ""
-
-    def _clean_text(self, text: str) -> str:
-        """Unescape special characters."""
-        return text.replace("_quote_", '"').replace("_apostrophe_", "'").replace("</arg_value>", " ") \
-                    .replace("</tool_call>", " ").replace("<arg_value>", " ").replace("<tool_call>", " ")
+            return LLMResponse().with_error(error)
 
     def stop(self) -> None:
         self._client.close()
@@ -376,6 +402,7 @@ class AIProvider(AbstractAIProvider):
 
 
 _embedding_model = None
+_embedding_lock = threading.Lock()
 
 def initLocalEmbedding():
     model_name="intfloat/e5-large-v2"
@@ -388,11 +415,13 @@ def initLocalEmbedding():
 
 def useLocalEmbedding(atom):
     global _embedding_model
-    if _embedding_model is None:
-        raise RuntimeError("Call initLocalEmbedding() first.")
-    return _embedding_model.encode(
-        atom,
-        normalize_embeddings=True
-    ).tolist()
+    # The tokenizer mutates shared state during encode.
+    with _embedding_lock:
+        if _embedding_model is None:
+            raise RuntimeError("Call initLocalEmbedding() first.")
+        return _embedding_model.encode(
+            atom,
+            normalize_embeddings=True
+        ).tolist()
 
 

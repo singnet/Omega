@@ -21,8 +21,8 @@ import pytest
 _REPO_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 _LIB_LLM_EXT_PATH = os.path.join(_REPO_ROOT, "providers", "lib_llm_ext.py")
 _HELPER_PATH = os.path.join(_REPO_ROOT, "src", "helper.py")
+_PROVIDERS_PATH = os.path.join(_REPO_ROOT, "src", "providers.py")
 
-# lib_llm_ext.py does `from src.helper import quote_arg` (repo-root package).
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
@@ -73,6 +73,9 @@ def llm():
 def helper():
     return _load("helper_under_test", _HELPER_PATH)
 
+@pytest.fixture(scope="module")
+def providers():
+    return _load("providers_under_test", _PROVIDERS_PATH)
 
 def _gateway_error(status):
     error = Exception(f"{status} Gateway Time-out")
@@ -120,28 +123,24 @@ def test_a_plain_error_is_not_a_timeout(llm):
 # --- what chat() returns ------------------------------------------------------
 
 def _is_timeout_notice(result):
-    return result.startswith('(send "LLM request timed out at ') and result.endswith('")')
+    return (len(result.calls) == 1 and
+            result.calls[0].name == 'send' and
+            result.calls[0].arguments['content'].startswith('LLM request timed out at '))
 
 
-def test_chat_tells_the_user_when_the_client_times_out(llm):
-    assert _is_timeout_notice(_provider(llm, _StubAPITimeoutError("timed out")).chat("prompt"))
+def test_chat_tells_the_user_when_the_client_times_out(llm, providers):
+    assert _is_timeout_notice(_provider(llm, _StubAPITimeoutError("timed out"))
+                              .chat(providers.LLMRequest()))
 
 
-def test_chat_tells_the_user_when_the_gateway_times_out(llm):
-    assert _is_timeout_notice(_provider(llm, _gateway_error(504)).chat("prompt"))
+def test_chat_tells_the_user_when_the_gateway_times_out(llm, providers):
+    assert _is_timeout_notice(_provider(llm,
+                                        _gateway_error(504)).chat(providers.LLMRequest()))
 
 
-def test_chat_still_returns_nothing_for_other_failures(llm):
-    assert _provider(llm, ValueError("boom")).chat("prompt") == ""
-
-
-# --- the message has to survive the parser the loop runs it through ----------
-
-def test_the_timeout_command_parses_into_one_send(llm, helper):
-    parsed = helper.balance_parentheses(llm._llm_timeout_command())
-    assert parsed.startswith('((send "')
-    assert parsed.endswith('"))')
-    assert parsed.count("(send ") == 1
+def test_chat_still_returns_nothing_for_other_failures(llm, providers):
+    response = _provider(llm, ValueError("boom")).chat(providers.LLMRequest())
+    assert len(response.calls) == 0
 
 
 # --- one attempt, so the timeout is reported when the first request gives up --
@@ -289,7 +288,8 @@ def test_a_retry_after_beyond_the_budget_is_not_waited_out(llm, monkeypatch):
 # --- two timeouts in a row must both reach the user --------------------------
 
 def test_the_notice_carries_the_time_to_the_millisecond(llm):
-    assert re.search(r"timed out at \d{2}:\d{2}:\d{2}\.\d{3}", llm._llm_timeout_command())
+    assert re.search(r"timed out at \d{2}:\d{2}:\d{2}\.\d{3}",
+                     llm._llm_timeout_command().arguments['content'])
 
 
 def test_two_notices_differ_even_inside_the_same_millisecond(llm, monkeypatch):
@@ -300,7 +300,7 @@ def test_two_notices_differ_even_inside_the_same_millisecond(llm, monkeypatch):
     monkeypatch.setattr(llm, "datetime", types.SimpleNamespace(now=lambda: frozen))
     first = llm._llm_timeout_command()
     second = llm._llm_timeout_command()
-    assert "05:14:17.000" in first and "05:14:17.000" in second
+    assert "05:14:17.000" in first.arguments['content'] and "05:14:17.000" in second.arguments['content']
     assert first != second
 
 
@@ -309,12 +309,13 @@ def test_two_notices_differ_even_inside_the_same_millisecond(llm, monkeypatch):
 SYSTEM_PART = "PROMPT: you are an agent"
 
 
-def _prompt(human=""):
-    return f"{SYSTEM_PART} :-:-:-: {human}"
+def _prompt(providers, human="NO NEW USER INPUT"):
+    return (providers.LLMRequest()
+            .add_message(providers.LLMMessage().with_role("system").with_content(SYSTEM_PART))
+            .add_message(providers.LLMMessage().with_role("user").with_content(human)))
 
-
-def _reply(text='(send "hello")'):
-    message = types.SimpleNamespace(content=text)
+def _reply(tool_calls):
+    message = types.SimpleNamespace(tool_calls=tool_calls)
     return types.SimpleNamespace(choices=[types.SimpleNamespace(message=message, finish_reason="stop")],
                                  usage=None)
 
@@ -341,52 +342,62 @@ def _scripted_provider(llm, steps):
     provider._client = _ScriptedClient(steps)
     return provider
 
+def second_timeout_response(providers):
+    return providers.LLMResponse().with_error("Timeout out more than once")
 
-def test_only_the_first_timeout_of_a_run_is_reported(llm):
+
+def test_only_the_first_timeout_of_a_run_is_reported(llm, providers):
     provider = _scripted_provider(llm, [_gateway_error(504)])
-    assert _is_timeout_notice(provider.chat(_prompt()))
-    assert provider.chat(_prompt()) == ""
-    assert provider.chat(_prompt()) == ""
+    assert _is_timeout_notice(provider.chat(_prompt(providers)))
+    assert provider.chat(_prompt(providers)) == second_timeout_response(providers)
+    assert provider.chat(_prompt(providers)) == second_timeout_response(providers)
 
 
-def test_a_successful_answer_starts_a_new_run(llm):
-    provider = _scripted_provider(llm, [_gateway_error(504), _reply(), _gateway_error(504)])
-    assert _is_timeout_notice(provider.chat(_prompt()))
-    assert provider.chat(_prompt()) == '(send "hello")'
-    assert _is_timeout_notice(provider.chat(_prompt()))
+def test_a_successful_answer_starts_a_new_run(llm, providers):
+    reply = [types.SimpleNamespace(id='callid#0',
+        function=types.SimpleNamespace(name='send', arguments='{"content": "hello"}'))]
+    expected = (providers.LLMResponse()
+                .add_tool_call(providers.LLMToolCall()
+                               .with_id('callid#0')
+                               .with_name('send')
+                               .add_argument('content', 'hello')))
+    provider = _scripted_provider(llm, [_gateway_error(504), _reply(reply), _gateway_error(504)])
+    assert _is_timeout_notice(provider.chat(_prompt(providers)))
+    assert provider.chat(_prompt(providers)) == expected
+    assert _is_timeout_notice(provider.chat(_prompt(providers)))
 
 
-def test_a_new_human_message_starts_a_new_run(llm):
+def test_a_new_human_message_starts_a_new_run(llm, providers):
     """The user who just wrote deserves an answer, even if the previous cycle
     already reported a timeout."""
     provider = _scripted_provider(llm, [_gateway_error(504)])
-    assert _is_timeout_notice(provider.chat(_prompt("HUMAN-MSG: first")))
-    assert provider.chat(_prompt()) == ""
-    assert _is_timeout_notice(provider.chat(_prompt("HUMAN-MSG: second")))
-    assert provider.chat(_prompt()) == ""
+    assert _is_timeout_notice(provider.chat(_prompt(providers, "first")))
+    assert provider.chat(_prompt(providers)) == second_timeout_response(providers)
+    assert _is_timeout_notice(provider.chat(_prompt(providers, "second")))
+    assert provider.chat(_prompt(providers)) == second_timeout_response(providers)
 
 
-def test_every_tagged_message_gets_its_own_notice(llm):
+def test_every_tagged_message_gets_its_own_notice(llm, providers):
     provider = _scripted_provider(llm, [_gateway_error(504)])
-    assert _is_timeout_notice(provider.chat(_prompt("HUMAN-MSG: same")))
-    assert provider.chat(_prompt()) == ""
-    assert _is_timeout_notice(provider.chat(_prompt("HUMAN-MSG: same")))
+    assert _is_timeout_notice(provider.chat(_prompt(providers, "same")))
+    assert provider.chat(_prompt(providers)) == second_timeout_response(providers)
+    assert _is_timeout_notice(provider.chat(_prompt(providers, "same")))
 
 
-def test_the_tagged_message_is_recognised_however_the_loop_wraps_it(llm):
+def test_the_tagged_message_is_recognised_however_the_loop_wraps_it(llm, providers):
     provider = _scripted_provider(llm, [_gateway_error(504)])
-    assert _is_timeout_notice(provider.chat(_prompt("(HUMAN-MSG: hello)")))
-    assert provider.chat(_prompt()) == ""
-    assert _is_timeout_notice(provider.chat(_prompt("['HUMAN-MSG:', 'hello']")))
+    assert _is_timeout_notice(provider.chat(_prompt(providers, "(hello)")))
+    assert provider.chat(_prompt(providers)) == second_timeout_response(providers)
+    assert _is_timeout_notice(provider.chat(_prompt(providers, "['hello']")))
 
 
-def test_the_spamshield_reminder_is_not_a_new_turn(llm):
+def test_the_spamshield_reminder_is_not_a_new_turn(llm, providers):
     """With spamShield on, the loop puts this in the tail on every follow-up
     cycle. Taking it for a message would restore one notice per cycle."""
     provider = _scripted_provider(llm, [_gateway_error(504)])
-    assert _is_timeout_notice(provider.chat(_prompt("HUMAN-MSG: hello")))
+    assert _is_timeout_notice(provider.chat(_prompt(providers, "hello")))
     for _ in range(3):
-        assert provider.chat(_prompt(" DO NOT RE-SEND OR SPAM!")) == ""
+        assert provider.chat(_prompt(providers,  "[NO NEW USER INPUT. CONTINUE AUTONOMOUS WORK. DO NOT REPEAT THE PREVIOUS RESPONSE. ONLY USE send FOR GENUINELY NEW INFORMATION OR WHEN USER INPUT IS NEEDED.]")) == second_timeout_response(providers)
 
 
 # --- the client enforces the timeout the notice names ------------------------
@@ -397,7 +408,7 @@ def test_the_client_enforces_the_request_timeout(llm, monkeypatch):
 
 
 def test_the_notice_names_the_limit_and_both_places_that_hold_it(llm):
-    notice = llm._llm_timeout_command()
+    notice = llm._llm_timeout_command().arguments['content']
     assert "600 s request timeout" in notice
     assert "raising both" in notice
 
@@ -405,11 +416,9 @@ def test_the_notice_names_the_limit_and_both_places_that_hold_it(llm):
 # --- every chat client carries the same limits -------------------------------
 
 @pytest.fixture(scope="module")
-def openrouter(llm):
+def openrouter(llm, providers):
     """OpenRouter overrides _create_client, so it needs checking on its own."""
-    providers_stub = types.ModuleType("providers")
-    providers_stub.LLMProvider = object
-    providers_stub.registerLLMProvider = lambda name, provider: None
+    providers_stub = providers
     saved = {name: sys.modules.get(name) for name in ("providers", "lib_llm_ext", "openai", "config")}
     sys.modules["providers"] = providers_stub
     sys.modules["lib_llm_ext"] = llm
@@ -435,7 +444,7 @@ def test_the_openrouter_client_carries_the_same_limits(openrouter, llm, monkeypa
         return object()
 
     monkeypatch.setattr(llm.openai, "OpenAI", recorder)
-    monkeypatch.setattr(openrouter, "config_get_by_key",
+    monkeypatch.setattr(llm, "config_get_by_key",
                         lambda key, default=None: "http://localhost:8080" if key == "GATEWAY_URL" else default)
     provider = openrouter.OpenRouterProviderImpl("OpenRouter", "OPENROUTER_API_KEY", "z-ai/glm-5.2",
                                                  "https://openrouter.ai/api/v1")
@@ -452,4 +461,4 @@ def test_the_marker_matches_the_tag_the_loop_writes(llm):
     would quietly stop working, so the two are checked against each other."""
     with open(os.path.join(_REPO_ROOT, "src", "loop.metta"), encoding="utf-8") as f:
         loop = f.read()
-    assert llm.HUMAN_MESSAGE_MARKER in loop
+    assert llm.NO_HUMAN_MESSAGE_MARKER in loop

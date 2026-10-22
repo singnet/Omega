@@ -56,7 +56,7 @@ def test_git_pull_public_telegram_mock(llm, tg):
         # clone into the path directly.
         llm.set_answer(
             prompt,
-            f'(shell "rm -rf {TARGET_DIR} && git clone {remote} {TARGET_DIR}")',
+            [("shell", { "cmd": f"rm -rf {TARGET_DIR} && git clone {remote} {TARGET_DIR}" })],
         )
         tg_send_prompt(tg, prompt)
         c.ok("telegram", f"run-id={c.run_id}")

@@ -43,8 +43,8 @@ def test_search_invalid_mock(llm, comm):
         )
         llm.set_answer(
             prompt,
-            f'(send "No results found for {GIBBERISH}. The string appears to '
-            f'be gibberish — no meaningful matches.")',
+            [("send", { "content": f'No results found for {GIBBERISH}. The string appears to '
+            f'be gibberish — no meaningful matches.' })],
         )
         if not comm.send_message(prompt):
             c.fail("comm", "could not deliver prompt within 60s")

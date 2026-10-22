@@ -66,7 +66,13 @@ if args[:1] == ["run"]:
             source, target = args[index + 1].split(":")[:2]
             mounts[target] = source
             index += 2
-        elif option in ("--entrypoint", "--user", "--group-add", "-e", "--name", "--security-opt", "--tmpfs"):
+        elif option == "--mount":
+            mount = dict(item.split("=", 1) for item in args[index + 1].split(",") if "=" in item)
+            mounts[mount["target"]] = mount["source"]
+            index += 2
+        elif option in (
+            "--entrypoint", "--user", "--group-add", "--network", "-e", "--name", "--security-opt", "--tmpfs"
+        ):
             if option == "--entrypoint":
                 entrypoint = args[index + 1]
             index += 2
@@ -75,6 +81,17 @@ if args[:1] == ["run"]:
         else:
             break
     command = args[index + 1:]
+    image = args[index]
+    image_cache = root / "cached-images"
+    cached_images = image_cache.read_text().splitlines() if image_cache.exists() else []
+    pull_policy = next((arg.split("=", 1)[1] for arg in args[:index] if arg.startswith("--pull=")), "missing")
+    if pull_policy == "always" or image not in cached_images:
+        if pull_policy == "never":
+            sys.exit(f"No such image: {image}")
+        if (root / "fail-image-pull").exists():
+            sys.exit(f"Image pull failed: {image}")
+        image_cache.write_text("\n".join([*cached_images, image]) + "\n")
+        print(f"Pulled image: {image}", file=sys.stderr)
     sources = set(mounts.values())
     if os.environ.get("FAKE_DOCKER_FAIL_MARKER_CHECK") and "echo migrated" in " ".join(command):
         sys.exit(1)
@@ -86,6 +103,10 @@ if args[:1] == ["run"]:
         volume(source).mkdir(parents=True, exist_ok=True)
         if target == MEMORY_PATH and not any(volume(source).iterdir()):
             shutil.copytree(root / "image-memory", volume(source), dirs_exist_ok=True)
+    if entrypoint == "python3":
+        transfer_path = str(volume(mounts["/memory-transfer"]))
+        command = [argument.replace("/memory-transfer", transfer_path) for argument in command]
+        sys.exit(subprocess.run([sys.executable, *command]).returncode)
     if entrypoint == "sh" and command[:1] == ["-c"]:
         script = command[1]
         for target in sorted(mounts, key=len, reverse=True):
@@ -117,6 +138,7 @@ def docker_root(tmp_path):
     root = tmp_path / "docker"
     (root / "volumes").mkdir(parents=True)
     (root / "containers").mkdir()
+    (root / "cached-images").write_text(IMAGE + "\n")
     image_memory = root / "image-memory"
     (image_memory / "chroma_db").mkdir(parents=True)
     (image_memory / "history.metta").write_text("")
@@ -274,32 +296,17 @@ def test_without_old_volume_agent_starts_on_image_memory(docker_root):
     assert not (docker_root / "volumes" / "omegaclaw-memory").exists()
 
 
-def test_memory_import_skips_migration(docker_root, tmp_path):
+def test_memory_import_skips_migration(docker_root):
     _install_omegaclaw(docker_root)
-    transfer = tmp_path / "transfer"
+    transfer = docker_root / "volumes" / "omega-memory-transfer"
     transfer.mkdir()
-    transfer.chmod(0o2770)
     (transfer / "memory.tar.gz").touch()
-    python3 = docker_root.parent / "bin" / "python3"
-    python3.write_text(
-        "#!/bin/sh\n"
-        "case \"$1\" in\n"
-        "  *omega-memory-transfer-validator*) exit 0 ;;\n"
-        "esac\n"
-        f"exec {sys.executable!s} \"$@\"\n",
-        encoding="utf-8",
-    )
-    python3.chmod(0o755)
 
     result = _launcher(
         docker_root,
         "start",
         "-d",
         IMAGE,
-        "--memory-transfer-dir",
-        str(transfer),
-        "--memory-transfer-gid",
-        str(transfer.stat().st_gid),
         "--memory-import",
         "memory.tar.gz",
     )
@@ -307,6 +314,105 @@ def test_memory_import_skips_migration(docker_root, tmp_path):
     assert result.returncode == 0, result.stderr
     assert _read(docker_root / "volumes" / "omega-memory" / "history.metta") == ""
     assert _container_state(docker_root, "omegaclaw") == "running"
+
+
+def test_missing_memory_import_does_not_replace_agent_container(docker_root):
+    (docker_root / "containers" / "omega").write_text("running")
+
+    result = _launcher(docker_root, "start", "-d", IMAGE, "--memory-import", "missing.tar.gz")
+
+    assert result.returncode != 0
+    assert "archive not found or unreadable" in result.stderr
+    assert "rm -f omega" not in _calls(docker_root)
+    assert not _started_agent(docker_root)
+
+
+@pytest.mark.parametrize("command", ["memory-upload", "memory-download"])
+@pytest.mark.parametrize("image_state", ["cached", "missing", "pull-failed"])
+def test_archive_transfers_handle_image_availability(docker_root, command, image_state):
+    transfer = docker_root / "volumes" / "omega-memory-transfer"
+    transfer.mkdir()
+    archive = transfer / "memory.tar.gz"
+    host_archive = docker_root.parent / archive.name
+    if command == "memory-upload":
+        source, destination = host_archive, archive
+        arguments = [str(source)]
+    else:
+        source, destination = archive, host_archive
+        arguments = [archive.name, str(destination)]
+    content = b"memory archive\x00\xff\n"
+    source.write_bytes(content)
+    if image_state != "cached":
+        (docker_root / "cached-images").unlink()
+    if image_state != "missing":
+        (docker_root / "fail-image-pull").touch()
+
+    result = _launcher(docker_root, command, *arguments, "-d", IMAGE)
+
+    if image_state == "pull-failed":
+        assert result.returncode != 0
+        assert "Image pull failed" in result.stderr
+        assert not destination.exists()
+    else:
+        assert result.returncode == 0, result.stderr
+        assert ("Pulled image:" in result.stderr) == (image_state == "missing")
+        assert destination.read_bytes() == content
+    assert source.read_bytes() == content
+
+
+def test_memory_delete_preserves_other_archives_and_live_memory(docker_root, monkeypatch):
+    transfer = docker_root / "volumes" / "custom-archives"
+    transfer.mkdir()
+    (transfer / "memory.tar.gz").write_bytes(b"delete this archive")
+    (transfer / "kept.tar.gz").write_bytes(b"keep this archive")
+    live_memory = docker_root / "volumes" / "omega-memory"
+    live_memory.mkdir()
+    (live_memory / "history.metta").write_text("keep live memory")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    result = _launcher(
+        docker_root, "memory-delete", "memory.tar.gz", "-d", IMAGE,
+        "--memory-transfer-volume", "custom-archives", "-p", "OpenAI",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert [path.name for path in transfer.iterdir()] == ["kept.tar.gz"]
+    assert (transfer / "kept.tar.gz").read_bytes() == b"keep this archive"
+    assert _read(live_memory / "history.metta") == "keep live memory"
+    assert not _started_agent(docker_root)
+
+
+@pytest.mark.parametrize("kind", ["missing", "directory", "symlink", "dangling-symlink"])
+def test_memory_delete_rejects_non_regular_archives(docker_root, kind):
+    transfer = docker_root / "volumes" / "omega-memory-transfer"
+    transfer.mkdir()
+    archive = transfer / "memory.tar.gz"
+    outside = docker_root.parent / "outside.tar.gz"
+    outside.write_bytes(b"keep outside file")
+    if kind == "directory":
+        archive.mkdir()
+    elif kind == "symlink":
+        archive.symlink_to(outside)
+    elif kind == "dangling-symlink":
+        archive.symlink_to(docker_root.parent / "missing.tar.gz")
+    before = set(transfer.iterdir())
+
+    result = _launcher(docker_root, "memory-delete", archive.name, "-d", IMAGE)
+
+    assert result.returncode != 0
+    assert "Archive not found" in result.stderr
+    assert "Deleted" not in result.stdout
+    assert set(transfer.iterdir()) == before
+    assert outside.read_bytes() == b"keep outside file"
+
+
+def test_memory_delete_requires_an_existing_volume(docker_root):
+    result = _launcher(docker_root, "memory-delete", "memory.tar.gz", "-d", IMAGE)
+
+    assert result.returncode != 0
+    assert "Memory transfer volume not found" in result.stderr
+    assert not (docker_root / "volumes" / "omega-memory-transfer").exists()
+    assert not any(call.startswith("run ") for call in _calls(docker_root))
 
 
 def test_failed_copy_restores_previous_state(docker_root):

@@ -1,0 +1,41 @@
+version: 1
+filesystem_policy:
+  include_workdir: false
+  read_only:
+  - /bin
+  - /usr
+  - /lib
+  - /dev/urandom
+  - /etc
+  - /opt
+  - /var/log
+  - /sys/devices/system
+  - /PeTTa
+  - /run/nvidia-persistenced
+  # NCCL support
+  - /sys/bus/pci
+  - /sys/class/drm
+  - /sys/devices/pci*
+  # WSL
+  - /usr/lib/wsl
+  read_write:
+  - /PeTTa/repos/Omega/memory
+  - /memory-transfer
+  - /tmp
+  - /dev/null
+  - /opt/huggingface
+  - /opt/sentence_transformers
+  - /var/tmp
+  - /dev/shm
+  # The CUDA driver names its threads via /proc/self/task/<tid>/comm.
+  - /proc
+  # GPU device nodes: /dev/dxg on WSL2, /dev/nvidia* on native Linux.
+  # Paths missing on the host are skipped.
+  - /dev/dxg
+  - /dev/nvidiactl
+  - /dev/nvidia[0-9]*
+  - /dev/nvidia-uvm
+  - /dev/nvidia-uvm-tools
+  - /dev/nvidia-modeset
+landlock:
+  compatibility: best_effort

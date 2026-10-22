@@ -54,7 +54,7 @@ def test_run_error_script_mock(llm, comm):
         )
         llm.set_answer(
             prompt,
-            f'(shell "sh {SCRIPT_FILE} > {OUTPUT_FILE} 2>&1")',
+            [("shell", { "cmd": f"sh {SCRIPT_FILE} > {OUTPUT_FILE} 2>&1" })]
         )
         if not comm.send_message(prompt):
             c.fail("comm", "could not deliver prompt within 60s")

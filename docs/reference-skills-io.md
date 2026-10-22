@@ -214,7 +214,9 @@ A typical workflow before writing a file is:
 
 ### Notes / Limits
 
-- The skill reports configured policy paths; it does not grant permissions.
+- The skill reports the paths the policy resolves to: glob patterns are
+  expanded and paths missing on the host are dropped. It does not grant
+  permissions.
 - Paths in `read_only` must not be used for writing.
 - Paths in `read_write` may be read and modified.
 - The skill does not check a particular requested path automatically.

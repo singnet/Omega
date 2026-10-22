@@ -75,9 +75,9 @@ Run Omega using the next command:
 curl -fsSL https://github.com/singnet/Omega/raw/refs/tags/v0.1.20/scripts/omega | bash -s -- singularitynet/omega:v0.1.20
 ```
 
-To run a specific version of Omega set version in `TAG` environment variable and run the following command:
+To run a specific release, set the `TAG` environment variable to the desired release tag (e.g., v0.1.20) and run the following command:
 ```
-export TAG=<version>; curl -fsSL  https://github.com/singnet/Omega/raw/refs/tags/$TAG/scripts/omega | bash -s -- singularitynet/omega:$TAG
+export TAG=v0.1.20; curl -fsSL  https://github.com/singnet/Omega/raw/refs/tags/$TAG/scripts/omega | bash -s -- singularitynet/omega:$TAG
 ```
 
 To stop the Omega Docker container:
@@ -90,6 +90,13 @@ To restart the Omega Docker container:
 docker start omega
 ```
 
+The `scripts/omega` launcher and the Docker image must be the same version.
+`scripts/omega start` (and the interactive bootstrap) compare the host script
+version with the version baked into the image and abort when both are known
+and differ. A `curl | bash` install has no checkout, so that path warns and
+continues. Use the same release tag for the checkout and the image, for example
+`git checkout v0.1.20` with `singularitynet/omega:v0.1.20`.
+
 ### Memory portability
 
 Memory export is disabled by default. See the [memory portability reference](./docs/reference-memory-portability.md)
@@ -100,15 +107,19 @@ for setup, export controls, archive contents, and import modes.
 > using `scripts/omega`, because both operations run from the container
 > entrypoint before the agent loop starts.
 
-To restore an archive while upgrading to a tagged image on Linux, use the same
-prepared transfer directory. Its group ID is required by the launcher:
+Archives are stored in the Docker volume `omega-memory-transfer`. Use the
+launcher to list, download, upload, or delete them; no host directory or group
+setup is required. The archive volume survives `scripts/omega clean`.
+
+To restore a host archive while upgrading, choose the target image and replace
+the archive filename below with your own. Missing images are pulled automatically:
 
 ```sh
-transfer_gid="$(stat -c %g "$HOME/omega-transfers")"
-scripts/omega start -d singularitynet/omega:<tag> -p OpenAI -t telegram \
-  --memory-transfer-dir "$HOME/omega-transfers" \
-  --memory-transfer-gid "$transfer_gid" \
-  --memory-import omega-memory-<timestamp>.tar.gz \
+image="singularitynet/omega:<tag>"
+archive="memory-archive.tar.gz"
+scripts/omega memory-upload "$HOME/Downloads/$archive" -d "$image"
+scripts/omega start -d "$image" -p OpenAI -t telegram \
+  --memory-import "$archive" \
   --memory-mode overwrite
 ```
 

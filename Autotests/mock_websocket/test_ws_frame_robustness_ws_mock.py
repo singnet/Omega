@@ -52,7 +52,7 @@ def test_ws_frame_robustness_ws_mock(llm, ws):
         c.step("a following valid prompt is answered")
         answer = f"WS-ALIVE-{c.run_id}"
         prompt = make_prompt(c.run_id, f"Reply with the send skill: {answer}")
-        llm.set_answer(prompt, f'(send "{answer}")')
+        llm.set_answer(prompt, [("send", { "content": f"{answer}" })])
         ws.inject_user_message(prompt)
         client_seq, text = _wait_for_reply(ws, answer, WAIT)
         if text is None:
