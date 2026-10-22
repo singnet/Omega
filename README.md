@@ -116,7 +116,7 @@ the archive filename below with your own. Missing images are pulled automaticall
 
 ```sh
 image="singularitynet/omega:<tag>"
-archive="memory-archive.tar.gz"
+archive="omega-memory-<UTC timestamp>-<ID>.tar.gz"
 scripts/omega memory-upload "$HOME/Downloads/$archive" -d "$image"
 scripts/omega start -d "$image" -p OpenAI -t telegram \
   --memory-import "$archive" \
