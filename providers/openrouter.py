@@ -17,12 +17,27 @@ class OpenRouterProvider(providers.LLMProvider):
         model = config_get_by_key("model", openrouter_model)
         self.delegate = OpenRouterProviderImpl("OpenRouter", "OPENROUTER_API_KEY",
                                                model, "https://openrouter.ai/api/v1")
+        premium_model = config_get_by_key("premium_model", "")
+        self.premium_delegate = (
+            OpenRouterProviderImpl("OpenRouter", "OPENROUTER_API_KEY",
+                                   premium_model, "https://openrouter.ai/api/v1")
+            if premium_model else None
+        )
 
     def stop(self) -> None:
-        self.delegate.stop()
+        for delegate in (self.delegate, self.premium_delegate):
+            if delegate is not None and delegate._client is not None:
+                delegate.stop()
 
     def chat(self, args: providers.LLMRequest) -> providers.LLMResponse:
-        return self.delegate.chat(args)
+        delegate = self.delegate
+        if args.tier == "premium_model":
+            if self.premium_delegate is None:
+                raise ValueError("OpenRouter premium_model tier requires a configured premium_model")
+            delegate = self.premium_delegate
+        logger.info("[OpenRouterProvider.chat] Received tier=%s model=%s",
+                    args.tier, delegate._model_name)
+        return delegate.chat(args)
 
 def loadOmegaPlugin():
     providers.registerLLMProvider("OpenRouter", OpenRouterProvider())

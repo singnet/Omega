@@ -1,8 +1,24 @@
+!(import! &self (library Omega ./routers/default))
+
 (= (llmProviderStart $provider)
    (py-call (providers.llmProviderStart $provider)))
 
 (= (llmProviderChat $request)
-     (py-call (providers.llmProviderChat $request)))
+     (py-call (providers.llmProviderChat $request "none")))
+
+(= (llmProviderChat $request $router)
+   (case $router (
+    (default 
+      (let* 
+        (
+         ($prompt_contents_normalized (py-call (providers.llmRequestContentsNormalized $request)))
+         ($tier (default_router $prompt_contents_normalized))
+         ($_ (log INFO "providers" $tier))
+        )
+        (py-call (providers.llmProviderChat $request $tier)))
+    )
+    ($_otherwise (py-call (providers.llmProviderChat $request "none")))
+   )))
 
 (= (llmRequestMessage role $role content $content)
    (py-call (providers.llmRequestMessage $role $content)))

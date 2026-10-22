@@ -23,6 +23,7 @@ class OpenAIProvider(LLMProvider):
         self.delegate.stop()
 
     def chat(self, args: LLMRequest) -> LLMResponse:
+        # Routing tier metadata is intentionally ignored by this provider.
         return self.delegate.chat(args)
 
 def loadOmegaPlugin():
@@ -159,4 +160,3 @@ class OpenAIProviderImpl(llm.AIProvider):
             if llm._is_timeout_error(e):
                 return self._timeout_reply()
             return LLMResponse().with_error(error)
-
