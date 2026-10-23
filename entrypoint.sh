@@ -66,6 +66,7 @@ elif operation == "import":
         mode=os.environ.get("MEMORY_IMPORT_MODE", "overwrite"),
         include_history=os.environ.get("MEMORY_IMPORT_NO_HISTORY") != "1",
         include_vectors=os.environ.get("MEMORY_IMPORT_NO_VECTOR") != "1",
+        include_skills=os.environ.get("MEMORY_IMPORT_NO_SKILLS") != "1",
     )
 else:
     raise ValueError(f"Unsupported memory portability operation: {operation!r}")'
