@@ -56,13 +56,17 @@ to an existing host directory or a new host file:
 
 ```sh
 scripts/omega memory-list
-archive="memory-archive.tar.gz"  # Replace with the filename from the export reply.
+archive="omega-memory-<UTC timestamp>-<ID>.tar.gz"  # Replace with the filename from the export reply.
 mkdir -p "$HOME/Downloads"
 scripts/omega memory-download "$archive" "$HOME/Downloads"
 ```
 
 Downloads leave the archive in the volume and refuse to overwrite an existing
 destination. A failed download removes its partial host file.
+
+Archive names use `omega-memory-<UTC timestamp>-<ID>.tar.gz`, where the ID is
+eight hexadecimal characters derived from UUIDv4. Use the returned filename
+when importing an archive.
 
 Archives contain selected persistent user memory only:
 
@@ -84,7 +88,7 @@ volume first:
 
 ```sh
 image="singularitynet/omega:<tag>"
-archive="memory-archive.tar.gz"  # Replace with your archive's filename.
+archive="omega-memory-<UTC timestamp>-<ID>.tar.gz"  # Replace with your archive's filename.
 scripts/omega memory-upload "$HOME/Downloads/$archive" -d "$image"
 ```
 
