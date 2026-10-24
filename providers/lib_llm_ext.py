@@ -346,10 +346,12 @@ class AIProvider(AbstractAIProvider):
             "tool_choice": "required",
         }
         reasoning = getattr(request, "reasoning_mode", None)
-        if reasoning:
+        if reasoning and config_get_by_key("supportsReasoningEffort", True):
             # OpenAI-compatible servers (llama.cpp, vLLM, Strata, ...) accept
             # reasoning_effort; "none" disables thinking. Plain OpenAI chat
-            # completions endpoints ignore unknown fields.
+            # completions endpoints ignore unknown fields. Models that reject
+            # the parameter (e.g. non-reasoning OpenAI models) need it omitted:
+            # set supportsReasoningEffort: false for those.
             result["extra_body"] = {"reasoning_effort": str(reasoning).lower()}
         return result
 

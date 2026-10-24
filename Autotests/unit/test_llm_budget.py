@@ -26,12 +26,17 @@ def _exec(name, path, register):
     return module
 
 
+# Values the stubbed config module returns for keys the tests control;
+# anything else falls back to the caller's default.
+CONFIG_STUB = {}
+
+
 def _load_modules():
     openai_stub = types.ModuleType("openai")
     openai_stub.OpenAI = object
 
     config_stub = types.ModuleType("config")
-    config_stub.config_get_by_key = lambda key, default=None: default
+    config_stub.config_get_by_key = lambda key, default=None: CONFIG_STUB.get(key, default)
 
     stubs = {"openai": openai_stub, "config": config_stub}
     saved = {name: sys.modules.get(name) for name in list(stubs) + ["providers", "lib_llm_ext"]}
@@ -248,6 +253,28 @@ def test_base_provider_omits_reasoning_when_unset():
                                       completion_tokens=40, reasoning_tokens=30))
     make_anthropic(create).chat(make_request(reasoning=None))
     assert "extra_body" not in create.calls[0]
+
+
+def test_base_provider_omits_reasoning_when_effort_unsupported():
+    CONFIG_STUB["supportsReasoningEffort"] = False
+    try:
+        create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls",
+                                          completion_tokens=40, reasoning_tokens=30))
+        make_anthropic(create).chat(make_request(reasoning="medium"))
+        assert "extra_body" not in create.calls[0]
+    finally:
+        del CONFIG_STUB["supportsReasoningEffort"]
+
+
+def test_base_provider_sends_reasoning_when_effort_supported():
+    CONFIG_STUB["supportsReasoningEffort"] = True
+    try:
+        create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls",
+                                          completion_tokens=40, reasoning_tokens=30))
+        make_anthropic(create).chat(make_request(reasoning="medium"))
+        assert create.calls[0]["extra_body"]["reasoning_effort"] == "medium"
+    finally:
+        del CONFIG_STUB["supportsReasoningEffort"]
 
 
 def test_usage_is_logged_at_info(caplog):

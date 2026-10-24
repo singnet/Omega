@@ -14,6 +14,10 @@ provider: Anthropic
 maxOutputToken: 6000
 # Reasoning-effort hint passed to the provider
 reasoningMode: medium
+# Set false for models that reject the reasoning_effort request parameter
+# (e.g. non-reasoning OpenAI models served through the OpenAIAPI provider):
+# the hint is then omitted from provider requests.
+supportsReasoningEffort: true
 # How long idle before the next scheduled wake-up (seconds)
 wakeupInterval: 600
 # Path to the logger configuration file
