@@ -673,6 +673,7 @@ help() {
     echo -e "\t--memory-mode overwrite|append import mode (default: overwrite)"
     echo -e "\t--only-history restore history only"
     echo -e "\t--only-vector restore long-term memory only"
+    echo -e "\t--only-skills restore custom skills and workflow space only"
 }
 
 require_option_value() {
@@ -704,6 +705,7 @@ options() {
     memory_import_mode="overwrite"
     memory_import_only_history=0
     memory_import_only_vector=0
+    memory_import_only_skills=0
     memory_export_enabled=0
 
     if [[ "$#" -eq 0 ]]; then
@@ -765,6 +767,10 @@ options() {
                 ;;
             --only-vector)
                 memory_import_only_vector=1
+                shift
+                ;;
+            --only-skills)
+                memory_import_only_skills=1
                 shift
                 ;;
             --version|-v) version; exit 0;;
@@ -854,13 +860,12 @@ options() {
         validate_memory_archive_name "${memory_import_file}" "--memory-import" || return 1
     fi
 
-    if [[ "${memory_import_only_history}" == "1" && "${memory_import_only_vector}" == "1" ]]; then
-        echo "--only-history and --only-vector cannot be combined" >&2
+    if (( memory_import_only_history + memory_import_only_vector + memory_import_only_skills > 1 )); then
+        echo "--only-history, --only-vector and --only-skills cannot be combined" >&2
         return 1
     fi
-    if [[ -z "${memory_import_file}" &&
-          ( "${memory_import_only_history}" == "1" ||
-            "${memory_import_only_vector}" == "1" ) ]]; then
+    if [[ -z "${memory_import_file}" ]] &&
+       (( memory_import_only_history + memory_import_only_vector + memory_import_only_skills > 0 )); then
         echo "Import component flags require --memory-import" >&2
         return 1
     fi
@@ -1140,10 +1145,13 @@ if sys.argv[1]:
             -e "MEMORY_IMPORT_MODE=${memory_import_mode}"
         )
         if [[ "${memory_import_only_history}" == "1" ]]; then
-            memory_import_env+=(-e MEMORY_IMPORT_NO_VECTOR=1)
+            memory_import_env+=(-e MEMORY_IMPORT_NO_VECTOR=1 -e MEMORY_IMPORT_NO_SKILLS=1)
         fi
         if [[ "${memory_import_only_vector}" == "1" ]]; then
-            memory_import_env+=(-e MEMORY_IMPORT_NO_HISTORY=1)
+            memory_import_env+=(-e MEMORY_IMPORT_NO_HISTORY=1 -e MEMORY_IMPORT_NO_SKILLS=1)
+        fi
+        if [[ "${memory_import_only_skills}" == "1" ]]; then
+            memory_import_env+=(-e MEMORY_IMPORT_NO_HISTORY=1 -e MEMORY_IMPORT_NO_VECTOR=1)
         fi
     fi
 

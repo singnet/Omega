@@ -47,7 +47,8 @@ token so the credential itself is never used as an identifier:
 ```text
 /memory-export history
 /memory-export ltm
-/memory-export both
+/memory-export skills
+/memory-export all
 ```
 
 Completion is delivered through the active channel and includes the filename,
@@ -75,10 +76,15 @@ manifest.json
 history/history.metta
 vector/collections.json
 vector/records.jsonl
+skills/...
+space/...
 ```
 
 History is the conversation trace. LTM is logical user-memory records from
-ChromaDB. Prompts, credentials, logs, skills, and other operational state are
+ChromaDB. Skills are custom workflows from `pluginWorkflowCustomInstructionsDir`
+together with workflow working files from `pluginWorkflowMemoryDir`; only
+regular files are exported, symbolic links and empty directories are skipped.
+Built-in workflows, prompts, credentials, logs, and other operational state are
 not exported. SHA-256 detects corruption, not archive authorship.
 
 ## Import
@@ -106,9 +112,12 @@ scripts/omega start -d "$image" -p OpenAI -t telegram \
 ```
 
 `overwrite` replaces the selected components after validation and rollback
-preparation. `append` preserves existing history and adds imported LTM records
-under new IDs. Select a single component with `--only-history` or
-`--only-vector`. Without either option, both components are imported.
+preparation. For skills it replaces both the custom skills and the workflow
+space directories, even when the archive contains no skills. `append` preserves
+existing history and adds imported LTM records under new IDs, and copies imported
+skills and space files over the existing ones with the same names. Select a
+single component with `--only-history`, `--only-vector`, or `--only-skills`.
+Without these options, all components present in the archive are imported.
 
 The importer validates archive paths, checksums, manifest metadata, record
 counts, and embedding compatibility before changing live memory. It runs before

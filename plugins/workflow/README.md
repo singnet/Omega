@@ -60,7 +60,19 @@ For example:
 Start an agent and ask it to use the workflow. For the test workflow above
 send: `Demonstrate workflow plugin`
 
-New workflows put into `pluginWorkflowInstructionsDir` while the agent is
+## Built-in and custom workflows
+
+Workflows are looked up in two directories:
+- built-in workflows shipped with Omega are kept in
+  `pluginWorkflowInstructionsDir` and are updated together with Omega;
+- custom workflows are kept in `pluginWorkflowCustomInstructionsDir` which is
+  placed in the memory directory by default, so they survive container
+  restarts and image updates. The directory is created on start if missing.
+
+A custom workflow overrides the built-in one with the same name. To change a
+built-in workflow copy it into the custom directory and edit the copy.
+
+New workflows put into `pluginWorkflowCustomInstructionsDir` while the agent is
 running become available after the agent calls the `workflow-refresh-list`
 skill. Ask the agent to refresh the list of workflows, or just ask it to load
 the new workflow by name.
@@ -69,11 +81,14 @@ the new workflow by name.
 
 Wofkflow plugin Omega configuration parameters:
 - `pluginWorkflowInstructionsDir` - path to the directory which contains
-  available workflows. Default value is `<project
-  root>/plugins/workflow/instructions`
+  built-in workflows. Default value is `<project_root>/plugins/workflow/instructions`
+- `pluginWorkflowCustomInstructionsDir` - path to the directory which contains
+  custom workflows. Default value is `<memoryDirectory>/workflow/skills`
 - `pluginWorkflowMemoryDir` - path to the directory to keep workflow working
-  files when workflow is active. Default value is `<project
-  root>/memory/workflow_space`
+  files when workflow is active. Default value is `<memoryDirectory>/workflow/space`
+
+Custom and working directories are created on start together with missing
+parent directories.
 
 One can set this parameters passing them as a command line arguments. For
 example:
