@@ -242,10 +242,14 @@ def test_openrouter_reasoning_body(effort, want):
     ("none", "none"),
 ])
 def test_base_provider_forwards_reasoning_effort(effort, want):
-    create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls",
-                                      completion_tokens=40, reasoning_tokens=30))
-    make_anthropic(create).chat(make_request(reasoning=effort))
-    assert create.calls[0]["extra_body"]["reasoning_effort"] == want
+    CONFIG_STUB["supportsReasoningEffort"] = True
+    try:
+        create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls",
+                                          completion_tokens=40, reasoning_tokens=30))
+        make_anthropic(create).chat(make_request(reasoning=effort))
+        assert create.calls[0]["extra_body"]["reasoning_effort"] == want
+    finally:
+        del CONFIG_STUB["supportsReasoningEffort"]
 
 
 def test_base_provider_omits_reasoning_when_unset():
@@ -275,6 +279,34 @@ def test_base_provider_sends_reasoning_when_effort_supported():
         assert create.calls[0]["extra_body"]["reasoning_effort"] == "medium"
     finally:
         del CONFIG_STUB["supportsReasoningEffort"]
+
+@pytest.mark.parametrize("flag, want_sent", [
+    ("false", False),
+    ("False", False),
+    (" off ", False),
+    ("0", False),
+    ("true", True),
+    ("yes", True),
+    (True, True),
+])
+def test_base_provider_reads_the_flag_from_cli_and_env_strings(flag, want_sent):
+    """Command line and environment values of the flag arrive as strings."""
+    CONFIG_STUB["supportsReasoningEffort"] = flag
+    try:
+        create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls",
+                                          completion_tokens=40, reasoning_tokens=30))
+        make_anthropic(create).chat(make_request(reasoning="medium"))
+        assert ("extra_body" in create.calls[0]) == want_sent
+    finally:
+        del CONFIG_STUB["supportsReasoningEffort"]
+
+
+def test_base_provider_omits_reasoning_when_the_flag_is_unset():
+    """Configurations written before this flag existed keep sending what they sent."""
+    create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls",
+                                      completion_tokens=40, reasoning_tokens=30))
+    make_anthropic(create).chat(make_request(reasoning="medium"))
+    assert "extra_body" not in create.calls[0]
 
 
 def test_usage_is_logged_at_info(caplog):
