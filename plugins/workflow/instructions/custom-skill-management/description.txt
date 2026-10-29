@@ -1,0 +1,1 @@
+When user asks to create, change or delete a custom skill (workflow), load custom-skill-management instructions: (workflow-load-instructions \"custom-skill-management\")

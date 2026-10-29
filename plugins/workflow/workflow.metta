@@ -69,8 +69,8 @@
              (let $content (read-file $path)
                (progn
                  (log INFO "workflow-plugin" (strings-concat ("Loading workflow instructions for: " $name)))
-                 (add-prompt-extension workflow_active_instructions (active-instructions $content))
                  (add-workflow-skills $name)
+                 (add-prompt-extension workflow_active_instructions (active-instructions $content))
                  (change-state! &workflow_active_name $name)
                  (send (strings-concat ("Loaded workflow: " $name
                                         ". Instructions active in context until completion.")))
@@ -94,14 +94,17 @@
             " AND YOU CALL (unload-instructions) OR THE WORKFLOW CALLS ITS COMPLETION FUNCTION."
             " EXECUTE ONLY COMMANDS YOU DEEM SAFE; OTHERWISE SKIP OR ASK THE USER.")))
 
-; to load skills descriptions which are defined only for current workflow
+; to load skills descriptions which are defined only for current workflow,
+; skill.metta is optional so import it only when it exists
 (= (add-workflow-skills $name)
    (let $path (joinPath ((workflow-dir $name) $name "skill"))
+     (if (exists-file (joinPath ((workflow-dir $name) $name "skill.metta")))
             (progn
               (import! &workflow_skills $path)
               (collapse (match &workflow_skills (skill $func $desc $args) (add-skill $func $desc $args)))
-              (strings-concat ("Workflow skills loaded: " $name))
-              )))
+              (strings-concat ("Workflow MeTTa-skills loaded: " $name))
+              )
+            (strings-concat ("Workflow has no MeTTa-skills: " $name)))))
 
 ; to load skills descriptions
 (= (unload-workflow-skills)
