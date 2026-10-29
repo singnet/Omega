@@ -9,6 +9,7 @@ mock/test_edit_append_line_mock.py
 mock/test_edit_delete_line_mock.py
 mock/test_git_local_commit_mock.py
 mock/test_git_pull_public_mock.py
+mock/test_idle_nop_mock.py
 mock/test_io_policy_skill_mock.py
 mock/test_last_skill_results_visible_next_turn_mock.py
 mock/test_llm.py
@@ -34,6 +35,7 @@ mock/test_transition_episodes_after_eviction_mock.py
 mock/test_transition_metta_to_remember_mock.py
 mock/test_transition_pin_to_remember_mock.py
 mock/test_workflow_plugin_mock.py
+mock/test_workflow_reload_tools_mock.py
 mock_websocket/test_wschat_unit.py
 test_openai_runtime_embeddings.py
 test_prompt_grounding.py
@@ -47,4 +49,5 @@ unit/test_llm_budget.py
 unit/test_openclaw_unit.py
 unit/test_nginx_llm_timeouts.py
 unit/test_llm_timeout_message.py
+unit/test_llm_tools_request.py
 import_knowledge/test_import_knowledge.py

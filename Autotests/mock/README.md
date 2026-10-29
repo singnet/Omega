@@ -65,7 +65,7 @@ source venv/bin/activate
 pytest -s -v mock/test_*_mock.py
 ```
 
-The `LlmMockController`, `CommMockServer`, and the OpenClaw Gateway stub are provided by session-scoped fixtures in `mock/conftest.py`, so all three are started once per pytest session. Expected output: `42 passed`, minus the ones whose optional variables are unset - `test_git_push_to_remote_mock` skips without `OMEGA_GIT_TOKEN`, and the six OpenClaw tests skip without `OMEGA_OPENCLAW_TOKEN` (see "OpenClaw plugin" below).
+The `LlmMockController`, `CommMockServer`, and the OpenClaw Gateway stub are provided by session-scoped fixtures in `mock/conftest.py`, so all three are started once per pytest session. Expected output: `54 passed`, minus the ones whose optional variables are unset - `test_git_push_to_remote_mock` skips without `OMEGA_GIT_TOKEN`, and the eight OpenClaw tests skip without `OMEGA_OPENCLAW_TOKEN` (see "OpenClaw plugin" below).
 
 ## 5a. OpenClaw plugin (`test_openclaw_delegate_mock.py`)
 
@@ -108,7 +108,7 @@ This removes the `omega` container and the `omega-memory` volume created by the 
 
 # Tests description
 
-All 42 tests follow the same pattern: the test registers a fixed mock-LLM answer for the prompt via `llm.set_answer(prompt, response)`, delivers the prompt to the agent over the test channel via `comm.send_message(prompt)`, then verifies the resulting skill calls and side effects (filesystem, `history.metta`, ChromaDB, docker logs). The OpenClaw group additionally drives the stub Gateway, whose replies are real rather than scripted. Because the LLM is deterministic, no `try_with_clarification` retries are needed; every test either passes on the first attempt or fails outright.
+All 54 tests follow the same pattern: the test registers a fixed mock-LLM answer for the prompt via `llm.set_answer(prompt, response)`, delivers the prompt to the agent over the test channel via `comm.send_message(prompt)`, then verifies the resulting skill calls and side effects (filesystem, `history.metta`, ChromaDB, docker logs). The OpenClaw group additionally drives the stub Gateway, whose replies are real rather than scripted. Because the LLM is deterministic, no `try_with_clarification` retries are needed; every test either passes on the first attempt or fails outright.
 
 ## Creating files
 
@@ -436,3 +436,19 @@ Each call of a model answer gets exactly one tool result in the next request, al
 
 - Mock answer: `[("read-file", {"filename": "/tmp/omega-missing-<run_id>.txt"}), ("send", {"content": "done <run_id>"})]`.
 - Checks: the `REQUEST:` line after the one carrying the prompt lists both calls in the assistant message and one tool result for each of them; the `send` result is its own, and the `read-file` result says the call returned no value.
+
+## Workflows and idle turns
+
+### 42. test_workflow_reload_tools_mock.py
+
+Loading a workflow again must not repeat its tools in the request to the LLM. Anthropic rejects a request that names the same tool twice.
+
+- Mock answers: `workflow-unload-instructions` for a workflow left by an earlier test, then `workflow-load-instructions test-workflow`, `workflow-unload-instructions`, `workflow-load-instructions test-workflow` twice in a row, `send`, and `workflow-unload-instructions` at the end so that the next tests start without a workflow.
+- Checks: in the `REQUEST:` line after each turn every tool name appears once; after the first load every tool name matches `^[a-zA-Z0-9_-]{1,64}$`; `test-skill` is there after a load and gone after the unload; the second load in a row is rejected with `There is an active workflow`; after the reload and the last turn the tool names are the same as after the first load.
+
+### 43. test_idle_nop_mock.py
+
+`tool_choice` is `required`, so on an idle turn the model has to call a tool, and `nop` is the one that does nothing.
+
+- Mock answers: `send` for an ordinary turn, then `nop` for the idle message. The test removes the idle answer with `clear_answer`, so later tests get no answer on idle turns. Then it answers one more ordinary turn with `send`, which restarts the idle iteration count, so idle requests follow it again.
+- Checks: `nop` is among the tools of the request that carries its result; the result is `SUCCESS` without an error; nothing reaches the channel while the agent idles; after `clear_answer` the idle requests get no answer again.
