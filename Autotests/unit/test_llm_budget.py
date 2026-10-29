@@ -26,12 +26,17 @@ def _exec(name, path, register):
     return module
 
 
+# Values the stubbed config module returns for keys the tests control;
+# anything else falls back to the caller's default.
+CONFIG_STUB = {}
+
+
 def _load_modules():
     openai_stub = types.ModuleType("openai")
     openai_stub.OpenAI = object
 
     config_stub = types.ModuleType("config")
-    config_stub.config_get_by_key = lambda key, default=None: default
+    config_stub.config_get_by_key = lambda key, default=None: CONFIG_STUB.get(key, default)
 
     stubs = {"openai": openai_stub, "config": config_stub}
     saved = {name: sys.modules.get(name) for name in list(stubs) + ["providers", "lib_llm_ext"]}
@@ -230,6 +235,78 @@ def test_openrouter_reasoning_body(effort, want):
                                       completion_tokens=40, reasoning_tokens=30))
     make_openrouter(create).chat(make_request(reasoning=effort))
     assert create.calls[0]["extra_body"]["reasoning"] == want
+
+
+@pytest.mark.parametrize("effort, want", [
+    ("medium", "medium"),
+    ("none", "none"),
+])
+def test_base_provider_forwards_reasoning_effort(effort, want):
+    CONFIG_STUB["supportsReasoningEffort"] = True
+    try:
+        create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls",
+                                          completion_tokens=40, reasoning_tokens=30))
+        make_anthropic(create).chat(make_request(reasoning=effort))
+        assert create.calls[0]["extra_body"]["reasoning_effort"] == want
+    finally:
+        del CONFIG_STUB["supportsReasoningEffort"]
+
+
+def test_base_provider_omits_reasoning_when_unset():
+    create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls",
+                                      completion_tokens=40, reasoning_tokens=30))
+    make_anthropic(create).chat(make_request(reasoning=None))
+    assert "extra_body" not in create.calls[0]
+
+
+def test_base_provider_omits_reasoning_when_effort_unsupported():
+    CONFIG_STUB["supportsReasoningEffort"] = False
+    try:
+        create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls",
+                                          completion_tokens=40, reasoning_tokens=30))
+        make_anthropic(create).chat(make_request(reasoning="medium"))
+        assert "extra_body" not in create.calls[0]
+    finally:
+        del CONFIG_STUB["supportsReasoningEffort"]
+
+
+def test_base_provider_sends_reasoning_when_effort_supported():
+    CONFIG_STUB["supportsReasoningEffort"] = True
+    try:
+        create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls",
+                                          completion_tokens=40, reasoning_tokens=30))
+        make_anthropic(create).chat(make_request(reasoning="medium"))
+        assert create.calls[0]["extra_body"]["reasoning_effort"] == "medium"
+    finally:
+        del CONFIG_STUB["supportsReasoningEffort"]
+
+@pytest.mark.parametrize("flag, want_sent", [
+    ("false", False),
+    ("False", False),
+    (" off ", False),
+    ("0", False),
+    ("true", True),
+    ("yes", True),
+    (True, True),
+])
+def test_base_provider_reads_the_flag_from_cli_and_env_strings(flag, want_sent):
+    """Command line and environment values of the flag arrive as strings."""
+    CONFIG_STUB["supportsReasoningEffort"] = flag
+    try:
+        create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls",
+                                          completion_tokens=40, reasoning_tokens=30))
+        make_anthropic(create).chat(make_request(reasoning="medium"))
+        assert ("extra_body" in create.calls[0]) == want_sent
+    finally:
+        del CONFIG_STUB["supportsReasoningEffort"]
+
+
+def test_base_provider_omits_reasoning_when_the_flag_is_unset():
+    """Configurations written before this flag existed keep sending what they sent."""
+    create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls",
+                                      completion_tokens=40, reasoning_tokens=30))
+    make_anthropic(create).chat(make_request(reasoning="medium"))
+    assert "extra_body" not in create.calls[0]
 
 
 def test_usage_is_logged_at_info(caplog):

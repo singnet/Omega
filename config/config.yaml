@@ -14,6 +14,12 @@ provider: Anthropic
 maxOutputToken: 6000
 # Reasoning-effort hint passed to the provider
 reasoningMode: medium
+# Set true to send the hint as the reasoning_effort request parameter, for
+# OpenAI-compatible servers that accept it (llama.cpp, vLLM, Strata, ...).
+# Default false: existing configurations keep sending requests exactly as
+# before, so models that reject the parameter (e.g. non-reasoning OpenAI
+# models served through the OpenAIAPI provider) are unaffected.
+supportsReasoningEffort: false
 # How long idle before the next scheduled wake-up (seconds)
 wakeupInterval: 600
 # Path to the logger configuration file
