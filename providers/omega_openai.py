@@ -33,6 +33,8 @@ class OpenAIProviderImpl(llm.AIProvider):
 
     def convert_message(self, message: LLMMessage) -> [dict]:
         if isinstance(message, LLMToolCallMessage):
+            if message.native_items:
+                return message.native_items
             return [self.convert_tool_call(call) for call in message.calls]
         elif isinstance(message, LLMToolCallResponseMessage):
             return [{
@@ -110,10 +112,18 @@ class OpenAIProviderImpl(llm.AIProvider):
     def convert_response(self, raw):
         llm._log_responses_completion(self._name, self._model_name, raw)
 
-        response =  LLMResponse()
+        response = LLMResponse()
         output = raw.output
         if not output:
             return response
+
+        # Keep the complete native output, not just function calls.
+        response.native_items = [
+            item.model_dump(exclude_none=True)
+            if hasattr(item, "model_dump")
+            else item
+            for item in output
+        ]
 
         for item in output:
             if item.type != "function_call":
@@ -158,5 +168,8 @@ class OpenAIProviderImpl(llm.AIProvider):
             logger.exception(f"[OpenAIProviderImpl.chat]: {error}")
             if llm._is_timeout_error(e):
                 return self._timeout_reply()
-            return LLMResponse().with_error(error)
+            return LLMResponse().with_error(
+                error,
+                terminal=llm._is_terminal_provider_error(e),
+            )
 

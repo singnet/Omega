@@ -19,6 +19,7 @@
                (joinPath ((py-call (helper.projectRootDirectory)) memory)))
           (change-state! &prevmsg "")
           (change-state! &loops (maxNewInputLoops))
+          (change-state! &terminalProviderError False)
           (messagesClear)
           ))
 
@@ -68,9 +69,29 @@
 (= (messagesClear)
    (change-state! &messages_all (py-call (utils.listNew))))
 
+(= (loopInferenceAllowed)
+   (and (> (get-state &loops) 0)
+        (not (get-state &terminalProviderError))))
+
+(= (loopStopOnTerminalError $response)
+   (if (llmResponseIsTerminalError $response)
+       (progn
+         (log ERROR "loop" "Terminal provider error; waiting for new input")
+         (change-state! &terminalProviderError True)
+         (change-state! &loops 0))
+       _))
+
+(= (loopResumeOnNewInput $k $msgnew $maxloops)
+   (if (and (> $k 1) $msgnew)
+       (progn
+         (change-state! &terminalProviderError False)
+         (change-state! &loops $maxloops))
+       _))
+
 (= (messagesAppend $item)
    (let $episodic (get-state &messages_all)
-     (change-state! &messages_all (py-call (utils.listAppend $episodic $item)))))
+     (change-state! &messages_all
+       (py-call (providers.appendAndTrimMessageHistory $episodic $item 10)))))
 
 (= (omega)
    (omega 1))
@@ -94,9 +115,8 @@
                              ($msgnew (prog1 (and (> (string_length $msgrcv) 0) (!= $msgrcv (get-state &prevmsg)))
                                              (if (> (string_length $msgrcv) 0) (change-state! &prevmsg $msgrcv) _)))
                              ($msg (get-state &prevmsg))
-                             ($_ (if (and (> $k 1) $msgnew)
-                                     (change-state! &loops (maxNewInputLoops)) _)))
-                            (if (> (get-state &loops) 0)
+                             ($_ (loopResumeOnNewInput $k $msgnew (maxNewInputLoops))))
+                            (if (loopInferenceAllowed)
                                 (let* (($lastmessage (if $msgnew $msg "[NO NEW USER INPUT. CONTINUE AUTONOMOUS WORK. DO NOT REPEAT THE PREVIOUS RESPONSE. ONLY USE send FOR GENUINELY NEW INFORMATION OR WHEN USER INPUT IS NEEDED.]"))
                                        ($_ (change-state! &nextWakeAt (+ (get_time) (wakeupInterval))))
                                        ($_ (log INFO "loop" $lastmessage))
@@ -105,17 +125,18 @@
                                        ($request (llmRequest $system (messagesGet) (maxOutputToken) (reasoningMode) (collectTools)))
                                        ($_ (log INFO "loop" (REQUEST: (py-str ($request)))))
                                        ($response (llmProviderChat $request))
+                                       ($_ (loopStopOnTerminalError $response))
                                        ($_ (log INFO "loop" (RESPONSE: (py-str ($response)))))
                                        ($respstr (py-call (providers.llmResponseToSExpr $response)))
                                        ($resp (catch (sread $respstr)))
                                        ($_ (log INFO "loop" (RESPONSE: $resp)))
                                        ($_ (change-state! &error ()))
-                                       ($_ (messagesClear))
                                        ($sexpr (if (HandleError (quote $resp) $error)
                                                  $error
                                                  (progn (messagesAppend (llmToolCallMessage role "assistant"
                                                                                            calls (llmResponseCalls $response)
-                                                                                           content "[TOOL CALL]"))
+                                                                                           content "[TOOL CALL]"
+                                                                                           native_items (llmResponseNativeItems $response)))
                                                    (collapse
                                                          (let ($callid $s) (superpose $resp)
                                                            (let $result
@@ -127,7 +148,8 @@
                                                                (messagesAppend (llmToolCallResponseMessage role "tool" callid $callid content (last_chars $result (maxFeedback))))
                                                                (quote $s)))))))))
                                            (if (or $msgnew  (not (== $sexpr ()))) (addToHistory $msg $sexpr $msgnew) _))
-                                (if (> (get_time) (get-state &nextWakeAt))
+                                (if (and (not (get-state &terminalProviderError))
+                                         (> (get_time) (get-state &nextWakeAt)))
                                     (change-state! &loops (+ 1 (maxWakeLoops))) _)))
                       (sleep (sleepInterval))
                       (cut)
