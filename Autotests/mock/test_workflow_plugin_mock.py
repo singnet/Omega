@@ -32,7 +32,7 @@ WORKFLOW_SKILL = "test-skill"
 DEMO_MESSAGE = "This is a test workflow demonstration"
 
 RESEARCH_WORKFLOW = "research-workflow"
-RESEARCH_DIR = "/PeTTa/repos/Omega/memory/workflow_space/research"
+RESEARCH_DIR = "/PeTTa/repos/Omega/memory/workflow/space/research"
 RESEARCH_NAME = "qa-research-autotest"
 
 

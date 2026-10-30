@@ -453,8 +453,21 @@ def test_memory_volume_upload_download_round_trip(tmp_path):
 @pytest.mark.parametrize(
     ("option", "included_environment", "excluded_environment"),
     [
-        ("--only-history", "MEMORY_IMPORT_NO_VECTOR=1", "MEMORY_IMPORT_NO_HISTORY=1"),
-        ("--only-vector", "MEMORY_IMPORT_NO_HISTORY=1", "MEMORY_IMPORT_NO_VECTOR=1"),
+        (
+            "--only-history",
+            ("MEMORY_IMPORT_NO_VECTOR=1", "MEMORY_IMPORT_NO_SKILLS=1"),
+            "MEMORY_IMPORT_NO_HISTORY=1",
+        ),
+        (
+            "--only-vector",
+            ("MEMORY_IMPORT_NO_HISTORY=1", "MEMORY_IMPORT_NO_SKILLS=1"),
+            "MEMORY_IMPORT_NO_VECTOR=1",
+        ),
+        (
+            "--only-skills",
+            ("MEMORY_IMPORT_NO_HISTORY=1", "MEMORY_IMPORT_NO_VECTOR=1"),
+            "MEMORY_IMPORT_NO_SKILLS=1",
+        ),
     ],
 )
 def test_only_component_options_select_one_import_component(
@@ -466,15 +479,27 @@ def test_only_component_options_select_one_import_component(
     result = _run_launcher(tmp_path, option)
 
     assert result.returncode == 0, result.stderr
-    assert included_environment in result.stdout
+    for environment in included_environment:
+        assert environment in result.stdout
     assert excluded_environment not in result.stdout
 
 
-def test_only_component_options_are_mutually_exclusive(tmp_path):
-    result = _run_launcher(tmp_path, "--only-history", "--only-vector")
+@pytest.mark.parametrize(
+    "options",
+    [
+        ("--only-history", "--only-vector"),
+        ("--only-history", "--only-skills"),
+        ("--only-vector", "--only-skills"),
+    ],
+)
+def test_only_component_options_are_mutually_exclusive(tmp_path, options):
+    result = _run_launcher(tmp_path, *options)
 
     assert result.returncode != 0
-    assert "--only-history and --only-vector cannot be combined" in result.stderr
+    assert (
+        "--only-history, --only-vector and --only-skills cannot be combined"
+        in result.stderr
+    )
 
 
 @pytest.mark.parametrize("command", ["start", "stop", "clean", "memory-download", "memory-delete"])
