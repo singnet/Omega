@@ -13,6 +13,9 @@
 (= (llmToolCallMessage role $role calls $calls content $content)
    (py-call (providers.llmToolCallMessage $role $calls $content)))
 
+(= (llmResponseMessage $response)
+   (py-call (providers.llmResponseMessage $response)))
+
 (= (llmRequest $prompt $episodes $max_tokens $reasoning_mode $tools)
    (py-call (providers.llmRequest $prompt $episodes $max_tokens $reasoning_mode $tools)))
 

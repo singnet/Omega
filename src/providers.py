@@ -125,9 +125,14 @@ class LLMToolCallMessage(LLMMessage):
     def __init__(self):
         super().__init__()
         self.calls: [LLMToolCall] = []
+        self.provider_data = None
 
     def with_calls(self, calls):
         self.calls = calls
+        return self
+
+    def with_provider_data(self, data):
+        self.provider_data = data
         return self
 
     def __repr__(self):
@@ -185,6 +190,7 @@ class LLMResponse:
     def __init__(self):
         self.calls: List[LLMToolCall] = []
         self.error = None
+        self.provider_data = None
 
     def add_tool_call(self, call: LLMToolCall):
         self.calls.append(call)
@@ -194,6 +200,10 @@ class LLMResponse:
         self.error = error
         return self
 
+    def with_provider_data(self, data):
+        self.provider_data = data
+        return self
+
     def is_error(self):
         return bool(self.error)
 
@@ -201,7 +211,8 @@ class LLMResponse:
         return f"LLMResponse[calls={self.calls!r},error={self.error!r}]"
 
     def __eq__(self, other):
-        return self.calls == other.calls and self.error == other.error
+        return (self.calls == other.calls and self.error == other.error
+                and self.provider_data == other.provider_data)
 
 class LLMProvider:
     """LLM provider implementation"""
@@ -294,6 +305,11 @@ def llmToolCallMessage(role, calls: [LLMToolCall], content):
     return (LLMToolCallMessage().with_role(role)
                                 .with_calls(calls)
                                 .with_content(content))
+
+def llmResponseMessage(response: LLMResponse):
+    """Build the assistant message, carrying provider-owned output unchanged."""
+    return (llmToolCallMessage("assistant", response.calls, "[TOOL CALL]")
+            .with_provider_data(response.provider_data))
 
 def llmRequest(prompt, episodes, max_tokens, reasoning_mode, tools):
     return (LLMRequest().with_messages([prompt] + episodes)
