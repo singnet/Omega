@@ -45,6 +45,10 @@
   loader: python
   location: "{REPO}/providers"
 
+- name: default
+  loader: metta
+  location: "{REPO}/routers"
+
 - name: workflow
   loader: metta
   location: "{REPO}/plugins/workflow"

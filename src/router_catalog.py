@@ -1,4 +1,4 @@
-"""Prepare private nginx routes and a credential-free MeTTa catalog."""
+"""Prepare private nginx routes and a credential-free JSON catalog."""
 
 import json
 import os
@@ -46,7 +46,7 @@ def prepare(raw, routes_path, catalog_path, embeddings="Local"):
     if not isinstance(catalog, dict) or set(catalog) not in (
             {"routine"}, {"routine", "premium"}):
         raise ValueError("Catalog requires routine and optionally premium")
-    routes, records = [], []
+    routes, records = [], {}
     openai_selection = None
     for role, record in catalog.items():
         if not isinstance(record, dict):
@@ -64,10 +64,10 @@ def prepare(raw, routes_path, catalog_path, embeddings="Local"):
         if provider == "OpenAI" and openai_selection is None:
             openai_selection = (base, record["token"])
         # Only known, credential-free fields enter the agent's catalog.
-        values = [f"(provider {provider})"]
-        values.extend(f"({field} {json.dumps(record[field], ensure_ascii=False)})"
-                      for field in ("api_token_var", "model", "openaiapi_url"))
-        records.append(f"  ({role} " + " ".join(values) + ")")
+        records[role] = {
+            field: record[field]
+            for field in ("provider", "api_token_var", "model", "openaiapi_url")
+        }
     if embeddings == "OpenAI":
         if openai_selection is None:
             raise ValueError("OpenAI embeddings require a selected OpenAI provider")
@@ -77,7 +77,9 @@ def prepare(raw, routes_path, catalog_path, embeddings="Local"):
     with os.fdopen(fd, "w") as output:
         os.fchmod(output.fileno(), 0o600)
         output.write("\n\n".join(routes) + "\n")
-    Path(catalog_path).write_text("(catalog\n" + "\n".join(records) + ")\n", encoding="utf-8")
+    Path(catalog_path).write_text(
+        json.dumps(records, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
     os.chmod(catalog_path, 0o644)
 
 

@@ -15,11 +15,14 @@ EMBEDDING_MODEL="${EMBEDDING_MODEL:-}"
 MM_URL="http://localhost:8080/" # dummy value
 OPENCLAW_URL="http://localhost:8080/" # dummy value
 router_catalog=""
+legacy_llm_args=()
 agent_args=()
 for arg in "$@"; do
   case "$arg" in
     router_catalog=*) router_catalog="${arg#*=}"; continue ;;
-    router_catalog_file=*|openaiapi_url=*) continue ;;
+    openaiapi_url=*) legacy_llm_args+=("$arg"); continue ;;
+    provider=*|model=*) legacy_llm_args+=("$arg") ;;
+    routerCatalogFile=*) continue ;;
   esac
   agent_args+=("$arg")
   if [[ "$arg" == embeddingprovider=* ]]; then
@@ -40,15 +43,45 @@ done
 export EMBEDDING_PROVIDER EMBEDDING_MODEL MM_URL OPENCLAW_URL
 
 if [[ -z "$router_catalog" ]]; then
-  echo "router_catalog is required for nginx LLM configuration" >&2
-  exit 1
+  # Adapt legacy provider/model arguments and API-key environment variables to
+  # the same single-record catalog used by non-routing launches.
+  router_catalog="$(python3 - "${legacy_llm_args[@]}" <<'PY'
+import json
+import os
+import sys
+
+settings = dict(arg.split("=", 1) for arg in sys.argv[1:])
+provider = settings.get("provider", "ASICloud")
+token_vars = {
+    "Anthropic": "ANTHROPIC_API_KEY",
+    "OpenAI": "OPENAI_API_KEY",
+    "ASICloud": "ASI_API_KEY",
+    "ASIOne": "ASIONE_API_KEY",
+    "OpenRouter": "OPENROUTER_API_KEY",
+    "OpenAIAPI": "OPENAIAPI_API_KEY",
+}
+if provider not in token_vars:
+    raise SystemExit("Unsupported legacy LLM provider")
+token_var = token_vars[provider]
+token = os.environ.get(token_var, "")
+if not token:
+    raise SystemExit(f"{token_var} is required for legacy LLM configuration")
+print(json.dumps({"routine": {
+    "provider": provider,
+    "api_token_var": token_var,
+    "model": settings.get("model", ""),
+    "openaiapi_url": settings.get("openaiapi_url", "http://localhost:8080/"),
+    "token": token,
+}}))
+PY
+)"
 fi
-catalog_file=/tmp/omega-router-catalog.metta
+catalog_file=/tmp/omega-router-catalog.json
 printf '%s' "$router_catalog" | python3 "${OMEGA_DIR}/src/router_catalog.py" \
   /opt/nginx/router.conf "$catalog_file" "$EMBEDDING_PROVIDER"
 chown www-data:www-data /opt/nginx/router.conf
-set -- "${agent_args[@]}" "router_catalog_file=$catalog_file"
-unset router_catalog agent_args arg
+set -- "${agent_args[@]}" "routerCatalogFile=$catalog_file"
+unset router_catalog legacy_llm_args agent_args arg
 
 agent_su=(su --group nogroup nobody)
 
@@ -112,11 +145,16 @@ for var in $SAFE_VARS; do
   fi
 done
 
+# BEGIN TEMPORARY DEBUG: dump agent inputs and full nginx configuration.
 printf 'Environment passed to agent:\n'
 printf '  %q\n' "${env_args[@]}"
 printf 'run.metta arguments:\n'
 printf '  %q\n' 'GATEWAY_URL=http://localhost:8080' "$@"
-printf 'Sanitized MeTTa catalog:\n'
+printf 'Sanitized JSON catalog:\n'
 cat -- "$catalog_file"
+
+printf 'Full nginx configuration, including included files (includes API tokens):\n'
+su www-data -s /bin/sh -c 'nginx -T -c "${NGINX_CONFIG:-/opt/nginx/nginx.conf}"' 2>&1
+# END TEMPORARY DEBUG: configuration dumps.
 
 exec env -i "${env_args[@]}" "${agent_su[@]}" -s /bin/sh -c 'exec sh run.sh run.metta GATEWAY_URL=http://localhost:8080 "$@"' sh "$@"

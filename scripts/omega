@@ -220,7 +220,7 @@ def _choose_channel():
 
 def _choose_provider(role=None):
     while True:
-        print(f"Please select your {role} LLM provider." if role else "Please select your LLM provider.")
+        print(f"\nPlease select your {role} LLM provider." if role else "Please select your LLM provider.")
         print("1) Anthropic/Claude 2) OpenAI/ChatGPT 3) ASI Cloud Minimax 4) ASI:One")
         print("5) OpenRouter/GLM 6) OpenAI API endpoint")
         c = input("Enter 1-6 or 'q' to exit (default: 1): ").strip()
@@ -281,13 +281,13 @@ def _choose_model_setup():
         answer = input("Use both a budget and a premium model? [y/N]: ").strip().lower()
         if answer in ("", "n", "no"):
             # Use the same catalog record format with only the routine role.
-            return {"routine": _choose_provider()}
+            return "none", {"routine": _choose_provider()}
         if answer in ("y", "yes"):
             router_catalog = {
                 "routine": _choose_provider("routine"),
                 "premium": _choose_provider("premium"),
             }
-            return router_catalog
+            return "default", router_catalog
         if answer == "q":
             sys.exit(1)
         print("Please enter y or n.", file=sys.stderr)
@@ -362,7 +362,7 @@ def config_run_omega(
     require_license_acceptance()
 
     channel_config = _choose_channel()
-    router_catalog = _choose_model_setup()
+    LLM_router_switch, router_catalog = _choose_model_setup()
     embeddingprovider = "OpenAI" if any(
         selection["provider"] == "OpenAI" for selection in router_catalog.values()
     ) else "Local"
@@ -379,6 +379,7 @@ def config_run_omega(
             _write_kv(f, "api_token" if key == "token" else key, value)
         _write_kv(f, "OMEGA_AUTH_SECRET", "".join(secrets.choice(string.digits) for _ in range(6)))
         _write_kv(f, "router_catalog", json.dumps(router_catalog))
+        _write_kv(f, "LLM_router_switch", LLM_router_switch)
         _write_kv(f, "embeddingprovider", embeddingprovider)
         for role, selection in router_catalog.items():
             for key, value in selection.items():
@@ -1196,6 +1197,21 @@ if sys.argv[1]:
 
     docker rm -f omega 2>/dev/null || true
 
+    llm_env=()
+    llm_options=()
+    if [ "${LLM_router_switch:-none}" = "default" ]; then
+        llm_options+=("router=default" "router_catalog=${router_catalog:-}")
+    else
+        llm_env+=(-e "${api_token_var}=${api_token}")
+        llm_options+=("router=none" "provider=${provider}")
+        if [ -n "${model:-}" ]; then
+            llm_options+=("model=${model}")
+        fi
+        if [ -n "${openaiapi_url:-}" ]; then
+            llm_options+=("openaiapi_url=${openaiapi_url}")
+        fi
+    fi
+
     docker_cmd=(
         docker run -d -it
             --name omega
@@ -1208,6 +1224,7 @@ if sys.argv[1]:
             --volume omega-memory:/PeTTa/repos/Omega/memory
             ${log_config_volume[@]+"${log_config_volume[@]}"}
             ${memory_transfer_volume[@]+"${memory_transfer_volume[@]}"}
+            ${llm_env[@]+"${llm_env[@]}"}
             -e "TG_BOT_TOKEN=${TG_BOT_TOKEN:-}"
             -e "SL_BOT_TOKEN=${SL_BOT_TOKEN:-}"
             -e "OMEGA_OPENCLAW_TOKEN=${OMEGA_OPENCLAW_TOKEN:-}"
@@ -1216,7 +1233,7 @@ if sys.argv[1]:
             ${memory_import_env[@]+"${memory_import_env[@]}"}
             "$image"
             "commchannel=${commchannel}"
-            "router_catalog=${router_catalog:-}"
+            "${llm_options[@]}"
             "embeddingprovider=${embeddingprovider}"
             "securityPolicyPath=/PeTTa/repos/Omega/profile/policy.yaml"
             ${memory_export_option[@]+"${memory_export_option[@]}"}
@@ -1243,20 +1260,10 @@ if sys.argv[1]:
       return 1
     fi
 
-    if [ -n "${openaiapi_url:-}" ]; then
-      docker_cmd+=("openaiapi_url=${openaiapi_url}")
-    fi
-
     if [ -n "${openclaw_url:-}" ]; then
       docker_cmd+=("openclaw_url=${openclaw_url}")
       docker_cmd+=("openClawEnabled=enabled")
       docker_cmd+=("openClawURL=${openclaw_url}")
-    fi
-
-    if [ -n "${premium_model:-}" ]; then
-        docker_cmd+=("router=default")
-    else
-        docker_cmd+=("router=none")
     fi
 
     "${docker_cmd[@]}"
@@ -1287,8 +1294,3 @@ case "${command}" in
        bootstrap
        ;;
 esac
-
-if [ -n "${router_catalog:-}" ]; then
-    printf '%s\n' "$router_catalog" | python3 -c 'import json, sys; catalog = json.load(sys.stdin); print("Router catalog:", json.dumps({role: {key: value[-4:] if key == "token" else value for key, value in record.items()} for role, record in catalog.items()}, indent=2))'
-    printf 'Embedding provider: %s\n' "${embeddingprovider:-Local}"
-fi
