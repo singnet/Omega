@@ -35,7 +35,7 @@
                          "SKILLS: " (getSkillRules) (newline)
                          (getPromptExtensions) (newline)
                          "SAVE_PERMANENT_FILES_DIR: " (memoryDirectory) (newline)
-                         "LAST_SKILL_USE_RESULTS: you must rectify ALERT_FAILED skill use cases "
+                         "LAST_SKILL_USE_RESULTS: "
                             (last_chars (get-state &lastresults) (maxFeedback)) (newline)
                          "TIME: " (get_time_as_string)))))
 
