@@ -14,7 +14,7 @@ def relations(monkeypatch):
     monkeypatch.setitem(sys.modules, 'chromadb', SimpleNamespace())
     monkeypatch.setitem(sys.modules, 'openai', SimpleNamespace(OpenAI=object))
     monkeypatch.setitem(sys.modules, 'lib_llm_ext', SimpleNamespace())
-    path = Path(__file__).resolve().parents[1] / 'src/frame_relation.py'
+    path = Path(__file__).resolve().parents[1] / 'plugins/context/frame_relation.py'
     spec = importlib.util.spec_from_file_location('frame_relation_under_test', path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

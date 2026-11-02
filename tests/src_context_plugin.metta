@@ -1,0 +1,133 @@
+!(import! &self ./tests/lib/utils)
+!(import! &self ../src/helper.py)
+!(import! &self ../src/config.py)
+!(import! &self ../src/providers.py)
+!(import! &self ../providers/lib_llm_ext.py)
+!(import! &self ./lib/frame_tools.py)
+!(py-call (frame_tools.prepare_prompt_renderer))
+!(import! &self (library lib_llm))
+!(import! &self ../src/utils)
+!(import! &self ../src/config)
+!(import! &self ../src/logger.py)
+!(import! &self ../src/log)
+!(import! &self ../src/plugin.py)
+!(import! &self ../src/plugin)
+!(import! &self ../src/skills)
+!(import! &self ../src/context_provider)
+!(import! &self ../src/loop)
+
+(= (command-line) ("config=./tests/res/src_config_empty.yaml" "contextFrame=enabled"))
+(= (getHistory) "ordinary conversation history")
+(= (getPrompt $provider) "test prompt")
+(= (maxFeedback) (empty))
+
+(= (load-context-plugin-test)
+   (let $location (joinPath ((projectRootDirectory) "plugins" "context"))
+     (loadPlugin (quote (metta "context" $location)))))
+
+(= (reset-context-plugin-test)
+   (progn
+     (collapse (match &self (dynamic-skill $name $_)
+       (if (py-call (frame_tools.is_frame_tool $name))
+           (remove-skill $name)
+           ())))
+     (remove-prompt-extension context-frame-skills)
+     (collapse (match &plugin-context (= $head $body)
+       (remove-atom &plugin-context (= $head $body))))
+     (collapse (match &self (= (contextFrame) $value)
+       (remove-atom &self (= (contextFrame) $value))))
+     (collapse (match &self (= (command-line) $args)
+       (remove-atom &self (= (command-line) $args))))))
+
+; Frames enabled: tools, prompts and lifecycle events.
+!(initConfig)
+!(configure maxOutputToken 6000)
+!(configure wakeupInterval 600)
+!(initContext)
+!(test (load-context-plugin-test) ())
+!(test (py-call (frame_tools.has_all_frame_tools (py-call (providers.getTools (getSkills))))) True)
+!(test (> (string_length (getContextFramePrompt)) 0) True)
+!(test (contains-text (once (context-event Prompt)) "ordinary conversation history") False)
+
+!(change-state! &cfv2-current-frame-id FrameOne)
+!(test (collapse (cfv2-has-current-frame)) (True))
+!(test (contains-text (once (context-event Prompt)) "FrameOne") True)
+!(change-state! &cfv2-current-frame-id FrameTwo)
+!(test (contains-text (once (context-event Prompt)) "FrameTwo") True)
+!(test (contains-text (once (context-event Prompt)) "FrameOne") False)
+
+!(configure provider Test)
+!(configure memoryDirectory "/tmp")
+!(configure maxFeedback 5000)
+!(change-state! &lastresults "previous tool output")
+!(test
+   (let $prompt (once (getContext))
+     (and (< (py-call (.index $prompt "CURRENT_CONTEXT_FRAME_S_EXPR:"))
+             (py-call (.index $prompt "_newline_SKILLS:")))
+          (and (< (py-call (.index $prompt "_newline_SKILLS:"))
+                  (py-call (.index $prompt "_newline_CONTEXT_FRAME_SKILLS:")))
+               (< (py-call (.index $prompt "_newline_SKILLS:"))
+                  (py-call (.index $prompt "_newline_LAST_SKILL_USE_RESULTS:"))))))
+   True)
+
+; Completion can move focus before results are attached to the original frame.
+!(change-state! &cfv2-current-frame-id FrameOne)
+!(change-state! &test-request-context (context-event BeforeRequest))
+!(change-state! &cfv2-current-frame-id FrameTwo)
+!(context-event (AfterTools (get-state &test-request-context) (CompleteGoalsSTM) (FrameCompleted)))
+!(test (not (== () (cfv2-get-frame-events FrameOne Execution))) True)
+!(test (cfv2-get-frame-events FrameTwo Execution) ())
+
+!(change-state! &cfv2-root-mode Fast)
+!(context-event Idle)
+!(test (get-state &cfv2-root-mode) Slow)
+
+; Frames disabled: ordinary context and callback replacement.
+!(reset-context-plugin-test)
+(= (command-line) ("config=./tests/res/src_config_empty.yaml"))
+!(initConfig)
+!(initContext)
+
+!(test (context-event (Input "actual user message" True)) "actual user message")
+; The test runner collects all solutions; the agent loop uses the first prompt.
+!(test (contains-text (once (context-event Prompt)) "ordinary conversation history") True)
+!(test (context-event BeforeRequest) ())
+!(test (context-event (AfterTools () (send) (SUCCESS))) ())
+!(test (context-event Idle) ())
+!(test (py-call (frame_tools.has_no_frame_tools (collectTools))) True)
+
+!(test (load-context-plugin-test) ())
+!(test (context-event (Input "message after disabled plugin load" True)) "message after disabled plugin load")
+!(test (contains-text (once (context-event Prompt)) "ordinary conversation history") True)
+!(test (py-call (frame_tools.has_no_frame_tools (collectTools))) True)
+!(test (contains-text (getPromptExtensions) "CONTEXT_FRAME_SKILLS:") False)
+
+(= (test-context-provider Prompt) "replacement context")
+!(set-context-provider test-context-provider)
+!(test (collapse (context-event Prompt)) ("replacement context"))
+
+; A missing frame dependency must stop startup before tools are registered.
+!(reset-context-plugin-test)
+(= (command-line) ("config=./tests/res/src_config_empty.yaml" "contextFrame=enabled"))
+!(initConfig)
+!(initContext)
+!(py-call (frame_tools.block_frame_backend_import))
+!(change-state! &test-startup-continued False)
+; Python exceptions are returned as opaque Prolog terms.
+!(test
+   (case (catch
+           (progn
+             (load-context-plugin-test)
+             (change-state! &test-startup-continued True)))
+     (((Error $type $_)
+       (progn
+         (translatePredicate (arg 1 $type $exceptionType))
+         (translatePredicate (arg 2 $type $exception))
+         (if (== $exceptionType ModuleNotFoundError)
+             (== (py-call (getattr $exception "name")) frame_relation)
+             False)))
+      ($other False)))
+   True)
+!(test (get-state &test-startup-continued) False)
+!(test (py-call (frame_tools.has_no_frame_tools (py-call (providers.getTools (getSkills))))) True)
+!(py-call (frame_tools.unblock_frame_backend_import))

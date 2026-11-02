@@ -123,6 +123,83 @@ def _run_runtime_validator(tmp_path: Path, transfer_dir: str, transfer_gid: int)
     )
 
 
+@pytest.mark.parametrize("setting", ["enabled", "disabled"])
+def test_launcher_passes_explicit_context_frame_setting(tmp_path, setting):
+    result = _run_launcher(tmp_path, "--context-frame", setting, memory_import=False)
+
+    assert result.returncode == 0, result.stderr
+    assert f"<contextFrame={setting}>" in result.stdout
+
+
+def test_launcher_leaves_context_frame_default_to_configuration(tmp_path, monkeypatch):
+    monkeypatch.delenv("contextFrame", raising=False)
+    monkeypatch.delenv("OMEGA_contextFrame", raising=False)
+    result = _run_launcher(tmp_path, memory_import=False)
+
+    assert result.returncode == 0, result.stderr
+    assert "<contextFrame=" not in result.stdout
+    assert "<OMEGA_contextFrame=" not in result.stdout
+
+
+def test_launcher_forwards_context_frame_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv("contextFrame", "disabled")
+    monkeypatch.setenv("OMEGA_contextFrame", "enabled")
+    result = _run_launcher(tmp_path, memory_import=False)
+
+    assert result.returncode == 0, result.stderr
+    assert "<-e> <OMEGA_contextFrame=enabled>" in result.stdout
+    assert "<contextFrame=" not in result.stdout
+
+
+def test_entrypoint_preserves_context_frame_selection(tmp_path):
+    probe = tmp_path / "probe"
+    probe.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"$OMEGA_contextFrame\" \"${OPENAI_API_KEY-unset}\"\n",
+        encoding="utf-8",
+    )
+    probe.chmod(0o755)
+    entrypoint = (REPO_ROOT / "entrypoint.sh").read_text(encoding="utf-8")
+    scrub = entrypoint.split("# Scrub environment: only allowlisted vars survive.\n", 1)[1]
+    environment = os.environ.copy()
+    environment["OMEGA_contextFrame"] = "enabled"
+    environment["OPENAI_API_KEY"] = "test-secret"
+
+    result = subprocess.run(
+        ["bash", "-c", 'agent_su=("$1"); shift\n' + scrub, "env-test", str(probe)],
+        cwd=tmp_path, env=environment, capture_output=True, text=True, check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == ["enabled", "unset"]
+
+
+def test_launcher_rejects_invalid_context_frame_setting(tmp_path):
+    result = _run_launcher(tmp_path, "--context-frame", "invalid", memory_import=False)
+
+    assert result.returncode != 0
+    assert "--context-frame must be enabled or disabled" in result.stderr
+    assert "docker <" not in result.stdout
+
+
+@pytest.mark.parametrize("answer, setting", [("y", "enabled"), ("n", "disabled")])
+def test_installer_records_context_frame_selection(tmp_path, monkeypatch, answer, setting):
+    installer = _load_installer_namespace()
+    monkeypatch.setitem(installer, "require_license_acceptance", lambda: None)
+    monkeypatch.setitem(installer, "_choose_channel", lambda: {"commchannel": "test"})
+    monkeypatch.setitem(
+        installer, "_choose_provider",
+        lambda: ("Test", "Local", "TEST_SERVER_IP", "", "", "localhost"),
+    )
+    monkeypatch.setitem(installer, "_choose_import_kb", lambda: "0")
+    monkeypatch.setattr("builtins.input", lambda _: answer)
+    output = tmp_path / "config"
+
+    installer["config_run_omega"](str(output), str(tmp_path), "1000", "0")
+
+    assert f"contextFrame={setting}\n" in output.read_text(encoding="utf-8")
+
+
 def test_installer_records_private_group_for_existing_transfer_directory(tmp_path, monkeypatch):
     transfer_dir = tmp_path / "memory-transfer"
     transfer_dir.mkdir()
