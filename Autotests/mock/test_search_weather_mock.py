@@ -34,7 +34,7 @@ def test_search_weather_mock(llm, comm):
         mocked_reply = (
             f"Current weather in Valencia, Spain: about {REF_TEMP_C:.1f}°C."
         )
-        llm.set_answer(prompt, f'(send "{mocked_reply}")')
+        llm.set_answer(prompt, [("send", { "content": f"{mocked_reply}" })])
         if not comm.send_message(prompt):
             c.fail("comm", "could not deliver prompt within 60s")
         c.ok("comm", f"run-id={c.run_id}")

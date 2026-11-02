@@ -53,10 +53,10 @@ def test_delegate_isolated_and_success_mock(llm, comm, gateway):
         prompt = make_prompt(c.run_id, "Delegate a task to OpenClaw.")
         llm.set_answer(
             request=prompt,
-            response=(
-                f'(send "Delegating task {c.run_id}")\n'
-                '(delegate-task-to-openclaw-agent "Reply with exactly: unused")'
-            ),
+            response=([
+                ("send", { "content": f"Delegating task {c.run_id}" }),
+                ("delegate-task-to-openclaw-agent", { "task": "Reply with exactly: unused" })
+            ]),
         )
         if not comm.send_message(prompt):
             c.fail("comm", "could not deliver prompt within timeout")
@@ -80,11 +80,11 @@ def test_delegate_isolated_and_success_mock(llm, comm, gateway):
         prompt = make_prompt(c.run_id + 1, "Delegate a task and save the raw result.")
         llm.set_answer(
             request=prompt,
-            response=(
-                f'(metta (write-file "{out_path}" '
-                f'(delegate-task-to-openclaw-agent "Reply with exactly: {echo_marker}")))\n'
-                f'(send "Delegation saved {c.run_id}")'
-            ),
+            response=([
+                ("metta", { "sexpression": f'(write-file "{out_path}" '
+                f'(delegate-task-to-openclaw-agent "Reply with exactly: {echo_marker}"))' }),
+                ("send", { "content": f"Delegation saved {c.run_id}" })
+            ]),
         )
         if not comm.send_message(prompt):
             c.fail("comm", "could not deliver prompt within timeout")
@@ -149,10 +149,10 @@ def test_delegate_empty_message_mock(llm, comm, gateway):
         prompt = make_prompt(c.run_id, "Delegate an empty task and save the raw result.")
         llm.set_answer(
             request=prompt,
-            response=(
-                f'(metta (write-file "{out_path}" (delegate-task-to-openclaw-agent "")))\n'
-                f'(send "Empty delegation checked {c.run_id}")'
-            ),
+            response=([
+                ("metta", { "sexpression": f'(write-file "{out_path}" (delegate-task-to-openclaw-agent ""))' }),
+                ("send", { "content": f"Empty delegation checked {c.run_id}" })
+            ]),
         )
         if not comm.send_message(prompt):
             c.fail("comm", "could not deliver prompt within timeout")
@@ -188,13 +188,13 @@ def test_delegate_new_session_per_call_mock(llm, comm, gateway):
         prompt = make_prompt(c.run_id, "Delegate two independent tasks and save both raw results.")
         llm.set_answer(
             request=prompt,
-            response=(
-                f'(metta (write-file "{first_path}" '
-                f'(delegate-task-to-openclaw-agent "Reply with exactly: {first_marker}")))\n'
-                f'(metta (write-file "{second_path}" '
-                f'(delegate-task-to-openclaw-agent "Reply with exactly: {second_marker}")))\n'
-                f'(send "Both delegations saved {c.run_id}")'
-            ),
+            response=([
+                ("metta", { "sexpression": f'(write-file "{first_path}" '
+                f'(delegate-task-to-openclaw-agent "Reply with exactly: {first_marker}"))' }),
+                ("metta", { "sexpression": f'(write-file "{second_path}" '
+                f'(delegate-task-to-openclaw-agent "Reply with exactly: {second_marker}"))' }),
+                ("send", { "content": f"Both delegations saved {c.run_id}" })
+            ]),
         )
         if not comm.send_message(prompt):
             c.fail("comm", "could not deliver prompt within timeout")
@@ -252,12 +252,12 @@ def test_delegate_stays_async_under_a_slow_gateway_mock(llm, comm, gateway):
         prompt = make_prompt(c.run_id, "Delegate a long task.")
         llm.set_answer(
             request=prompt,
-            response=(
-                f'(metta (write-file "{out_path}" '
+            response=([
+                ("metta", { "sexpression": f'(write-file "{out_path}" '
                 f'(delegate-task-to-openclaw-agent '
-                f'"OCGW_SLEEP:{SLOW_GATEWAY_SECONDS} Reply with exactly: SLOW-{c.run_id}")))\n'
-                f'(send "Long delegation started {c.run_id}")'
-            ),
+                f'"OCGW_SLEEP:{SLOW_GATEWAY_SECONDS} Reply with exactly: SLOW-{c.run_id}"))' }),
+                ("send", { "content": f"Long delegation started {c.run_id}" })
+            ]),
         )
         started = time.time()
         if not comm.send_message(prompt):
@@ -277,7 +277,7 @@ def test_delegate_stays_async_under_a_slow_gateway_mock(llm, comm, gateway):
         c.step("an unrelated prompt is answered while the delegation is still pending")
         second_id = c.run_id + 1
         second = make_prompt(second_id, "Answer with the marker.")
-        llm.set_answer(request=second, response=f'(send "STILL-ALIVE-{c.run_id}")')
+        llm.set_answer(request=second, response=[("send", { "content": f"STILL-ALIVE-{c.run_id}" })])
         if not comm.send_message(second):
             c.fail("comm", "could not deliver the second prompt within timeout")
         alive = wait_for_skill_call(second_id, "send", timeout=ACK_BUDGET_SECONDS,
@@ -321,11 +321,11 @@ def test_delegate_reports_gateway_rejection_mock(llm, comm, gateway):
         prompt = make_prompt(c.run_id, "Delegate a task that will be refused.")
         llm.set_answer(
             request=prompt,
-            response=(
-                f'(metta (write-file "{out_path}" '
-                f'(delegate-task-to-openclaw-agent "OCGW_UNAUTHORIZED {c.run_id}")))\n'
-                f'(send "Refused delegation checked {c.run_id}")'
-            ),
+            response=([
+                ("metta", { "sexpression": f'(write-file "{out_path}" '
+                f'(delegate-task-to-openclaw-agent "OCGW_UNAUTHORIZED {c.run_id}"))' }),
+                ("send", { "content": f"Refused delegation checked {c.run_id}" })
+            ]),
         )
         if not comm.send_message(prompt):
             c.fail("comm", "could not deliver the prompt within timeout")
@@ -367,11 +367,11 @@ def test_delegate_retries_a_starting_gateway_mock(llm, comm, gateway):
         prompt = make_prompt(c.run_id, "Delegate a task to a starting Gateway.")
         llm.set_answer(
             request=prompt,
-            response=(
-                f'(metta (write-file "{out_path}" (delegate-task-to-openclaw-agent '
-                f'"OCGW_503:2 Reply with exactly: {marker}")))\n'
-                f'(send "Retry delegation started {c.run_id}")'
-            ),
+            response=([
+                ("metta", { "sexpression": f'(write-file "{out_path}" (delegate-task-to-openclaw-agent '
+                f'"OCGW_503:2 Reply with exactly: {marker}"))' }),
+                ("send", { "content": f"Retry delegation started {c.run_id}" })
+            ]),
         )
         if not comm.send_message(prompt):
             c.fail("comm", "could not deliver the prompt within timeout")
@@ -412,11 +412,11 @@ def test_delegate_reports_a_reply_without_text_mock(llm, comm, gateway):
         prompt = make_prompt(c.run_id, "Delegate a task answered without text.")
         llm.set_answer(
             request=prompt,
-            response=(
-                f'(metta (write-file "{out_path}" '
-                f'(delegate-task-to-openclaw-agent "OCGW_NOTEXT {c.run_id}")))\n'
-                f'(send "Empty reply checked {c.run_id}")'
-            ),
+            response=([
+                ("metta", { "sexpression": f'(write-file "{out_path}" '
+                f'(delegate-task-to-openclaw-agent "OCGW_NOTEXT {c.run_id}"))' }),
+                ("send", { "content": f"Empty reply checked {c.run_id}" })
+            ]),
         )
         if not comm.send_message(prompt):
             c.fail("comm", "could not deliver the prompt within timeout")
@@ -444,10 +444,10 @@ def test_delegation_is_authenticated_by_the_proxy_mock(llm, comm, gateway):
         prompt = make_prompt(c.run_id, "Delegate a task.")
         llm.set_answer(
             request=prompt,
-            response=(
-                f'(delegate-task-to-openclaw-agent "Reply with exactly: TOKEN-{c.run_id}")\n'
-                f'(send "Token delegation sent {c.run_id}")'
-            ),
+            response=([
+                ("delegate-task-to-openclaw-agent", { "task": f"Reply with exactly: TOKEN-{c.run_id}" }),
+                ("send", { "content": f"Token delegation sent {c.run_id}" })
+            ]),
         )
         if not comm.send_message(prompt):
             c.fail("comm", "could not deliver the prompt within timeout")

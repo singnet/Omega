@@ -8,6 +8,7 @@ SL_AGENT_USER_ID set.
 Run:
     pytest test_slack_unwrap.py -s
 """
+import importlib.util
 import os
 import sys
 
@@ -17,7 +18,16 @@ _PARENT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if _PARENT not in sys.path:
     sys.path.insert(0, _PARENT)
 
-from channels.slack import _slack_unwrap  # noqa: E402
+# src/channels.py shadows the channels/ package on pythonpath, so load slack.py by path
+# and let it import its siblings (auth, delivery_queue) the way the container does.
+_CHANNELS = os.path.join(_PARENT, "channels")
+if _CHANNELS not in sys.path:
+    sys.path.append(_CHANNELS)
+_spec = importlib.util.spec_from_file_location(
+    "slack_channel_under_test", os.path.join(_PARENT, "channels", "slack.py"))
+_slack = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_slack)
+_slack_unwrap = _slack._slack_unwrap
 
 
 @pytest.fixture(scope="session")
