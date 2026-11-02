@@ -6,7 +6,7 @@ import time
 import textwrap
 import auth
 from src.logger import get_logger
-from delivery_queue import PendingMessages
+from delivery_queue import PartialDeliveryError, PendingMessages
 import channels
 from config import config_get_by_key
 
@@ -22,12 +22,16 @@ _connected = False
 _auth_lock = threading.Lock()
 _authenticated_nick = None
 _outbox = PendingMessages()
+IRC_MAX_LINE_BYTES = 512
 
 def _send(cmd):
+    wire = (cmd + "\r\n").encode("utf-8")
+    if len(wire) > IRC_MAX_LINE_BYTES:
+        raise ValueError(f"IRC line exceeds {IRC_MAX_LINE_BYTES} bytes ({len(wire)} bytes)")
     with _sock_lock:
         if _sock is None:
             raise RuntimeError("IRC channel is not connected")
-        _sock.sendall((cmd + "\r\n").encode())
+        _sock.sendall(wire)
     time.sleep(1)
 
 def _set_last(msg):
@@ -83,8 +87,34 @@ def _ready_to_send():
     return _connected and bool(_channel)
 
 
+def _split_utf8(text, max_bytes):
+    start = 0
+    size = 0
+    for index, character in enumerate(text):
+        char_bytes = len(character.encode("utf-8"))
+        if char_bytes > max_bytes:
+            raise ValueError("IRC target leaves insufficient room for a UTF-8 character")
+        if size + char_bytes > max_bytes:
+            yield text[start:index]
+            start = index
+            size = 0
+        size += char_bytes
+    if start < len(text):
+        yield text[start:]
+
+
 def _deliver_outbound(chunk):
-    _send(f"PRIVMSG {_channel} :{chunk}")
+    prefix = f"PRIVMSG {_channel} :"
+    budget = IRC_MAX_LINE_BYTES - len((prefix + "\r\n").encode("utf-8"))
+    sent_characters = 0
+    try:
+        for part in _split_utf8(chunk, budget):
+            _send(prefix + part)
+            sent_characters += len(part)
+    except Exception as exc:
+        if sent_characters:
+            raise PartialDeliveryError(chunk[sent_characters:]) from exc
+        raise
 
 
 def _flush_outbox():
