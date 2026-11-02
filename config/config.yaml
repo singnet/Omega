@@ -154,6 +154,10 @@ asione_model: "asi1-ultra"
 
 # Plugins
 
+# Context frames are selected at startup. Use enabled for frame-based context,
+# or disabled for the ordinary message/history loop. Restart after changing it.
+contextFrame: disabled
+
 # Workflow
 # Path to the directory which contains available workflows. Default value is
 # <project_root>/plugins/workflow/instructions. See plugins/workflow/README.md

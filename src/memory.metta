@@ -26,13 +26,6 @@
                (read-file $default_prompt)
                "")))))
 
-(= (getContextFramePrompt)
-   (let $path
-         (library Omega ./memory/prompt_context_frame.txt)
-      (if (exists-file $path)
-          (read-file $path)
-          "")))
-
 (= (getHistory)
    (let $history_file
          (library Omega ./memory/history.metta)

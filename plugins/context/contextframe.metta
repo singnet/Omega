@@ -1,5 +1,7 @@
+(= (getFrameSkillsCompact) (getSkills))
+
 ;; TODO: Frame composition is now based on semantic search and LLM classification,
-;;       for the future development it should avoid LLM classification and just 
+;;       for the future development it should avoid LLM classification and just
 ;;       use symbolic reasoning, of course there is an issue of not enough dataset,
 ;;       try to explore factor graph based reasoning of PLN/NAL it seems like a good approach
 
@@ -37,32 +39,32 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (= (cfv2-now)
-   (swrite (py-call (helper.cfv2_now))))
+   (swrite (py-call (frame_helpers.cfv2_now))))
 
 (= (cfv2-make-id $prefix)
-   (py-call (helper.make_id (repr $prefix))))
+   (py-call (frame_helpers.make_id (repr $prefix))))
 
 (= (cfv2-compact-plain $value)
    (py-call
-      (helper.compact_plain
+      (frame_helpers.compact_plain
          (repr $value)
          (cfv2LastResultsLimit))))
 
 (= (cfv2-compact-limited $value $limit)
    (py-call
-      (helper.compact_plain
+      (frame_helpers.compact_plain
          (repr $value)
          $limit)))
 
 (= (cfv2-history-payload $value)
    (py-call
-      (helper.cfv2_history_payload
+      (frame_helpers.cfv2_history_payload
          (repr $value)
          (cfv2PayloadLimit))))
 
 (= (cfv2-compact-history $events)
    (py-call
-      (helper.cfv2_compact_history
+      (frame_helpers.cfv2_compact_history
          (repr $events)
          (cfv2HistorySummaryLimit))))
 
@@ -199,9 +201,9 @@
             (cfv2-current-frame))
          ; ($_ (log DEBUG "context" ("Current frame for prompt: " $frameID))) ;; enable for debug
          )
-      
-         (Frame $frameID $parentFrameID $source $priority $goalNamespace 
-               $status $frameMode $historySummary $deliverables $subFrameNamespace 
+
+         (Frame $frameID $parentFrameID $source $priority $goalNamespace
+               $status $frameMode $historySummary $deliverables $subFrameNamespace
                $results $createdAt $updatedAt $completedTimestamp $completedSummary))))
 
 ;; TODO: change the current-frame-id getter to this function cfv2-root-current-frame-id.
@@ -272,7 +274,7 @@
       (change-state! &cfv2-global-constraints (cfv2-default-constraints))
       (change-state! &cfv2-last-admitted-frame-id ())
       (change-state! &cfv2-current-frame-id ())
-      
+
       ;; List-backed external spaces. These are intentionally not in RootFrame.
       (change-state! &cfv2-active-framespace ())
       (change-state! &cfv2-completed-framespace ())
@@ -293,31 +295,31 @@
 ;; TODO: The function calls get-state regardless of the space being empty.
 ;;       - Check the rest Space Append functions for the same issue.
 (= (cfv2-add-active-frame $frame)
-   (let $currentSpace (if (== (get-state &cfv2-active-framespace) ()) 
+   (let $currentSpace (if (== (get-state &cfv2-active-framespace) ())
       ((get-state &cfv2-active-framespace)) (get-state &cfv2-active-framespace))
       (change-state! &cfv2-active-framespace
          (append $currentSpace ($frame)))))
 
 (= (cfv2-add-completed-frame $frame)
-   (let $currentSpace (if (== (get-state &cfv2-completed-framespace) ()) 
+   (let $currentSpace (if (== (get-state &cfv2-completed-framespace) ())
       ((get-state &cfv2-completed-framespace)) (get-state &cfv2-completed-framespace))
       (change-state! &cfv2-completed-framespace
          (append $currentSpace ($frame)))))
 
 (= (cfv2-add-frame-ref $ref)
-   (let $currentSpace (if (== (get-state &cfv2-frame-indexspace) ()) 
+   (let $currentSpace (if (== (get-state &cfv2-frame-indexspace) ())
       ((get-state &cfv2-frame-indexspace)) (get-state &cfv2-frame-indexspace))
       (change-state! &cfv2-frame-indexspace
          (append $currentSpace ($ref)))))
 
 (= (cfv2-add-goal $goal $goalspace)
-   (let $currentSpace (if (== (get-state $goalspace) ()) 
+   (let $currentSpace (if (== (get-state $goalspace) ())
       ((get-state $goalspace)) (get-state $goalspace))
       (change-state! $goalspace
          (append $currentSpace ($goal)))))
 
 (= (cfv2-add-sub-frame $subFrame $subframespace)
-   (let $currentSpace (if (== (get-state $subframespace) ()) 
+   (let $currentSpace (if (== (get-state $subframespace) ())
       ((get-state $subframespace)) (get-state $subframespace))
       (change-state! $subframespace
          (append $currentSpace ($subFrame)))))
@@ -512,7 +514,7 @@
           ($subframe (cfv2-create-sub-frame $frameID $subFrameSpaceID $goalSpaceID $description $source $priority $deliverables))
           ($compFrame (Frame (frameID $frameID) (parent-frameID ()) (source $source) (priority $priority) (status Active) (frame-mode $mode) (deliverables ($deliverables)) (results ())))
           ($relation (cfv2-compose-relations $frameID $compFrame))
-          ($_ (change-state! &cfv2-relational-space (append (get-state &cfv2-relational-space) $relation))) 
+          ($_ (change-state! &cfv2-relational-space (append (get-state &cfv2-relational-space) $relation)))
           ($frame (Frame
              (frameID $frameID)
              (parent-frameID ())
@@ -536,7 +538,7 @@
              (completed-summary ())
              ))
          )
-      
+
       (progn
          (cfv2-snapshot-current-frame Active $frame)
          ; (log DEBUG "context" (CREATING-FRAME $frameID FROM $source WITH-MODE $mode))
@@ -545,8 +547,8 @@
          (change-state! &cfv2-last-admitted-frame-id $frameID)
          (FRAME-CREATED-AND-STORED-IN-ACTIVE-FRAME-SPACE)
 
-         (if (and (== $source UserDirective) (== (cfv2-root-mode) Slow)) 
-            (progn (switch-mode) (cfv2-load-frame $frameID) "NEW USER DIRECTED FRAME CREATED AND SWITCHED TO FAST MODE")
+         (if (and (== $source UserDirective) (== (cfv2-root-mode) Slow))
+            (progn (cfv2-switch-mode) (cfv2-load-frame $frameID) "NEW USER DIRECTED FRAME CREATED AND SWITCHED TO FAST MODE")
             _)
 
          (NewframeID $frameID)
@@ -652,10 +654,10 @@
                 (constraints $constraint) (deliverables $deliverables)
                 (sub-frame-namespace $subFrameSpaceID) (results $result)
                 (created-at $createdAt) (updated-at $updatedAt) (completed-timestamp $completedTimestamp)
-                (completed-summary $completedSummary)) 
+                (completed-summary $completedSummary))
 
                (cfv2-get-frame $frameIDAtom &cfv2-active-framespace))
-            
+
             ($relation (collapse (cfv2-get-relation $frameIDAtom)))
             )
 
@@ -684,10 +686,10 @@
                (change-state! &cfv2-current-updated-at $updatedAt)
                (change-state! &cfv2-current-completed-timestamp $completedTimestamp)
                (change-state! &cfv2-current-completed-summary $completedSummary)
-               
+
                ((CurrentFrame (cfv2-current-frame))
                   (Relation (collapse $relation)))) ;; return the frame state after loading and its relation
-            "FRAME MODE NOT ALLOWED FOR ROOT MODE, SWITCH TO A FRAME HAVING THE SAME MODE AND AS THE ROOT FRAME OR CONSIDER CHANGING THE ROOT MODE" 
+            "FRAME MODE NOT ALLOWED FOR ROOT MODE, SWITCH TO A FRAME HAVING THE SAME MODE AND AS THE ROOT FRAME OR CONSIDER CHANGING THE ROOT MODE"
             )))
 
 ;; Build a Frame atom from the current-frame cache states.
@@ -743,7 +745,7 @@
 (= (cfv2-select-next-frame)
    (let $nextID
       (py-call
-         (helper.cfv2_select_next_frame_id
+         (frame_helpers.cfv2_select_next_frame_id
             (repr (cfv2-frame-refs-by-status Active))
             (repr (get-state &cfv2-root-mode))))
       (if (== $nextID NON)
@@ -755,9 +757,9 @@
                (cfv2-load-frame $nextID))
           )))
 
-(= (cfv2-check-ref-status (FrameRef $frameID $parentFrameID $space 
-                $source $priority (status $currentStatus) $frameMode 
-                $summary $createdAt $updatedAt $completedTimestamp) 
+(= (cfv2-check-ref-status (FrameRef $frameID $parentFrameID $space
+                $source $priority (status $currentStatus) $frameMode
+                $summary $createdAt $updatedAt $completedTimestamp)
                 $status)
     (if (== $currentStatus $status) True False)
 )
@@ -771,7 +773,7 @@
 (= (cfv2-completed-frame-refs-after $datePrefix)
    (sread
       (py-call
-         (helper.cfv2_refs_completed_after
+         (frame_helpers.cfv2_refs_completed_after
             (repr (get-state &cfv2-frame-indexspace))
             (repr $datePrefix)))))
 
@@ -868,45 +870,6 @@
        (cfv2-select-next-frame)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; User-facing / skill-friendly helpers
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(= (new-frame $description)
-   (cfv2-create-frame-from-user-message $description))
-
-(= (new-autonomous-frame $description)
-   (cfv2-create-autonomous-frame $description 0.5 Slow))
-
-(= (switch-frame $frameID)
-   (cfv2-load-frame $frameID))
-
-(= (show-root-frame)
-   (cfv2-root-frame))
-
-(= (show-current-frame)
-   (cfv2-current-frame))
-
-(= (show-frame-index)
-   (get-state &cfv2-frame-indexspace))
-
-(= (show-active-framespace)
-   (get-state &cfv2-active-framespace))
-
-(= (show-completed-framespace)
-   (get-state &cfv2-completed-framespace))
-
-(= (show-frame-relation $frameID)
-   (cfv2-get-relation $frameID))
-
-(= (switch-mode)
-   (cfv2-switch-mode))
-
-(= (send_probe) (progn (change-state! &loops 25) ("ALIVE PROBE SENT")))
-
-; (= (create-sub-frame $description)
-;    (cfv2-create-sub-frame $description 0.8 (cfv2-make-deliverable $description)))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Backward compatibility with previous context.metta / loop.metta
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -941,24 +904,3 @@
 
 (= (ctx-compact-plain $value)
    (cfv2-compact-plain $value))
-
-(= (ctx-add-hypothesis $id $hypothesis)
-   (cfv2-add-hypothesis $id $hypothesis))
-
-(= (ctx-add-result $variant $metrics)
-   (cfv2-add-result $variant $metrics))
-
-(= (ctx-set-certified-method $description $parameters $evalProtocol $hash)
-   (cfv2-set-certified-method $description $parameters $evalProtocol $hash))
-
-(= (ctx-add-deliverable $artifact)
-   (cfv2-add-deliverable $artifact))
-
-(= (complete-goals-stm $summary)
-   (once (cfv2-complete-current-frame-to-stm $summary)))
-
-(= (complete-goals-ltm $summary)
-   (once (cfv2-complete-current-frame-to-ltm $summary)))
-
-(= (clear-frame-junk $summary)
-   (once (cfv2-clear-current-frame-junk $summary)))
