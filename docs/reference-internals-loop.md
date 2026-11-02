@@ -30,21 +30,26 @@ Also creates shared state slots:
 ## Every turn
 
 1. **Decrement `&loops`** (turns > 1 only).
-2. **Receive** — `(receive)` via the active channel.
-3. **Detect new input** — compare against `&prevmsg`. If different and non-empty, reset `&loops` to `maxNewInputLoops`.
-4. **Prepare context** — the selected context provider processes input and supplies working context to `getContext`. The default uses conversation history; the optional frame provider uses the current frame projection.
+2. **Build the prompt** — `getContext` assembles `PROMPT + SKILLS + TIME` and context from the selected provider, plus information about previous tool calls if any and list of available tools.
+3. **Receive** — `(receive)` via the active channel.
+4. **Detect new input** — compare against `&prevmsg`. If different and non-empty, reset `&loops` to `maxNewInputLoops`.
 5. **Set next wake** — `&nextWakeAt := now + wakeupInterval`.
-6. **Call the LLM** — `llmProviderChat` sends the request to the registered provider selected at startup.
-7. **Parse** — `providers.llmResponseToSExpr` converts the structured response to an s-expression string; `catch (sread $respstr)` parses it.
-8. **Dispatch skills** — `(superpose $resp)` yields each tool call for evaluation, with errors captured via `HandleError`.
-9. **Record** — `addToHistory` appends human message + response + any errors to `memory/history.metta`, provided something new happened.
-10. **Save last results** — into `&lastresults` for the next turn's prompt.
-11. **Sleep** — `(sleep (sleepInterval))`.
-12. **Recurse** — `(omega (+ 1 $k))`.
+6. **Call the LLM** — dispatches on `provider`:
+   - `OpenAI` → `useGPT`
+   - `Anthropic` → `lib_llm_ext.useClaude`
+   - `ASICloud` → `lib_llm_ext.useMiniMax`
+   - else → `lib_llm_ext.useAsi1`
+8. **Parse** — `sread` on the repaired string; if it does not start with `(`, the loop feeds back a reminder prompt.
+9. **Dispatch skills** — `(superpose $sexpr)` runs each skill, capturing errors via `HandleError`.
+10. **Record** — `addToHistory` appends human message + response + any errors to `memory/history.metta`, provided something new happened.
+11. **Save last results** — into `&lastresults` for the next turn's prompt.
+12. **Sleep** — `(sleep (sleepInterval))`.
+13. **Recurse** — `(omega (+ 1 $k))`.
 
-The context provider processes input before the prompt is built. Before each
-LLM call, it supplies a token that is passed back with the completed tool batch.
-The core does not read frame state. See the
+The default context provider supplies conversation history; the enabled context
+plugin supplies the current frame projection. Before each LLM call, the provider
+supplies a token that is passed back with the completed tool batch. The core
+does not read frame state. See the
 [context provider API](./reference-plugin-api.md#context-providers).
 
 ## Idle behavior
@@ -56,10 +61,10 @@ context-specific idle maintenance.
 
 ## Error handling
 
-`HandleError` records `(Error command message)` results in `&error`:
+Two kinds of error are reported back into `&error`:
 
-- **Response or parse failure** — response validation reports an error, or parsing the response s-expression fails.
-- **Per-skill failure** — a tool call fails validation or an error is caught while evaluating a skill.
+- **Parse failure** (`MULTI_COMMAND_FAILURE_...`) — the LLM did not produce a valid s-expression.
+- **Per-skill failure** (`SINGLE_COMMAND_FORMAT_ERROR_...`) — one skill call failed.
 
 Errors are appended to the episodic trace so the agent sees them and can self-correct.
 
