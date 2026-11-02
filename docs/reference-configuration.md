@@ -37,6 +37,18 @@ This resolves the value through the Python configuration layer, using command-li
 | `embeddingModel` | empty | Model asked of a non-`Local` `embeddingprovider`. Empty means the provider default: `text-embedding-3-large` for `OpenAI`, `WhereIsAI/UAE-Large-V1` for `ASICloud`. |
 | `embeddingBatchSize` | `32` | Positive integer: maximum texts per cloud embedding request during runtime knowledge loading. Lower it for providers with smaller request limits. The default keeps valid OpenAI inputs below the 300,000-token request limit (32 × 8192 = 262,144 tokens). Larger values must fit the provider's input-count and total-token limits. This does not split or truncate individual texts that exceed the model's context limit. |
 
+## Context frames (`plugins/context/context.metta`)
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `contextFrame` | `disabled` | Select `enabled` for frame-based working context and frame tools, or `disabled` for ordinary messages and conversation history. Selection takes effect at startup. |
+
+The interactive launcher asks for this selection. With `scripts/omega start`,
+use `--context-frame enabled` or `--context-frame disabled`. Without that option,
+the launcher preserves the usual environment/YAML configuration precedence.
+Restart Omega to change the selection. See the
+[context-frame plugin](../plugins/context/README.md) for details.
+
 ## Channels (`src/channels.metta`, `initChannels`)
 
 | Parameter | Default | Meaning |
