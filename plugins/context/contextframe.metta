@@ -42,7 +42,7 @@
    (swrite (py-call (frame_helpers.cfv2_now))))
 
 (= (cfv2-make-id $prefix)
-   (py-call (frame_helpers.make_id (repr $prefix))))
+   (py-call (helper.make_id (repr $prefix))))
 
 (= (cfv2-compact-plain $value)
    (py-call
@@ -904,3 +904,16 @@
 
 (= (ctx-compact-plain $value)
    (cfv2-compact-plain $value))
+
+(= (compact-frame $summary)
+   (progn
+      (ctx-record-history FrameCompacted $summary)
+      (change-state! &ctx-history-summary
+         (last_chars
+            (py-str
+               ((get-state &ctx-history-summary)
+                " | Compact: "
+                $summary))
+            (ctxHistorySummaryLimit)))
+      (ctx-rebuild-history)
+      (currentContextFrame)))

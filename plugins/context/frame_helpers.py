@@ -122,12 +122,6 @@ def cfv2_compact_history(events_repr, limit=2400):
     return "\n".join(selected)
 
 
-def make_id(prefix="id"):
-    stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%S%fZ")
-    return f"{prefix}-{stamp}"
-
-
-
 def cfv2_now() -> str:
     return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 

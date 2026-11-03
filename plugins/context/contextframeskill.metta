@@ -71,9 +71,6 @@
 
 (= (send_probe) (progn (change-state! &loops 25) ("ALIVE PROBE SENT")))
 
-; (= (create-sub-frame $description)
-;    (cfv2-create-sub-frame $description 0.8 (cfv2-make-deliverable $description)))
-
 (= (ctx-add-hypothesis $id $hypothesis)
    (cfv2-add-hypothesis $id $hypothesis))
 
@@ -85,19 +82,6 @@
 
 (= (ctx-add-deliverable $artifact)
    (cfv2-add-deliverable $artifact))
-
-(= (compact-frame $summary)
-   (progn
-      (ctx-record-history FrameCompacted $summary)
-      (change-state! &ctx-history-summary
-         (last_chars
-            (py-str
-               ((get-state &ctx-history-summary)
-                " | Compact: "
-                $summary))
-            (ctxHistorySummaryLimit)))
-      (ctx-rebuild-history)
-      (currentContextFrame)))
 
 (= (complete-goals-stm $summary)
    (once (cfv2-complete-current-frame-to-stm $summary)))

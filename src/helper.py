@@ -57,6 +57,11 @@ TWO_ARG_COMMANDS = {
     "ctx-add-result",
 }
 
+def make_id(prefix="id"):
+    stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%S%fZ")
+    return f"{prefix}-{stamp}"
+
+
 def extract_timestamp(line):
     m = TS_RE.search(line)
     if not m:
