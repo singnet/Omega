@@ -37,6 +37,9 @@ When enabled, `loadOmegaPlugin` initializes frame state, registers frame tools,
 and selects the frame context provider. The provider admits input before the
 prompt is built, renders the current projection on every request, records tool
 results against their originating frame, and handles Fast/Slow idle behavior.
+The frame prompt includes `ITERATION`, the current main-loop iteration number
+(including idle passes), and `LOOPS_REMAINING`, the active iterations available
+before going idle, including the current iteration.
 When disabled, it registers nothing and the default context provider remains
 active.
 
