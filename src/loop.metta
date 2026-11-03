@@ -113,9 +113,7 @@
                                        ($_ (messagesClear))
                                        ($sexpr (if (HandleError (quote $resp) $error)
                                                  $error
-                                                 (progn (messagesAppend (llmToolCallMessage role "assistant"
-                                                                                           calls (llmResponseCalls $response)
-                                                                                           content "[TOOL CALL]"))
+                                                 (progn (messagesAppend (llmResponseMessage $response))
                                                    (collapse
                                                          (let ($callid $s) (superpose $resp)
                                                            (let $result
