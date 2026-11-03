@@ -1,6 +1,7 @@
 !(import! &self (library lib_spaces))
 
 (= (pluginWorkflowInstructionsDir) (empty))
+(= (pluginWorkflowCustomInstructionsDir) (empty))
 (= (pluginWorkflowMemoryDir) (empty))
 
 (= (loadOmegaPlugin)
@@ -9,10 +10,15 @@
      (configure pluginWorkflowInstructionsDir (joinPath ((projectRootDirectory) "plugins" "workflow" "instructions")))
      (if (not (exists-directory (pluginWorkflowInstructionsDir)))
        (Error (_loadOmegaPlugin) (strings-concat ("Instructions directory: " (pluginWorkflowInstructionsDir) " doesn't exist")))
-       (progn 
-         (configure pluginWorkflowMemoryDir (joinPath ((memoryDirectory) workflow_space)))
+       (progn
+         (configure pluginWorkflowCustomInstructionsDir (joinPath ((memoryDirectory) "workflow" "skills")))
+         (let $customrc (make-directory-path (pluginWorkflowCustomInstructionsDir)) ())
+         (if (not (exists-directory (pluginWorkflowCustomInstructionsDir)))
+           (log ERROR "workflow-plugin" (strings-concat ("Could not create custom instructions directory: " (pluginWorkflowCustomInstructionsDir)", only built-in workflows are available")))
+           ())
+         (configure pluginWorkflowMemoryDir (joinPath ((memoryDirectory) "workflow" "space")))
          (log INFO "workflow-plugin" (strings-concat ("Creating working directory: " (pluginWorkflowMemoryDir))))
-         (let $rc (make-directory (pluginWorkflowMemoryDir)) ())
+         (let $rc (make-directory-path (pluginWorkflowMemoryDir)) ())
          (if (exists-directory (pluginWorkflowMemoryDir))
            (progn
              (log INFO "workflow-plugin" "Adding plugin's skills")
@@ -45,12 +51,19 @@
 ;       False))
 
 (= (instructionsDir) (get-existing-dir (pluginWorkflowInstructionsDir)))
+
+;; custom workflow overrides built-in one with the same name
+(= (workflow-dir $name)
+   (if (exists-file (joinPath ((pluginWorkflowCustomInstructionsDir) $name "SKILL.md")))
+     (pluginWorkflowCustomInstructionsDir)
+     (instructionsDir)))
+
 (= (workflow-load-instructions $name)
    (let $active (get-state &workflow_active_name)
      (if (== $active "")
        (if (not (valid-file-or-folder-name  $name))
          (Error (quote (workflow-load-instructions $name)) (strings-concat ("ERROR: invalid workflow name: " $name)))
-         (let $path (joinPath ((instructionsDir) $name "SKILL.md"))
+         (let $path (joinPath ((workflow-dir $name) $name "SKILL.md"))
            (if (not (exists-file $path))
              (Error (quote (workflow-load-instructions $name)) (strings-concat ("ERROR: skill file not found: " $path ". Try to call workflow-refresh-list")))
              (let $content (read-file $path)
@@ -83,7 +96,7 @@
 
 ; to load skills descriptions which are defined only for current workflow
 (= (add-workflow-skills $name)
-   (let $path (joinPath ((instructionsDir) $name "skill"))
+   (let $path (joinPath ((workflow-dir $name) $name "skill"))
             (progn
               (import! &workflow_skills $path)
               (collapse (match &workflow_skills (skill $func $desc $args) (add-skill $func $desc $args)))
@@ -102,11 +115,22 @@
      (add-prompt-extension workflow_active_instructions $content)))
 
 ;;========================== Functions to load workflow description =======================
-;; returns workflow name and its description
+;; returns workflow name and its description, custom workflows override built-in ones with the same name
 (= (workflow-list-available)
    (let*  ( ($base (instructionsDir))
-            ($dirs (directory-dirs $base)))
-        (collect-description $dirs $base)))
+          ($builtin (collect-description (filter-shadowed (directory-dirs $base)) $base ()))
+          ($custom (pluginWorkflowCustomInstructionsDir)))
+     (if (exists-directory $custom)
+       (collect-description (directory-dirs $custom) $custom $builtin)
+       $builtin)))
+
+;; drops built-in workflows overridden by custom ones with the same name
+(= (filter-shadowed ()) ())
+(= (filter-shadowed (cons $first $tail))
+   (let $rest (filter-shadowed $tail)
+     (if (exists-file (joinPath ((pluginWorkflowCustomInstructionsDir) $first "SKILL.md")))
+       $rest
+       (cons-atom $first $rest))))
 
 ;; re-reads available workflows into the prompt
 (= (workflow-refresh-list)
@@ -116,10 +140,10 @@
        (add-prompt-extension workflows-available $text))))
 
 ;; collects workflow description from description.txt
-(= (collect-description () $base) ())
-(= (collect-description (cons $first $tail) $base)
+(= (collect-description () $base $acc) $acc)
+(= (collect-description (cons $first $tail) $base $acc)
    (let*  (($path  (joinPath ($base $first "description.txt")))
-           ($rest (collect-description $tail $base)))
+           ($rest (collect-description $tail $base $acc)))
      (if (exists-file $path)
        (cons-atom (strings-concat ($first ": " (read-file $path))) $rest)
        $rest)))
