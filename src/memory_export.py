@@ -34,6 +34,10 @@ def _resolve_chroma_path() -> Path:
     return Path(str(configured)).expanduser().resolve()
 
 
+def _resolve_config_path(key: str) -> Path:
+    return Path(str(config_get_by_key(key))).expanduser().resolve()
+
+
 def _cloud_embedder(provider, model):
     def embed(texts):
         from import_knowledge.import_knowledge import embed_batch, init_embeddings
@@ -67,6 +71,8 @@ def create_memory_store():
         memory_dir=_resolve_memory_dir(),
         chroma_path=_resolve_chroma_path(),
         collection_name="memories",
+        skills_dir=_resolve_config_path("pluginWorkflowCustomInstructionsDir"),
+        space_dir=_resolve_config_path("pluginWorkflowMemoryDir"),
         **_embedding_options(),
     )
 
@@ -89,7 +95,7 @@ def _get_transfer():
     return _transfer
 
 
-_VALID_COMPONENTS = ("history", "ltm", "both")
+_VALID_COMPONENTS = ("history", "ltm", "skills", "all")
 
 
 def is_export_enabled() -> bool:
@@ -135,7 +141,7 @@ def handle_export_command(
 
     return (
         "Unknown /memory-export command. "
-        "Use: /memory-export history|ltm|both"
+        "Use: /memory-export history|ltm|skills|all"
     )
 
 

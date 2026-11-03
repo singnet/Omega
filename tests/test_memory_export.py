@@ -40,15 +40,15 @@ def test_export_command_requires_policy(handler):
     )
 
     assert "Memory export complete" in handler.handle_export_command(
-        "/memory-export both", "authenticated-user"
+        "/memory-export all", "authenticated-user"
     )
-    assert exported == ["both"]
+    assert exported == ["all"]
 
     handler.is_export_enabled = lambda: False
     assert handler.handle_export_command(
-        "/memory-export both", "authenticated-user"
+        "/memory-export all", "authenticated-user"
     ) is None
-    assert exported == ["both"]
+    assert exported == ["all"]
 
 
 def test_export_requires_authenticated_user(handler):
@@ -56,13 +56,13 @@ def test_export_requires_authenticated_user(handler):
         "an unauthenticated command must not start an export"
     )
 
-    assert handler.handle_export_command("/memory-export both") == (
+    assert handler.handle_export_command("/memory-export all") == (
         "Memory export denied: an authenticated user is required."
     )
 
 def test_module_import_does_not_require_memory_portability(handler):
     assert "memory_portability" not in sys.modules
-    assert handler.is_export_command("/memory-export both")
+    assert handler.is_export_command("/memory-export all")
 
 
 def test_entrypoint_configures_memory_transfer_directory():
@@ -70,7 +70,7 @@ def test_entrypoint_configures_memory_transfer_directory():
 
     assert 'transfer_dir="/memory-transfer"' in entrypoint
 
-@pytest.mark.parametrize("component", ["history", "ltm", "both"])
+@pytest.mark.parametrize("component", ["history", "ltm", "skills", "all"])
 def test_export_runs_immediately(handler, component):
     exported = []
     handler._get_transfer = lambda: types.SimpleNamespace(
@@ -100,7 +100,7 @@ def test_confirmation_command_is_no_longer_supported(handler):
 
     assert reply == (
         "Unknown /memory-export command. "
-        "Use: /memory-export history|ltm|both"
+        "Use: /memory-export history|ltm|skills|all"
     )
 
 def test_transfer_uses_effective_runtime_embedding_provider(handler, monkeypatch):
@@ -183,12 +183,17 @@ def test_memory_store_receives_explicit_omega_storage_configuration(
 
     memory_dir = tmp_path / "custom-memory"
     chroma_path = tmp_path / "custom-chroma"
+    settings = {
+        "embeddingprovider": "Local",
+        "pluginWorkflowCustomInstructionsDir": str(tmp_path / "custom-skills"),
+        "pluginWorkflowMemoryDir": str(tmp_path / "custom-space"),
+    }
     monkeypatch.setattr(handler, "_resolve_memory_dir", lambda: memory_dir)
     monkeypatch.setattr(handler, "_resolve_chroma_path", lambda: chroma_path)
     monkeypatch.setattr(
         handler,
         "config_get_by_key",
-        lambda key, default=None: "Local" if key == "embeddingprovider" else default,
+        lambda key, default=None: settings.get(key, default),
     )
 
     store = handler.create_memory_store()
@@ -199,6 +204,8 @@ def test_memory_store_receives_explicit_omega_storage_configuration(
             "memory_dir": memory_dir,
             "chroma_path": chroma_path,
             "collection_name": "memories",
+            "skills_dir": tmp_path / "custom-skills",
+            "space_dir": tmp_path / "custom-space",
         }
     ]
 
@@ -239,7 +246,12 @@ def configure(monkeypatch, handler, tmp_path, provider, config_model="",
               env_provider="Local", env_model="env-only-model"):
     monkeypatch.setenv("EMBEDDING_PROVIDER", env_provider)
     monkeypatch.setenv("EMBEDDING_MODEL", env_model)
-    settings = {"embeddingprovider": provider, "embeddingModel": config_model}
+    settings = {
+        "embeddingprovider": provider,
+        "embeddingModel": config_model,
+        "pluginWorkflowCustomInstructionsDir": str(tmp_path / "skills"),
+        "pluginWorkflowMemoryDir": str(tmp_path / "space"),
+    }
     monkeypatch.setattr(
         handler,
         "config_get_by_key",
@@ -331,6 +343,8 @@ def test_memory_store_ignores_embedding_environment_variables(
             "memory_dir": tmp_path / "memory",
             "chroma_path": tmp_path / "chroma",
             "collection_name": "memories",
+            "skills_dir": tmp_path / "skills",
+            "space_dir": tmp_path / "space",
         }
     ]
 
@@ -340,6 +354,9 @@ def test_entrypoint_passes_container_arguments_to_memory_portability():
 
     assert "init_config(sys.argv[1:])" in entrypoint
     assert "init_config([])" not in entrypoint
+    assert (
+        'include_skills=os.environ.get("MEMORY_IMPORT_NO_SKILLS") != "1"' in entrypoint
+    )
     assert entrypoint.count(
         '''"${agent_su[@]}" -s /bin/sh -c 'exec python3 -c "$MEMORY_PORTABILITY_PYTHON" "$@"' sh "$@"'''
     ) == 2
@@ -388,6 +405,8 @@ def test_storage_paths_are_resolved_from_omega_config(
     configured = {
         "memoryDirectory": str(tmp_path / "configured-memory"),
         "chromaDbPath": str(tmp_path / "configured-chroma"),
+        "pluginWorkflowCustomInstructionsDir": str(tmp_path / "configured-skills"),
+        "pluginWorkflowMemoryDir": str(tmp_path / "configured-space"),
     }
     monkeypatch.delenv("CHROMA_DB_PATH", raising=False)
     monkeypatch.setattr(
@@ -398,6 +417,12 @@ def test_storage_paths_are_resolved_from_omega_config(
 
     assert handler._resolve_memory_dir() == tmp_path / "configured-memory"
     assert handler._resolve_chroma_path() == tmp_path / "configured-chroma"
+    assert handler._resolve_config_path(
+        "pluginWorkflowCustomInstructionsDir"
+    ) == tmp_path / "configured-skills"
+    assert handler._resolve_config_path(
+        "pluginWorkflowMemoryDir"
+    ) == tmp_path / "configured-space"
 
 
 def test_websocket_defers_memory_export_to_core_dispatch(monkeypatch):
@@ -423,9 +448,9 @@ def test_websocket_defers_memory_export_to_core_dispatch(monkeypatch):
     module.send_message = replies.append
 
     module._handle_frame(json.dumps({
-        "type": "user_message", "seq": 1, "text": "/memory-export both"
+        "type": "user_message", "seq": 1, "text": "/memory-export all"
     }))
-    assert received == [(1, "/memory-export both")]
+    assert received == [(1, "/memory-export all")]
     assert replies == []
 
 
@@ -440,7 +465,7 @@ def test_commchannel_receive_dispatches_control_commands(monkeypatch):
 
     principals: list[str] = []
     control = types.ModuleType("src.memory_export")
-    control.is_export_command = lambda text: text == "/memory-export both"
+    control.is_export_command = lambda text: text == "/memory-export all"
     control.handle_export_command = lambda text, principal: (
         principals.append(principal) or "Memory export complete"
     )
@@ -451,7 +476,7 @@ def test_commchannel_receive_dispatches_control_commands(monkeypatch):
 
     replies: list[str] = []
     channels._commchannel = types.SimpleNamespace(
-        receive=lambda: "alice: /memory-export both | alice: hello",
+        receive=lambda: "alice: /memory-export all | alice: hello",
         send=replies.append,
     )
     channels._commchannel_id = "telegram"
@@ -470,7 +495,7 @@ def test_commchannel_receive_denies_export_without_authenticated_user(monkeypatc
     monkeypatch.setitem(sys.modules, "auth", auth)
 
     control = types.ModuleType("src.memory_export")
-    control.is_export_command = lambda text: text == "/memory-export both"
+    control.is_export_command = lambda text: text == "/memory-export all"
     control.handle_export_command = lambda text, principal: (
         "Memory export denied: an authenticated user is required."
         if principal is None
@@ -483,7 +508,7 @@ def test_commchannel_receive_denies_export_without_authenticated_user(monkeypatc
 
     replies: list[str] = []
     channels._commchannel = types.SimpleNamespace(
-        receive=lambda: "alice: /memory-export both",
+        receive=lambda: "alice: /memory-export all",
         send=replies.append,
     )
     channels._commchannel_id = "telegram"
@@ -503,7 +528,7 @@ def test_commchannel_receive_dispatches_websocket_export(monkeypatch):
     commands: list[str] = []
     principals: list[str] = []
     control = types.ModuleType("src.memory_export")
-    control.is_export_command = lambda text: text == "/memory-export both"
+    control.is_export_command = lambda text: text == "/memory-export all"
     control.handle_export_command = lambda text, principal: (
         commands.append(text)
         or principals.append(principal)
@@ -516,13 +541,13 @@ def test_commchannel_receive_dispatches_websocket_export(monkeypatch):
 
     replies: list[str] = []
     channels._commchannel = types.SimpleNamespace(
-        receive=lambda: "/memory-export both",
+        receive=lambda: "/memory-export all",
         send=replies.append,
     )
     channels._commchannel_id = "websocket"
 
     assert channels.commChannelReceive() == ""
-    assert commands == ["/memory-export both"]
+    assert commands == ["/memory-export all"]
     assert principals == [
         f"websocket:{hashlib.sha256(websocket_token.encode('utf-8')).hexdigest()}"
     ]
@@ -544,7 +569,7 @@ def test_websocket_export_requires_bearer_token(monkeypatch):
 
 def test_commchannel_receive_does_not_consume_command_mentions(monkeypatch):
     control = types.ModuleType("src.memory_export")
-    control.is_export_command = lambda text: text == "/memory-export both"
+    control.is_export_command = lambda text: text == "/memory-export all"
     control.handle_export_command = lambda *_: pytest.fail(
         "a command mentioned in normal text must not execute"
     )
@@ -553,7 +578,7 @@ def test_commchannel_receive_does_not_consume_command_mentions(monkeypatch):
     monkeypatch.delitem(sys.modules, "channels", raising=False)
     channels = importlib.import_module("channels")
 
-    message = "alice: please use /memory-export both"
+    message = "alice: please use /memory-export all"
     channels._commchannel = types.SimpleNamespace(
         receive=lambda: message,
         send=lambda *_: pytest.fail("normal messages must not generate replies"),
