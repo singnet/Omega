@@ -1,7 +1,7 @@
 (= (register-context-frame-skills)
    (progn
      (add-skill new-frame "Create a user-directed task frame" (description))
-     (add-skill new-autonomous-frame "Create a low-priority Slow autonomous frame" (description))
+     (add-skill new-autonomous-frame "Create a low-priority frame for pursuing autonomous goals" (description))
      (add-skill switch-mode "Toggle Fast/Slow root mode" ())
      (add-skill switch-frame "Focus an admitted frame" (frameID))
      (add-skill send_probe "Extend Slow-mode processing time" ())
