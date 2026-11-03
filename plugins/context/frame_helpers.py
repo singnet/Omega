@@ -127,7 +127,6 @@ def make_id(prefix="id"):
     return f"{prefix}-{stamp}"
 
 
-# ---- HyperClaw Context Frames V2 helper additions ----
 
 def cfv2_now() -> str:
     return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
