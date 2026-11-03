@@ -20,9 +20,7 @@
              (once (py-str ("CONTEXT_FRAME_SKILLS: " (contextFramesSkills)))))
            (set-context-provider context-frame-provider)
            (log INFO "context-plugin" "Context frames are enabled"))
-         (if (== (contextFrame) disabled)
-             (log INFO "context-plugin" "Context frames are disabled")
-             (Error (_loadOmegaPlugin) "contextFrame must be enabled or disabled")))))
+         (log INFO "context-plugin" "Context frames are disabled"))))
 
 (= (context-frame-provider (Input $message $isNew))
    (let $hadFrame (if $isNew (cfv2-has-current-frame) False)

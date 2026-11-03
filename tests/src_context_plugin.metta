@@ -103,6 +103,17 @@
 !(test (py-call (frame_tools.has_no_frame_tools (collectTools))) True)
 !(test (contains-text (getPromptExtensions) "CONTEXT_FRAME_SKILLS:") False)
 
+; Non-enabled values keep ordinary context without importing frame dependencies.
+!(reset-context-plugin-test)
+(= (command-line) ("config=./tests/res/src_config_empty.yaml" "contextFrame=unknown"))
+!(initConfig)
+!(initContext)
+!(py-call (frame_tools.block_frame_backend_import))
+!(test (load-context-plugin-test) ())
+!(test (py-call (frame_tools.has_no_frame_tools (collectTools))) True)
+!(test (contains-text (once (context-event Prompt)) "ordinary conversation history") True)
+!(py-call (frame_tools.unblock_frame_backend_import))
+
 (= (test-context-provider Prompt) "replacement context")
 !(set-context-provider test-context-provider)
 !(test (collapse (context-event Prompt)) ("replacement context"))
