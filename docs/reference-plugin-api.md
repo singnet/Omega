@@ -187,3 +187,35 @@ One can add the callback which is called on each main agent loop iteration:
 Callback is called once in the beginning of the each loop iteration and it has
 a single parameter which receives the iteration number. Please see [unit
 tests](/tests/src_skills.metta) for an example of usage.
+
+## Context providers
+
+The callback interface and default context provider live in
+[`src/context_provider.metta`](../src/context_provider.metta). The loop initializes
+the default before loading plugins. It uses ordinary conversation history and
+passes new user messages directly to the LLM. A plugin can replace it at startup with:
+
+```metta
+(set-context-provider my-context-provider)
+```
+
+The callback takes one event. The loop calls it through `(context-event $event)`:
+
+| Event | Expected result |
+|---|---|
+| `(Input message isNew)` | Process input and return the string sent in the request's user role. Called before rendering the prompt. |
+| `Prompt` | Return the current working context as a string. Called for each prompt. |
+| `BeforeRequest` | Return a token to receive with the completed tool batch, or `()` if unused. |
+| `(AfterTools token commands results)` | Record the completed command batch using its original token. The return value is ignored. |
+| `Idle` | Perform context-specific idle maintenance. The return value is ignored. |
+
+Implement all five events. `Input` and `Prompt` return strings. Return `()` for
+unused `BeforeRequest`, `AfterTools`, and `Idle` events.
+
+There is one active provider; registering another replaces the callback. The
+default provider returns `()` for `BeforeRequest`, `AfterTools`, and `Idle`.
+Select the provider at startup; restart Omega to change it.
+
+The [context-frame plugin](../plugins/context/context.metta) implements this API.
+See the [unit tests](../tests/src_context_plugin.metta) for default event results
+and callback replacement.

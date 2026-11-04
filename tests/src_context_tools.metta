@@ -1,5 +1,6 @@
 !(import! &self ./tests/lib/utils)
 !(import! &self ../src/helper.py)
+!(import! &self ../plugins/context/frame_helpers.py)
 !(import! &self ../src/providers.py)
 !(import! &self ./lib/frame_tools.py)
 !(import! &self ../src/utils)
@@ -7,8 +8,12 @@
 !(import! &self ../src/logger.py)
 !(import! &self ../src/log)
 !(import! &self ../src/skills)
-!(import! &self ../src/context)
+!(import! &self ../plugins/context/contextframe)
+!(import! &self ../plugins/context/contextframeskill)
+!(import! &self ../src/context_provider)
 !(import! &self ../src/loop)
+
+!(register-context-frame-skills)
 
 !(change-state! &cfv2-current-frame-id FrameToolTest)
 !(change-state! &cfv2-current-results ())

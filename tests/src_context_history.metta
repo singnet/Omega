@@ -1,7 +1,8 @@
 !(import! &self ./tests/lib/utils)
 !(import! &self ../src/helper.py)
+!(import! &self ../plugins/context/frame_helpers.py)
 !(import! &self ../src/utils)
-!(import! &self ../src/context)
+!(import! &self ../plugins/context/contextframe)
 
 !(change-state! &cfv2-current-frame-id FrameHistoryTest)
 !(change-state! &cfv2-current-history-summary "")
