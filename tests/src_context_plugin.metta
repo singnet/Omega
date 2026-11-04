@@ -33,7 +33,6 @@
            (remove-skill $name)
            ())))
      (remove-prompt-extension context-frame-skills)
-     (remove-heartbeat-listener context-frame-iteration)
      (collapse (match &plugin-context (= $head $body)
        (remove-atom &plugin-context (= $head $body))))
      (collapse (match &self (= (contextFrame) $value)
@@ -48,7 +47,6 @@
 !(initContext)
 !(change-state! &loops 2)
 !(test (load-context-plugin-test) ())
-!(heartbeat 1)
 !(test (py-call (frame_tools.has_all_frame_tools (py-call (providers.getTools (getSkills))))) True)
 !(test (> (string_length (getContextFramePrompt)) 0) True)
 !(test (contains-text (once (context-event Prompt)) "ordinary conversation history") False)
@@ -74,12 +72,8 @@
                   (py-call (.index $prompt "_newline_LAST_SKILL_USE_RESULTS:"))))))
    True)
 
-!(test (contains-text (once (getContext)) "ITERATION: 1_newline_") True)
 !(test (contains-text (once (getContext)) "LOOPS_REMAINING: 2_newline_") True)
-!(heartbeat 7)
-!(test (contains-text (once (getContext)) "ITERATION: 7_newline_") True)
 !(send_probe)
-!(test (contains-text (once (getContext)) "ITERATION: 7_newline_") True)
 !(test (contains-text (once (getContext)) "LOOPS_REMAINING: 25_newline_") True)
 
 ; Completion can move focus before results are attached to the original frame.
@@ -103,7 +97,6 @@
 !(test (context-event (Input "actual user message" True)) "actual user message")
 ; The test runner collects all solutions; the agent loop uses the first prompt.
 !(test (contains-text (once (context-event Prompt)) "ordinary conversation history") True)
-!(test (contains-text (once (getContext)) "ITERATION:") False)
 !(test (contains-text (once (getContext)) "LOOPS_REMAINING:") False)
 !(test (context-event BeforeRequest) ())
 !(test (context-event (AfterTools () (send) (SUCCESS))) ())
@@ -115,12 +108,6 @@
 !(test (contains-text (once (context-event Prompt)) "ordinary conversation history") True)
 !(test (py-call (frame_tools.has_no_frame_tools (collectTools))) True)
 !(test (contains-text (getPromptExtensions) "CONTEXT_FRAME_SKILLS:") False)
-!(test
-   (progn
-     (change-state! &context-frame-iteration 0)
-     (heartbeat 9)
-     (get-state &context-frame-iteration))
-   0)
 
 ; Non-enabled values keep ordinary context without importing frame dependencies.
 !(reset-context-plugin-test)

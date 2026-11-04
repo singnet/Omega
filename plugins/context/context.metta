@@ -15,10 +15,6 @@
            (py-call (importlib.import_module "frame_helpers"))
            (py-call (importlib.import_module "frame_relation"))
            (initContextFrame)
-           (change-state! &context-frame-iteration 0)
-           (add-heartbeat-listener context-frame-iteration
-             (|-> ($iteration)
-               (change-state! &context-frame-iteration $iteration)))
            (register-context-frame-skills)
            (add-prompt-extension context-frame-skills
              (once (py-str ("CONTEXT_FRAME_SKILLS: " (contextFramesSkills)))))
@@ -41,7 +37,6 @@
 
 (= (context-frame-provider Prompt)
    (py-str ("RUNTIME-PROMPT: " (getContextFramePrompt) (newline)
-            "ITERATION: " (get-state &context-frame-iteration) (newline)
             "LOOPS_REMAINING: " (get-state &loops) (newline)
             "CURRENT_CONTEXT_FRAME_S_EXPR: " (contextFrameForPrompt))))
 
