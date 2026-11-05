@@ -29,10 +29,10 @@
 
                ; else the user has input an LLM router file
                (let $text (py-call (config.read_router_catalog $filename)) 
-                   (let* ( ;($priming_sread (sread $text)) 
-                          ($catalog (sread $text)) )
+                   (let* ( 
+                          ($catalog (sread $text)) 
+                         )
                          (progn 
-                           (println! $catalog)
                            (add-atom &self $catalog)
                            (add-atom &self (= ($key) $filename))))
                            ))))

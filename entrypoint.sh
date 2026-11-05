@@ -145,16 +145,7 @@ for var in $SAFE_VARS; do
   fi
 done
 
-# BEGIN TEMPORARY DEBUG: dump agent inputs and full nginx configuration.
-printf 'Environment passed to agent:\n'
-printf '  %q\n' "${env_args[@]}"
-printf 'run.metta arguments:\n'
-printf '  %q\n' 'GATEWAY_URL=http://localhost:8080' "$@"
 printf 'Sanitized JSON catalog:\n'
 cat -- "$catalog_file"
-
-printf 'Full nginx configuration, including included files (includes API tokens):\n'
-su www-data -s /bin/sh -c 'nginx -T -c "${NGINX_CONFIG:-/opt/nginx/nginx.conf}"' 2>&1
-# END TEMPORARY DEBUG: configuration dumps.
 
 exec env -i "${env_args[@]}" "${agent_su[@]}" -s /bin/sh -c 'exec sh run.sh run.metta GATEWAY_URL=http://localhost:8080 "$@"' sh "$@"
