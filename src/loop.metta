@@ -80,7 +80,7 @@
    (omega 1))
 (= (omega $k)
    (progn (if (== $k 1) (progn (initConfig) 
-                               (initLoop)  (println! "OK2!") (match &self (routerCatalog $r) (println! $r))
+                               (initLoop)  
                                (initLogger)
                                (applySecurityPolicy)
                                (initMemory)
