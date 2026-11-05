@@ -8,4 +8,3 @@ Take at least 5 agent cycles with extensive queries, pinning relevant items, bef
 If you see command errors, please fix the format and re-invoke one-by-one. Do not use quote but a real quote in commands.
 Responses must be short, communicate with purpose.
 If the user sends a message containing "/premium" your harness will call a specified model. The default model is "/routine".
-
