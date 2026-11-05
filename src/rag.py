@@ -4,7 +4,6 @@ import glob
 import hashlib
 import chromadb
 import openai
-from   lib_llm_ext import initLocalEmbedding, useLocalEmbedding
 from src.logger import get_logger
 from config import config_get_by_key
 from embedding_models import embedding_model
@@ -162,6 +161,8 @@ def cloud_embed(text):
 
 def local_embed_batch(texts):
     """Embed a list of texts via lib_llm_ext local embeddings."""
+    from lib_llm_ext import initLocalEmbedding, useLocalEmbedding
+
     if isinstance(texts, str):
         texts = [texts]
 
@@ -174,6 +175,44 @@ def local_embed_batch(texts):
         useLocalEmbedding(text)
         for text in texts
     ]
+
+
+def get_current_embedding_profile():
+    """Return the current embedding provider and model."""
+    provider = str(config_get_by_key("embeddingprovider", "Local")).strip().casefold()
+    if provider == "local":
+        model = "intfloat/e5-large-v2"
+    else:
+        model = embedding_model(provider, config_get_by_key("embeddingModel", ""))
+    return {"provider": provider, "model": model}
+
+
+def get_existing_LTM_embedding_profile():
+    """Return the embedding provider and model stored in the existing LTM collection metadata"""
+    collection = _get_collection()
+    metadata = collection.metadata or {}
+    provider = metadata.get("omega_embedding_provider")
+    model = metadata.get("omega_embedding_model")
+    if not provider or not model:
+        return None
+    return {"provider": str(provider).casefold(), "model": model}
+
+
+def ensure_embedding_profile():
+    """Set the profile on a new, empty collection."""
+    collection = _get_collection()
+    metadata = collection.metadata or {}
+    if "omega_embedding_provider" in metadata or "omega_embedding_model" in metadata:
+        return
+    # Skip if the collection is not empty to avoid mislabeling.
+    if collection.count() != 0:
+        return
+    profile = get_current_embedding_profile()
+    collection.modify(metadata={
+        **metadata,
+        "omega_embedding_provider": profile["provider"],
+        "omega_embedding_model": profile["model"],
+    })
 
 # --- Hash sentinel docs --------------------------------------------------
 
@@ -216,6 +255,7 @@ def init_knowledge(embedding_selection):
     logger.info(f"Embedding type selected is {embedding_selection}")
 
     try:
+        ensure_embedding_profile()
         collection = _get_collection()
         knowledge_dir = _resolve_knowledge_dir()
 

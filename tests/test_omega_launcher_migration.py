@@ -516,7 +516,10 @@ def test_migration_containers_carry_the_label(docker_root):
     result = _launcher(docker_root, "start", "-d", IMAGE)
 
     assert result.returncode == 0, result.stderr
-    helper_runs = [call for call in _calls(docker_root) if call.startswith("run --rm")]
+    helper_runs = [
+        call for call in _calls(docker_root)
+        if call.startswith("run --rm") and "omegaclaw-memory:/from" in call
+    ]
     assert len(helper_runs) >= 4
     assert all(f"--label {MIGRATION_LABEL}" in call for call in helper_runs)
 
