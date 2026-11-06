@@ -5,6 +5,13 @@ import threading
 from typing import Callable, Iterable
 
 
+class PartialDeliveryError(Exception):
+
+    def __init__(self, remaining: str):
+        super().__init__("Partial delivery; retaining unsent text")
+        self.remaining = remaining
+
+
 class PendingMessages:
     """Retain accepted messages until their delivery callback succeeds."""
 
@@ -37,7 +44,13 @@ class PendingMessages:
                         return
                     message = self._items[0]
 
-                deliver(message)
+                try:
+                    deliver(message)
+                except PartialDeliveryError as exc:
+                    with self._items_lock:
+                        if self._items:
+                            self._items[0] = exc.remaining
+                    raise
 
                 with self._items_lock:
                     if self._items:
