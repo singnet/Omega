@@ -4,7 +4,6 @@ import glob
 import hashlib
 import chromadb
 import openai
-from   lib_llm_ext import initLocalEmbedding, useLocalEmbedding
 from src.logger import get_logger
 from config import config_get_by_key
 from embedding_models import embedding_model
@@ -162,6 +161,8 @@ def cloud_embed(text):
 
 def local_embed_batch(texts):
     """Embed a list of texts via lib_llm_ext local embeddings."""
+    from lib_llm_ext import initLocalEmbedding, useLocalEmbedding
+
     if isinstance(texts, str):
         texts = [texts]
 
@@ -174,6 +175,64 @@ def local_embed_batch(texts):
         useLocalEmbedding(text)
         for text in texts
     ]
+
+
+def get_current_embedding_profile():
+    """Return the current embedding provider and model."""
+    provider = str(config_get_by_key("embeddingprovider", "Local")).strip().casefold()
+    if provider == "local":
+        model = "intfloat/e5-large-v2"
+    else:
+        model = embedding_model(provider, config_get_by_key("embeddingModel", ""))
+    return {"provider": provider, "model": model}
+
+
+def get_existing_LTM_embedding_profile():
+    """Return the embedding provider and model stored in the existing LTM collection metadata"""
+    collection = _get_collection()
+    metadata = collection.metadata or {}
+    provider = metadata.get("omega_embedding_provider")
+    model = metadata.get("omega_embedding_model")
+    if not provider or not model:
+        return None
+    return {"provider": str(provider).casefold(), "model": model}
+
+
+def ensure_embedding_profile():
+    """Set the current profile on an empty collection."""
+    collection = _get_collection()
+    # Skip if the collection is not empty to avoid mislabeling.
+    if collection.count() != 0:
+        return
+    stored_metadata = collection.metadata or {}
+    profile = get_current_embedding_profile()
+    current_metadata = {
+        **stored_metadata,
+        "omega_embedding_provider": profile["provider"],
+        "omega_embedding_model": profile["model"],
+    }
+    if current_metadata != stored_metadata:
+        collection.modify(metadata=current_metadata)
+
+
+def check_embedding_profile():
+    """Prepare an empty collection's profile and check compatibility."""
+    ensure_embedding_profile()
+    existing = get_existing_LTM_embedding_profile()
+    current = get_current_embedding_profile()
+
+    if existing is None:
+        logger.warning(
+            "Could not determine the memory embedding profile. "
+            "Make sure the configured provider and model match the original ones."
+        )
+    elif existing != current:
+        logger.warning(
+            "Memory embedding profile mismatch. "
+            f"Memory: provider={existing['provider']}, model={existing['model']}. "
+            f"Configured: provider={current['provider']}, model={current['model']}. "
+            "Memory operations may fail or return unreliable results."
+        )
 
 # --- Hash sentinel docs --------------------------------------------------
 
@@ -216,6 +275,7 @@ def init_knowledge(embedding_selection):
     logger.info(f"Embedding type selected is {embedding_selection}")
 
     try:
+        check_embedding_profile()
         collection = _get_collection()
         knowledge_dir = _resolve_knowledge_dir()
 

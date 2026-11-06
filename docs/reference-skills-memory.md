@@ -20,7 +20,8 @@ Store a string in long-term embedding memory as the triplet `(timestamp, atom, e
 - `string` — the text to remember. Use short, self-contained phrases for best recall.
 
 ### Returns
-The result of the ChromaDB write (internally). The agent treats a successful call as an effectful step.
+`REMEMBER-SUCCESS` after a successful write, or a MeTTa `Error` if embedding
+or the ChromaDB write raises an exception.
 
 ### Examples
 ```metta
@@ -49,7 +50,9 @@ Return up to `maxRecallItems` memory entries whose embeddings are closest to the
 - `string` — a short descriptive phrase. Over-long queries dilute similarity scores.
 
 ### Returns
-A list-shaped result containing the nearest memory items.
+A list-shaped result containing the nearest memory items, or a MeTTa `Error` if
+embedding or the ChromaDB search raises an exception. An empty list means no items
+were found; it is not an error.
 
 ### Examples
 ```metta
@@ -60,6 +63,7 @@ A list-shaped result containing the nearest memory items.
 ### Notes / Limits
 - `maxRecallItems` default is 20 (see `initMemory`).
 - Similarity is purely embedding-based; exact string match is not guaranteed.
+- Existing memory must use the same embedding provider and model as when it was created. Changing them can cause failures or unreliable results.
 
 ---
 

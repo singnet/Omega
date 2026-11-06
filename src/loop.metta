@@ -106,7 +106,10 @@
                                                       (RESULTS: (collapse (let $s (superpose $sexpr)
                                                                            (let $precheck (HandleError UNKNOWN_SKILL_CALL $s $s)
                                                                              (COMMAND_RETURN: ($s (if (== $precheck $s)
-                                                                                                    (HandleError SINGLE_COMMAND_ERROR_NOTHING_WAS_DONE_PLEASE_FIX_AND_RETRY $s (catch (let $R (eval $s) (py-call (helper.normalize_string $R)))))
+                                                                                                    (HandleError SINGLE_COMMAND_ERROR_NOTHING_WAS_DONE_PLEASE_FIX_AND_RETRY $s (catch (let $R (eval $s)
+                                                                                                      (case $R
+                                                                                                        (((Error $tool_error_cmd $tool_error_msg) (Error $tool_error_cmd $tool_error_msg))
+                                                                                                         ($else (py-call (helper.normalize_string $R))))))))
                                                                                                     $precheck)))))))
                                                       (RESULTS: $mcerr)))
                                        ($_ (log INFO "loop" (RESPONSE: $results))))

@@ -70,6 +70,14 @@ python3 -m pip install -r ./repos/Omega/requirements.txt
 
 Ensure that you have [Docker installed](https://docs.docker.com/engine/install/)
 
+> When reusing existing memory, **keep the same** embedding provider and model used
+to create it.
+
+Use `-e Local|OpenAI|ASICloud` or `EMBEDDING_PROVIDER` to select the
+embedding provider independently of the LLM provider. Switching can break
+memory writes and searches; equal vector dimensions do not guarantee
+that different models are compatible.
+
 Run Omega using the next command:
 ```
 curl -fsSL https://github.com/singnet/Omega/raw/refs/tags/v0.1.19/scripts/omegaclaw | bash -s -- singularitynet/omega:v0.1.19
@@ -137,6 +145,9 @@ After start go to https://webchat.quakenet.org/ to communicate with the agent. J
 If you are running Omega without Docker and would like to load it with preset knowledge, follow these steps:
 
 1. Set EMBEDDING_PROVIDER in your environment. It can be set to OpenAI, ASICloud or Local. OpenAI embeddings also require OPENAI_API_KEY, and ASICloud embeddings require ASI_API_KEY to be set in your environment.
+
+   When using an existing memory collection, use its original embedding provider
+   and model. Changing either can make the stored vectors incompatible.
 
 2. Run:
 ```
