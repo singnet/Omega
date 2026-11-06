@@ -27,6 +27,15 @@
                            $atom
                            (empty))))
 
+; Input a role like "role_user" and an atom, output the atom if it falls inside a "role_user".
+; Note: presently this will only work for "role_user" segment lookups since "role_user" appear after "role_tool".
+(= (lookup_term_by_role $role $term)
+    (match &plugin-default (prompt_atom $role $role_sequence_no)
+      (match &plugin-default (prompt_atom $atom $atom_sequence_no)
+         (if (and (== $atom $term) (> $atom_sequence_no $role_sequence_no))
+            $atom
+            (empty)))))
+
 (= (delete_temp_atoms)
    (collapse (match &plugin-default (prompt_atom $x $seq) (remove-atom &plugin-default (prompt_atom $x $seq)))))
 
@@ -48,28 +57,34 @@
                          ("alert_failed")))))
 
          ; Create list to check for more than one user message
-         ($number_of_user_msgs (collapse (match &plugin-default (prompt_atom "role_user" $seq) $seq)))
+         ($role_user_occurances (collapse (match &plugin-default (prompt_atom "role_user" $seq) $seq)))
+         ($number_of_user_msgs (size-atom $role_user_occurances))
 
          ; Create list to count the total number of tool results and user messages 
-         ($number_of_issues (collapse (match &plugin-default (prompt_atom $atom $seq) 
+         ($issues (collapse (match &plugin-default (prompt_atom $atom $seq) 
                               (if (or (== $atom "role_user") (== $atom "role_tool")) 
                                     $seq
                                     (empty)))))
+         ($number_of_issues (size-atom $issues))
 
          ; If the user enters the "/premium" slash command, create an atom to latch the premium model on for all calls.
          ; If we find the "/routine" slash command, consider it a total reset by deleting any role of premium atom.
          ; The default model role is routine.
          ($found_routine_in_current_prompt
-               (collapse (lookup_term "/routine")))
+               (collapse (lookup_term_by_role "role_user" "/routine")))
          ($_ (if (> (size-atom $found_routine_in_current_prompt) 0)
-               (collapse (match &plugin-default (role $x) (remove-atom &plugin-default (role $x))))
+               (progn
+                  (commChannelSend "Switching to the routine model.")
+                  (collapse (match &plugin-default (role $x) (remove-atom &plugin-default (role $x)))))
                ()))
          ; If we find the /premium slash command, add a role atom for premium to latch this on. 
          ; This will work if more than one "/premium" is found in the prompt.
          ($found_premium_in_current_prompt
-               (collapse (lookup_term "/premium"))) 
+               (collapse (lookup_term_by_role "role_user" "/premium"))) 
          ($_ (if (> (size-atom $found_premium_in_current_prompt) 0)
-               (add-atom &plugin-default (role /premium))
+               (progn
+                  (commChannelSend "Switching to the premium model.")
+                  (add-atom &plugin-default (role /premium)))
                ()))
          ($premium_latched_on 
                (collapse (match &plugin-default (role /premium) premium)))
@@ -81,9 +96,9 @@
          ($_ (delete_temp_atoms))
          )
          (if (or
-               (or 
-                  (or (> (size-atom $found_complexity_term) 0) (> (size-atom $number_of_user_msgs) 1 ))
-                    (> (size-atom $number_of_issues) 8))
+               (or  
+                  (or (> (size-atom $found_complexity_term) 0) (> $number_of_user_msgs 1))
+                    (> $number_of_issues 9))
                        (== $premium_switch Y))
                            (progn (log INFO "router" (LLM: premium)) premium)
                            (progn (log INFO "router" (LLM: routine)) routine))))

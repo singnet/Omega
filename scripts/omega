@@ -287,6 +287,8 @@ def _choose_model_setup():
                 "routine": _choose_provider("routine"),
                 "premium": _choose_provider("premium"),
             }
+            print('\nYour routine model is default. To switch to your premium model enter "/premium" in the chat. To return to your routine model enter "/routine" in the chat.')
+            print()
             return "default", router_catalog
         if answer == "q":
             sys.exit(1)
