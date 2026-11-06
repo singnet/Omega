@@ -437,7 +437,21 @@ what to remember.
   rather than enforcing a single behaviour.
 - Grade: not graded.
 
-## 10. Tear down
+## 10. Idle turns (live-only)
+
+**28. test_idle_nop.py**
+
+Asks `What is the capital of France?` together with the run id and watches the 20 idle iterations
+after the answer. With nothing to do, the agent should call `nop` rather than repeat `query`. The
+mock suite cannot check this, because there the mock picks the tool, not the model.
+
+- Skills: `nop`, `query`, `send`.
+- Checks: the answer is a `send` that contains the run id; in the 20 idle iterations that follow,
+  `nop` is called at least once, `query` at most 10 times, and the answer is not sent again. The
+  calls are counted from the `RESPONSE:` lines of the container log.
+- Grade: not graded.
+
+## 11. Tear down
 
 ```
 docker rm -f <CONTAINER_NAME>
