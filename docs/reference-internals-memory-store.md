@@ -59,20 +59,24 @@ or unreliable search results, even when vector dimensions match.
 
 The collection metadata stores `omega_embedding_provider` and
 `omega_embedding_model`. In `src/rag.py`, `ensure_embedding_profile()` records
-the configured provider and model only when the collection is empty and neither
-metadata key exists. It preserves other collection metadata and leaves an
-existing profile unchanged, including a partial profile. A nonempty collection
-without a profile remains unknown to avoid labeling old vectors with the
-current configuration.
+the configured provider and model when the collection is empty, replacing any
+different or incomplete profile while preserving other collection metadata.
+If the profile already matches, no metadata update is made. Nonempty collections
+keep their existing metadata; a missing or incomplete profile remains unknown
+to avoid labeling old vectors with the current configuration.
 
-The launcher calls this function in `ltm_precheck` before starting the agent
-container. `rag.init_knowledge()` also calls it before runtime knowledge indexing.
-The precheck is silent for a matching profile and warns for an unknown or
-mismatching profile; it does not stop startup or re-embed stored vectors.
+`check_embedding_profile()` calls this function and then compares the stored
+and configured profiles. Both the launcher's `ltm_precheck` and
+`rag.init_knowledge()` call the shared check, before starting the agent container
+and before runtime knowledge indexing respectively. A matching profile produces
+no warning; an unknown or mismatching profile produces a warning without stopping
+startup or re-embedding stored vectors. Standalone startup runs the same check.
+When using the launcher, a warning can appear both in the launcher console and
+in the agent's configured logs.
 
 On a new volume, a successful precheck creates and labels the collection before
 the optional startup knowledge import. The importer reuses that collection
-without validating or overwriting its profile. Existing collections keep their
+without validating or overwriting its profile. Nonempty collections keep their
 profile, and a warning alone does not prevent an import with incompatible
 embeddings. See [startup memory profile check](reference-configuration.md#startup-memory-profile-check)
 for launcher behavior when the check fails.

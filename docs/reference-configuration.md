@@ -46,11 +46,17 @@ to select embeddings independently of the LLM provider.
 ### Startup memory profile check
 
 Before starting the agent container, `scripts/omega` runs `ltm_precheck` against
-the persistent memory collection. A matching provider and model produce no
+the persistent memory collection. If the collection is empty, its profile is
+set to the configured provider and model before comparison, replacing any
+different or incomplete profile without a warning. A matching provider and model produce no
 warning. A mismatch produces a warning showing the stored and configured
 profiles. If the stored profile is unknown or incomplete, the launcher warns
 that the original provider and model must be checked manually. This check
 compares profile metadata only; it does not compare vector dimensions.
+
+The same check runs during `rag.init_knowledge()`, including standalone startup,
+before checking for knowledge files. With the launcher, warnings can appear both
+in the launcher console and in the agent's configured logs.
 
 These warnings do not stop startup or convert existing vectors. If the check
 itself fails, the launcher reports that it could not complete the check and

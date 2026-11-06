@@ -1018,23 +1018,7 @@ from config import init_config
 
 init_config([f"embeddingprovider={sys.argv[1]}"])
 
-rag.ensure_embedding_profile()
-existing = rag.get_existing_LTM_embedding_profile()
-current = rag.get_current_embedding_profile()
-
-if existing is None:
-    print(
-        "WARNING: Could not determine the embedding profile of existing memory. "
-        "Make sure the configured provider and model match the original ones.",
-        file=sys.stderr,
-    )
-elif existing != current:
-    print(
-        "WARNING: Memory embedding profile differs from the configuration and may break the memory.",
-        file=sys.stderr,
-    )
-    print("Memory: provider={provider}, model={model}".format(**existing), file=sys.stderr)
-    print("Configured: provider={provider}, model={model}".format(**current), file=sys.stderr)
+rag.check_embedding_profile()
 ' "$embeddingprovider"
 }
 

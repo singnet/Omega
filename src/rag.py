@@ -199,20 +199,40 @@ def get_existing_LTM_embedding_profile():
 
 
 def ensure_embedding_profile():
-    """Set the profile on a new, empty collection."""
+    """Set the current profile on an empty collection."""
     collection = _get_collection()
-    metadata = collection.metadata or {}
-    if "omega_embedding_provider" in metadata or "omega_embedding_model" in metadata:
-        return
     # Skip if the collection is not empty to avoid mislabeling.
     if collection.count() != 0:
         return
+    stored_metadata = collection.metadata or {}
     profile = get_current_embedding_profile()
-    collection.modify(metadata={
-        **metadata,
+    current_metadata = {
+        **stored_metadata,
         "omega_embedding_provider": profile["provider"],
         "omega_embedding_model": profile["model"],
-    })
+    }
+    if current_metadata != stored_metadata:
+        collection.modify(metadata=current_metadata)
+
+
+def check_embedding_profile():
+    """Prepare an empty collection's profile and check compatibility."""
+    ensure_embedding_profile()
+    existing = get_existing_LTM_embedding_profile()
+    current = get_current_embedding_profile()
+
+    if existing is None:
+        logger.warning(
+            "Could not determine the memory embedding profile. "
+            "Make sure the configured provider and model match the original ones."
+        )
+    elif existing != current:
+        logger.warning(
+            "Memory embedding profile mismatch. "
+            f"Memory: provider={existing['provider']}, model={existing['model']}. "
+            f"Configured: provider={current['provider']}, model={current['model']}. "
+            "Memory operations may fail or return unreliable results."
+        )
 
 # --- Hash sentinel docs --------------------------------------------------
 
@@ -255,7 +275,7 @@ def init_knowledge(embedding_selection):
     logger.info(f"Embedding type selected is {embedding_selection}")
 
     try:
-        ensure_embedding_profile()
+        check_embedding_profile()
         collection = _get_collection()
         knowledge_dir = _resolve_knowledge_dir()
 

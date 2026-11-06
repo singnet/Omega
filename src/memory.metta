@@ -52,12 +52,20 @@
 
 (= (remember $str)
    (case (catch (py-call (lib_chromadb.remember $str (embed $str) (get_time_as_string))))
-     (((Error $type $details) (Error remember "Memory write failed. Tell the user it was not saved; do not claim to remember it."))
+     (((Error $type $details)
+       (Error remember
+         (string_concat
+           "Memory write failed. Do not ignore the user's request. Tell the user that the data was not stored. Do not claim to have remembered it. Details: "
+           (repr (Error $type $details)))))
       ($result REMEMBER-SUCCESS))))
 
 (= (query $str)
    (case (catch (py-call (lib_chromadb.query (embed $str) (maxRecallItems))))
-     (((Error $type $details) (Error query "Memory query failed. If answering a request that needs memory, tell the user it could not be checked."))
+     (((Error $type $details)
+       (Error query
+         (string_concat
+           "Memory query failed. Do not ignore the user's request. Tell the user that memory could not be searched. Details: "
+           (repr (Error $type $details)))))
       ($result $result))))
 
 (= (episodes $time)
