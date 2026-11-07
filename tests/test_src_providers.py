@@ -169,3 +169,115 @@ def test_request_matches_a_result_whose_call_id_is_not_a_string():
                         llmToolCallResponseMessage("tool", 7, "PIN-SUCCESS"),
                         llmRequestMessage("user", "next")])
     assert [content for _, content in _tool_results(request)] == ["PIN-SUCCESS"]
+
+
+def test_llm_provider_chat_preserves_provider_exception_as_error(monkeypatch):
+    class BrokenProvider:
+        def chat(self, request):
+            raise RuntimeError("provider exploded")
+
+    monkeypatch.setattr(providers, "_llmprovider", BrokenProvider())
+
+    response = providers.llmProviderChat(_request([]))
+
+    assert response.is_error()
+    assert "provider exploded" in str(response.error)
+
+
+def test_llm_provider_chat_preserves_terminal_exception_status(monkeypatch):
+    class AuthenticationError(Exception):
+        status_code = 401
+
+    class BrokenProvider:
+        def chat(self, request):
+            raise AuthenticationError("unauthorized")
+
+    monkeypatch.setattr(providers, "_llmprovider", BrokenProvider())
+
+    response = providers.llmProviderChat(_request([]))
+
+    assert response.is_error()
+    assert "unauthorized" in str(response.error)
+    assert response.is_terminal_error()
+    assert providers.llmResponseIsTerminalError(response)
+
+
+def test_message_history_retains_last_ten_complete_exchanges():
+    history = []
+
+    for number in range(12):
+        history = providers.appendAndTrimMessageHistory(
+            history, providers.llmRequestMessage("user", f"user-{number}")
+        )
+        history = providers.appendAndTrimMessageHistory(
+            history, providers.llmToolCallMessage("assistant", [], f"assistant-{number}")
+        )
+        history = providers.appendAndTrimMessageHistory(
+            history,
+            providers.llmToolCallResponseMessage(
+                "tool", f"call-{number}", f"result-{number}"
+            ),
+        )
+
+    assert len(history) == 30
+    assert [history[index].content for index in range(0, 30, 3)] == [
+        f"user-{number}" for number in range(2, 12)
+    ]
+    assert [history[index].content for index in range(1, 30, 3)] == [
+        f"assistant-{number}" for number in range(2, 12)
+    ]
+    assert [history[index].content for index in range(2, 30, 3)] == [
+        f"result-{number}" for number in range(2, 12)
+    ]
+
+
+def test_terminal_provider_errors_are_marked_terminal():
+    response = LLMResponse().with_error(
+        "subscription_sharing_usage_limit_exceeded"
+    )
+    assert response.is_error()
+    assert response.is_terminal_error()
+    assert providers.llmResponseIsTerminalError(response)
+
+
+@pytest.mark.parametrize(
+    "message",
+    ["budget exceeded", "The account has exceeded budget for this period"],
+)
+def test_budget_exhaustion_messages_are_terminal(message):
+    assert providers._is_terminal_provider_error(RuntimeError(message))
+
+
+def test_http_authentication_errors_are_terminal():
+    class ProviderError(Exception):
+        status_code = 401
+
+    assert providers._is_terminal_provider_error(ProviderError("unauthorized"))
+    assert providers._is_terminal_provider_error(
+        type("ForbiddenError", (Exception,), {"status_code": 403})("forbidden")
+    )
+
+
+def test_transient_rate_limit_is_not_automatically_terminal():
+    response = LLMResponse().with_error("rate limit exceeded; please retry")
+    assert response.is_error()
+    assert not response.is_terminal_error()
+
+
+def test_terminal_error_can_be_set_explicitly():
+    response = LLMResponse().with_error(
+        "provider-specific failure", terminal=True
+    )
+    assert response.is_error()
+    assert response.is_terminal_error()
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Request failed; previous attempt was unauthorized",
+        "Retry later; billing limit message from upstream docs",
+    ],
+)
+def test_unrelated_error_text_does_not_trigger_terminal_classification(message):
+    assert not providers._is_terminal_provider_error(RuntimeError(message))

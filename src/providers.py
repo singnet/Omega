@@ -125,13 +125,21 @@ class LLMToolCallMessage(LLMMessage):
     def __init__(self):
         super().__init__()
         self.calls: [LLMToolCall] = []
+        self.native_items = []
 
     def with_calls(self, calls):
         self.calls = calls
         return self
 
+    def with_native_items(self, native_items):
+        self.native_items = native_items or []
+        return self
+
     def __repr__(self):
-        return f"LLMToolCallMessage[role={self.role!r},content={self.content!r},calls={self.calls!r}]"
+        return (
+            f"LLMToolCallMessage[role={self.role!r},content={self.content!r},"
+            f"calls={self.calls!r},native_items={self.native_items!r}]"
+        )
 
 class LLMRequest:
 
@@ -180,28 +188,71 @@ class LLMRequest:
     def __repr__(self):
         return f"LLMRequest[messages={self.messages!r}, max_tokens={self.max_tokens!r}, reasoning_mode={self.reasoning_mode!r}, tools={self.tools!r}]"
 
+def _is_terminal_provider_error(error):
+    """Identify quota and authentication failures requiring recovery."""
+    if getattr(error, "status_code", None) in (401, 403):
+        return True
+
+    values = (
+        error,
+        getattr(error, "code", None),
+        getattr(error, "type", None),
+    )
+    message = " ".join(
+        str(value) for value in values if value is not None
+    ).lower()
+
+    markers = (
+        "subscription_sharing_usage_limit_exceeded",
+        "insufficient_quota",
+        "quota_exceeded",
+        "quota exceeded",
+        "exceeded your current quota",
+        "invalid_api_key",
+        "incorrect api key",
+        "authentication_error",
+        "permission_denied",
+        "budget_exceeded",
+        "budget exceeded",
+        "exceeded budget",
+        "billing_hard_limit",
+    )
+    return any(marker in message for marker in markers)
+
+
 class LLMResponse:
 
     def __init__(self):
         self.calls: List[LLMToolCall] = []
         self.error = None
+        self.terminal = False
+        # Preserve provider-native response items for faithful history replay.
+        self.native_items = []
 
     def add_tool_call(self, call: LLMToolCall):
         self.calls.append(call)
         return self
 
-    def with_error(self, error: str):
+    def with_error(self, error: str, terminal=None):
         self.error = error
+        self.terminal = (
+            _is_terminal_provider_error(error)
+            if terminal is None else bool(terminal)
+        )
         return self
 
     def is_error(self):
         return bool(self.error)
 
+    def is_terminal_error(self):
+        return self.is_error() and self.terminal
+
     def __repr__(self):
-        return f"LLMResponse[calls={self.calls!r},error={self.error!r}]"
+        return f"LLMResponse[calls={self.calls!r},error={self.error!r},terminal={self.terminal!r}]"
 
     def __eq__(self, other):
-        return self.calls == other.calls and self.error == other.error
+        return (self.calls == other.calls and self.error == other.error
+                and self.terminal == other.terminal)
 
 class LLMProvider:
     """LLM provider implementation"""
@@ -248,9 +299,12 @@ def llmProviderChat(request):
     try:
         response = _llmprovider.chat(request)
         return _validate_response(request, response)
-    except Exception:
+    except Exception as error:
         logger.exception("Exception while getting LLM response")
-        return LLMResponse()
+        return LLMResponse().with_error(
+            f"Provider exception: {type(error).__name__}: {error}",
+            terminal=_is_terminal_provider_error(error),
+        )
 
 def _validate_response(request: LLMRequest, response: LLMResponse) -> LLMResponse:
     if not response.calls and not response.is_error():
@@ -290,10 +344,11 @@ def llmToolCallResponseMessage(role, callid, content):
                                         .with_callid(callid)
                                         .with_content(content))
 
-def llmToolCallMessage(role, calls: [LLMToolCall], content):
+def llmToolCallMessage(role, calls: [LLMToolCall], content, native_items=None):
     return (LLMToolCallMessage().with_role(role)
                                 .with_calls(calls)
-                                .with_content(content))
+                                .with_content(content)
+                                .with_native_items(native_items))
 
 def llmRequest(prompt, episodes, max_tokens, reasoning_mode, tools):
     return (LLMRequest().with_messages([prompt] + episodes)
@@ -306,6 +361,31 @@ def llmResponseIsEmpty(response: LLMResponse):
 
 def llmResponseCalls(response: LLMResponse):
     return response.calls
+
+def appendAndTrimMessageHistory(messages, item, max_exchanges=10):
+    """Keep the most recent complete user exchanges in structured history."""
+    history = list(messages or [])
+    history.append(item)
+
+    if max_exchanges < 1:
+        raise ValueError("max_exchanges must be at least 1")
+
+    user_indices = [
+        i for i, message in enumerate(history)
+        if getattr(message, "role", None) in ("user", "human")
+    ]
+
+    if len(user_indices) > max_exchanges:
+        history = history[user_indices[-max_exchanges]:]
+
+    return history
+
+
+def llmResponseNativeItems(response: LLMResponse):
+    return response.native_items
+
+def llmResponseIsTerminalError(response: LLMResponse):
+    return response.is_terminal_error()
 
 def llmResponseIsError(response: LLMResponse):
     return response.is_error()
