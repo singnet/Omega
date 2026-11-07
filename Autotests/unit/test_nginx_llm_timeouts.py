@@ -1,4 +1,4 @@
-"""Unit tests for the LLM provider routes in proxy/nginx.conf.template.
+"""Unit tests for the catalog-generated LLM routes included by nginx.
 
 In the Docker image every LLM request goes through this proxy. When a route
 gives up before the provider answers, nginx returns 504, the provider call
@@ -10,13 +10,14 @@ No container, no network: the template is read as text.
 """
 import os
 import re
+import importlib.util
 
 import pytest
 
 _REPO_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 _TEMPLATE = os.path.join(_REPO_ROOT, "proxy", "nginx.conf.template")
 
-LLM_ROUTES = ["anthropic", "asicloud", "openai", "asione", "openaiapi", "openrouter"]
+LLM_ROUTES = ["catalog/routine", "catalog/premium", "openai"]
 _PROVIDER_SOURCE = os.path.join(_REPO_ROOT, "providers", "lib_llm_ext.py")
 
 
@@ -51,7 +52,12 @@ def _directive(text, name):
 @pytest.fixture(scope="module")
 def template():
     with open(_TEMPLATE, encoding="utf-8") as f:
-        return f.read()
+        text = f.read()
+    spec = importlib.util.spec_from_file_location("router_catalog", os.path.join(_REPO_ROOT, "src", "router_catalog.py"))
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+    routes = "\n".join(helper.route(name, "https://example.com/v1/", "test-key") for name in LLM_ROUTES)
+    return text.replace("include /opt/nginx/router.conf;", routes)
 
 
 def _route_block(template, route):

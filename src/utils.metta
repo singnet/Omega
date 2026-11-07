@@ -105,3 +105,21 @@
    (progn
      (let $path (py-call (helper.joinPath $parts)) ())
      (swrite $path)))
+
+(= (lookup_api_token_var $provider)
+   (case $provider
+      ((OpenAI OPENAI_API_KEY)
+       (Anthropic ANTHROPIC_API_KEY)
+       (ASICloud ASI_API_KEY)
+       (ASIOne ASIONE_API_KEY)
+       (OpenRouter OPENROUTER_API_KEY)
+       (OpenAIAPI OPENAIAPI_API_KEY)
+       ($_ ""))))
+
+(= (sread-nested $terms)
+   (if (== (get-metatype $terms) Expression)
+       (if (== $terms ())
+           ()
+           (cons-atom (sread-nested (car-atom $terms))
+                      (sread-nested (cdr-atom $terms))))
+       (sread $terms)))

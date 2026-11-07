@@ -1,9 +1,41 @@
-(= (llmProviderStart $provider)
-   (py-call (providers.llmProviderStart $provider)))
+(= (llmProvidersInitialize)
+   (progn
+      (py-call (providers.llmProvidersInitDict))
+      (match &self (routerCatalog $catalog)
+         (llmProvidersStartEntries $catalog))))
 
-(= (llmProviderChat $request)
-     (py-call (providers.llmProviderChat $request)))
+(= (llmProvidersStartEntries $entries)
+   (if (== $entries ())
+       ()
+       (let $entry (car-atom $entries)
+          (let* (($role (car-atom $entry))
+                 ($fields (car-atom (cdr-atom $entry)))
+                 ($provider (llmProviderField provider $fields))
+                 ($model (llmProviderField model $fields))
+                 ($api_token_var (llmProviderField api_token_var $fields))
+                 ($url (llmProviderField openaiapi_url $fields)))
+             (progn
+                (py-call (providers.llmProviderStart $role $provider $model $api_token_var $url))
+                (llmProvidersStartEntries (cdr-atom $entries)))))))
 
+(= (llmProviderField $key $fields)
+   (if (== $fields ())
+       none
+       (let $field (car-atom $fields)
+          (if (== $key (car-atom $field))
+              (car-atom (cdr-atom $field))
+              (llmProviderField $key (cdr-atom $fields))))))
+
+(= (llmProviderChat $request $router)
+   (if (== $router none)
+      (py-call (providers.llmProviderChat $request "routine"))
+   (let* 
+        (
+         ($prompt_contents_normalized (py-call (providers.llmRequestContentsNormalized $request)))
+         ($tier ($router $prompt_contents_normalized))
+        )
+        (py-call (providers.llmProviderChat $request $tier)))))
+    
 (= (llmRequestMessage role $role content $content)
    (py-call (providers.llmRequestMessage $role $content)))
 
