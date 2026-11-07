@@ -209,6 +209,16 @@ def _merge_dicts(base: Optional[Dict[str, Any]], extra: Optional[Dict[str, Any]]
     merged.update(extra or {})
     return merged
 
+
+def _flag_is_on(value: Any) -> bool:
+    """Read a boolean configuration flag. Command line and environment values
+    arrive as strings, in which "false" is a non-empty string and thus truthy,
+    so the false spellings are listed instead of relying on truthiness."""
+    if isinstance(value, str):
+        return value.strip().lower() not in ("false", "no", "off", "0", "")
+    return bool(value)
+
+
 class AbstractAIProvider:
     def __init__(self, name: str):
         self._name = name
@@ -338,13 +348,23 @@ class AIProvider(AbstractAIProvider):
         }
 
     def convert_request(self, request: LLMRequest) -> Dict[str, Any]:
-        return {
+        result = {
             "model": self._model_name,
             "messages": [self.convert_message(msg) for msg in request.messages],
             "max_tokens": request.max_tokens,
             "tools": [self.convert_tool(tool) for tool in request.tools],
             "tool_choice": "required",
         }
+        reasoning = getattr(request, "reasoning_mode", None)
+        if reasoning and _flag_is_on(config_get_by_key("supportsReasoningEffort", False)):
+            # OpenAI-compatible servers (llama.cpp, vLLM, Strata, ...) accept
+            # reasoning_effort; "none" disables thinking. Plain OpenAI chat
+            # completions endpoints ignore unknown fields. Models that reject
+            # the parameter (e.g. non-reasoning OpenAI models) need it omitted,
+            # so the flag defaults to false; set supportsReasoningEffort: true
+            # on servers that accept it.
+            result["extra_body"] = {"reasoning_effort": str(reasoning).lower()}
+        return result
 
     def convert_response(self, raw):
         response = LLMResponse()

@@ -21,6 +21,7 @@ This resolves the value through the Python configuration layer, using command-li
 | `provider` | `Anthropic` | LLM provider — `Anthropic`, `OpenAI`, `ASICloud`, or `ASIOne`. |
 | `maxOutputToken` | 6000 | Output cap passed to the provider. |
 | `reasoningMode` | `medium` | Reasoning-effort hint passed to the provider. |
+| `supportsReasoningEffort` | `false` | Send the hint as the `reasoning_effort` request parameter, for OpenAI-compatible servers that accept it (`llama.cpp`, `vLLM`, `Strata`, ...). Command-line and environment values are read as booleans, so `supportsReasoningEffort=false` turns it off. |
 | `wakeupInterval` | 600 (seconds) | How long idle before the next scheduled wake-up. |
 
 ## Memory (`src/memory.metta`, `initMemory`)
