@@ -261,6 +261,11 @@ def llmProviderStart(role, provider, model, api_token_var, openaiapi_url):
     logger.info("Started LLM provider role=%s provider=%s model=%s",
                 role, provider, getattr(delegate, "_model_name", model))
 
+def router_function_name(router):
+    """Return the MeTTa function name for a configured router."""
+    return f"{router}-LLM-ROUTER"
+
+
 def llmRequestContentsNormalized(request):
     """Prefix contents with role_user/role_tool, join, replace [](),.: with spaces, and lowercase."""
     contents = [

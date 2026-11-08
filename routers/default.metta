@@ -22,37 +22,45 @@
         (create_temp_atoms (cdr-atom $prompt_list) $next_number))))
 
 (= (lookup_term $term)
-    (match &plugin-default (prompt_atom $atom $_) 
+    (match &plugin-default (prompt_atom $atom $_)
                         (if (== $atom $term)
                            $atom
                            (empty))))
 
-; Input a role like "role_user" and an atom, output the atom if it falls inside a "role_user".
-; Note: presently this will only work for "role_user" segment lookups since "role_user" appear after "role_tool".
-(= (lookup_term_by_role $role $term)
-    (match &plugin-default (prompt_atom $role $role_sequence_no)
-      (match &plugin-default (prompt_atom $atom $atom_sequence_no)
-         (if (and (== $atom $term) (> $atom_sequence_no $role_sequence_no))
-            $atom
-            (empty)))))
+;create temporary atoms by segment type for fast lookup.
+(= (role-p $x) (or (== $x "role_user") (== $x "role_tool")))
+(= (flush $role $acc)
+   (if (== $role ()) () (add-atom &plugin-default ($role $acc))))
+(= (group $atoms $role $acc)
+   (if (== $atoms ())
+       (flush $role $acc)
+       (let* (($h (car-atom $atoms)) ($t (cdr-atom $atoms)))
+         (if (role-p $h)
+             (let $_ (flush $role $acc) (group $t $h ()))
+             (group $t $role (union-atom $acc ($h)))))))
+(= (create_temp_atoms_list_by_segment_type $atoms) (group $atoms () ()))
 
 (= (delete_temp_atoms)
-   (collapse (match &plugin-default (prompt_atom $x $seq) (remove-atom &plugin-default (prompt_atom $x $seq)))))
+   (collapse
+      (progn 
+        (match &plugin-default (prompt_atom $x $seq) (remove-atom &plugin-default (prompt_atom $x $seq)))
+        (match &plugin-default ("role_user" $atoms) (remove-atom &plugin-default ("role_user" $atoms)))
+        (match &plugin-default ("role_tool" $atoms) (remove-atom &plugin-default ("role_tool" $atoms))))))
 
-; Look for a variety of common situations signalling the need for a premium model call.
+; Look for a variety of common situations signaling the need for a premium model call.
 ; Return either routine or premium symbols.
 ; Note:  The $prompt variable represents a subset of the prompt -- the tool call results and
 ;     user messages.
-(= (default $prompt)
+(= (default-LLM-ROUTER $prompt)
    (let* (
          ; Create a list of terms, type string, using native Prolog from the single prompt string.
-         ; We are using type string for terms in the prompt but this could be changed to symbols. 
          ($prompt_list (split_string $prompt " " " "))
          ($_ (create_temp_atoms $prompt_list 0))
+
          ; look for simple terms hinting at complexity
-         ($found_complexity_term 
-               (collapse (lookup_term 
-                    (superpose 
+         ($found_complexity_term
+               (collapse (lookup_term
+                    (superpose
                          ; INSERT TERMS TO LIST TO FLAG LIKELY COMPLEXITY, USER LOWERCASE TYPE STRING (prompt was converted)
                          ("alert_failed")))))
 
@@ -60,9 +68,9 @@
          ($role_user_occurances (collapse (match &plugin-default (prompt_atom "role_user" $seq) $seq)))
          ($number_of_user_msgs (size-atom $role_user_occurances))
 
-         ; Create list to count the total number of tool results and user messages 
-         ($issues (collapse (match &plugin-default (prompt_atom $atom $seq) 
-                              (if (or (== $atom "role_user") (== $atom "role_tool")) 
+         ; Create list to count the total number of tool results and user messages
+         ($issues (collapse (match &plugin-default (prompt_atom $atom $seq)
+                              (if (or (== $atom "role_user") (== $atom "role_tool"))
                                     $seq
                                     (empty)))))
          ($number_of_issues (size-atom $issues))
@@ -70,36 +78,50 @@
          ; If the user enters the "/premium" slash command, create an atom to latch the premium model on for all calls.
          ; If we find the "/routine" slash command, consider it a total reset by deleting any role of premium atom.
          ; The default model role is routine.
+
+         ($_ (create_temp_atoms_list_by_segment_type $prompt_list))
          ($found_routine_in_current_prompt
-               (collapse (lookup_term_by_role "role_user" "/routine")))
+            (collapse 
+               (match &plugin-default ("role_user" $atoms) 
+                  (let $atom (superpose $atoms)
+                     (if (== $atom "/routine")
+                        $atom
+                        (empty))))))
          ($_ (if (> (size-atom $found_routine_in_current_prompt) 0)
                (progn
                   (commChannelSend "Switching to the routine model.")
+                  (log INFO "router" (Switching to the routine model.))
                   (collapse (match &plugin-default (role $x) (remove-atom &plugin-default (role $x)))))
                ()))
-         ; If we find the /premium slash command, add a role atom for premium to latch this on. 
+         ; If we find the /premium slash command, add a role atom for premium to latch this on.
          ; This will work if more than one "/premium" is found in the prompt.
          ($found_premium_in_current_prompt
-               (collapse (lookup_term_by_role "role_user" "/premium"))) 
+            (collapse 
+               (match &plugin-default ("role_user" $atoms) 
+                  (let $atom (superpose $atoms)
+                     (if (== $atom "/premium")
+                        $atom
+                        (empty))))))
          ($_ (if (> (size-atom $found_premium_in_current_prompt) 0)
                (progn
                   (commChannelSend "Switching to the premium model.")
+                  (log INFO "router" (Switching to the premium model.))
                   (add-atom &plugin-default (role /premium)))
                ()))
-         ($premium_latched_on 
+         ($premium_latched_on
                (collapse (match &plugin-default (role /premium) premium)))
-         ($premium_switch (if (> (size-atom $premium_latched_on) 0) 
+         ($premium_switch (if (> (size-atom $premium_latched_on) 0)
                Y
                N))
 
          ; cleanup
          ($_ (delete_temp_atoms))
          )
-         (if (or
-               (or  
-                  (or (> (size-atom $found_complexity_term) 0) (> $number_of_user_msgs 1))
-                    (> $number_of_issues 9))
-                       (== $premium_switch Y))
+         (if (or (or (or 
+		          (> (size-atom $found_complexity_term) 0) 
+                (> $number_of_user_msgs 1))
+                (> $number_of_issues 9))
+                (== $premium_switch Y))
                            (progn (log INFO "router" (LLM: premium)) premium)
                            (progn (log INFO "router" (LLM: routine)) routine))))
 

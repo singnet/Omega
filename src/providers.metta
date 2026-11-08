@@ -32,7 +32,9 @@
    (let* 
         (
          ($prompt_contents_normalized (py-call (providers.llmRequestContentsNormalized $request)))
-         ($tier ($router $prompt_contents_normalized))
+         ($router_name (py-call (providers.router_function_name $router)))
+         ($router_function (sread $router_name))
+         ($tier ($router_function $prompt_contents_normalized))
         )
         (py-call (providers.llmProviderChat $request $tier)))))
     

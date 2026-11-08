@@ -11,7 +11,7 @@
 (= (configure $key $default)
    (case $key 
       (
-      ;convert the input JSON router catalog into a MeTTa expression.
+      ;convert the input JSON router catalog, if provided into a MeTTa expression.
       (routerCatalogFile
          (let $filename (configGetByKey routerCatalogFile $default)
             (if (== $filename none)
@@ -40,9 +40,6 @@
       ($_ (let $value (configGetByKey $key $default)
                (add-atom &self (= ($key) $value))))
       )))
-
-
-;(= (configure $key $default) (println! ($key $default)))
 
 ; Get configuration parameter from the list of sources: (1) command line
 ; parameters, (2) environment variable with OMEGA_$key name, (3)
