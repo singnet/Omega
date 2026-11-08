@@ -118,7 +118,7 @@
          ($_ (delete_temp_atoms))
          )
          (if (or (or (or 
-		          (> (size-atom $found_complexity_term) 0) 
+                (> (size-atom $found_complexity_term) 0) 
                 (> $number_of_user_msgs 1))
                 (> $number_of_issues 9))
                 (== $premium_switch Y))
