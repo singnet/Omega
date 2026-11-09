@@ -10,14 +10,14 @@ Each of the four tools takes one string parameter, which the model sets as a sep
 
 ### Signature
 ```metta
-(remember "string")
+(remember "content")
 ```
 
 ### Purpose
 Store a string in long-term embedding memory as the triplet `(timestamp, atom, embedding)`.
 
 ### Parameters
-- `string` — the text to remember. Use short, self-contained phrases for best recall.
+- `content` — the text to remember. Use short, self-contained phrases for best recall.
 
 ### Returns
 The symbol `REMEMBER-SUCCESS`, returned after the ChromaDB write.
@@ -39,14 +39,14 @@ The symbol `REMEMBER-SUCCESS`, returned after the ChromaDB write.
 
 ### Signature
 ```metta
-(query "string")
+(query "content")
 ```
 
 ### Purpose
-Return up to `maxRecallItems` memory entries whose embeddings are closest to the embedding of `string`.
+Return up to `maxRecallItems` memory entries whose embeddings are closest to the embedding of `content`.
 
 ### Parameters
-- `string` — a short descriptive phrase. Over-long queries dilute similarity scores.
+- `content` — a short descriptive phrase. Over-long queries dilute similarity scores.
 
 ### Returns
 A list-shaped result containing the nearest memory items.
@@ -94,14 +94,14 @@ A block of lines from `memory/history.metta`.
 
 ### Signature
 ```metta
-(pin "string")
+(pin "message")
 ```
 
 ### Purpose
 Make a working-memory note visible to the next turn in `HISTORY`.
 
 ### Parameters
-- `string` — the note. Typical uses: intermediate results, plans for the next turn, checklists.
+- `message` — the note. Typical uses: intermediate results, plans for the next turn, checklists.
 
 ### Returns
 The symbol `PIN-SUCCESS`. `pin` stores nothing itself. The note reaches `HISTORY` because `addToHistory` appends the whole reply, the `pin` call included, to `memory/history.metta`.

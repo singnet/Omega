@@ -40,7 +40,7 @@ description: Created to check how SKILL.md is loaded to Omega.
 ---
 Next are instructions and MeTTa  functions  that should be performed step by step
 # Test Workflow (Omega)
-## Step 1 - demonstrate usage of skills
+## Step 1 - demonstrate usage of tools
 - Call test-skill with "This is a test workflow demonstration" message
 ## Step 2 - complete workflow
 - Call `(workflow-unload-instructions)`
@@ -67,12 +67,14 @@ For example:
 
 ## Using workflow
 
-The plugin adds two tools of its own. `workflow-load-instructions` loads the
+The plugin adds three tools of its own. `workflow-load-instructions` loads the
 workflow with the given name and adds the tools from its `skill.metta`.
 `workflow-unload-instructions` takes no arguments and removes the active
-instructions together with all tools added from `skill.metta` files. If
-another workflow is loaded while one is active, the instructions and tools of
-both stay in the prompt.
+instructions together with all tools added from `skill.metta` files.
+`workflow-refresh-list` is described below. While a workflow is active,
+`workflow-load-instructions` rejects another one with the error `There is an
+active workflow`, so the first workflow has to be unloaded before the next one
+is loaded.
 
 Start an agent and ask it to use the workflow. For the test workflow above
 send: `Demonstrate workflow plugin`
@@ -84,7 +86,7 @@ the new workflow by name.
 
 ## Workflow parameters
 
-Wofkflow plugin Omega configuration parameters:
+Workflow plugin Omega configuration parameters:
 - `pluginWorkflowInstructionsDir` - path to the directory which contains
   available workflows. Default value is `<project
   root>/plugins/workflow/instructions`

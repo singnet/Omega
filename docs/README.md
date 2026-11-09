@@ -52,7 +52,7 @@ Built-in tools the agent can call. Each page follows the template **Signature �
 - [reference-tools-communication.md](./reference-tools-communication.md) — `send`, `websearch`, and `receive` (called by the loop)
 - [reference-tools-reasoning.md](./reference-tools-reasoning.md) — `metta` (NAL/PLN invocation surface)
 
-`delete-file` and `version` are built-in tools too and have no reference page yet.
+`delete-file`, `version` and `nop` are built-in tools too and have no reference page yet.
 
 ### Configuration & Adapters
 
@@ -74,5 +74,5 @@ Built-in tools the agent can call. Each page follows the template **Signature �
 
 - [reference-internals-loop.md](./reference-internals-loop.md) — `src/loop.metta` lifecycle and turn structure
 - [reference-internals-memory-store.md](./reference-internals-memory-store.md) — The three-tier memory architecture, including `knowledge-priors` markdown seeding into ChromaDB
-- [reference-internals-tool-dispatch.md](./reference-internals-tool-dispatch.md) — How tool calls are parsed and dispatched
+- [reference-internals-tool-dispatch.md](./reference-internals-tool-dispatch.md) — How tool calls are converted and dispatched
 - [reference-internals-extension-points.md](./reference-internals-extension-points.md) — Where to hook in new tools, channels, LLM providers, and engines

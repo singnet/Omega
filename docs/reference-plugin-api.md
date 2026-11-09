@@ -8,7 +8,7 @@ The `loadOmegaPlugin` function calls the Omega plugin API in order to
 implement new agent's features. The plugin API provides functions to:
 - add communication channel integrations
 - add LLM provider integrations
-- add new tools or remove registered tools
+- add new tools or remove registered tools (MeTTa only)
 - extend LLM prompt by adding new information or removing it
 - etc
 
@@ -224,9 +224,9 @@ tool into a tool schema: `$function` is the tool name, `$description` is its
 `description`, and each element of `$arguments` is a required string parameter
 named after the element. `$arguments` is a tuple of symbols, or `()` for a tool
 without arguments. The LLM can call the tool starting with the next request.
-The LLM passes every parameter as a separate string, so name the elements for
+The LLM passes every parameter as a separate string, so name each element after
 what the LLM has to pass, such as `research_name` in the workflow plugin.
-`(add-skill $function ...)` on a name that is already registered replaces the
+Calling `add-skill` with a name that is already registered replaces the
 earlier registration. `remove-skill` removes the tool from the following
 requests, a built-in tool as well as an added one. `$function` is the name of
 the MeTTa function that runs the tool, so the plugin defines it in its own

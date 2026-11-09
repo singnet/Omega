@@ -89,11 +89,11 @@ Request and response types for the LLM, the provider registry, and the conversio
 
 | Name | Purpose |
 |---|---|
-| `LLMTool`, `LLMToolParameter` | A tool schema: name, description, and parameters that have only a name. |
+| `LLMTool`, `LLMToolParameter` | A tool schema: name, description, and parameters, each of which has only a name. |
 | `LLMToolCall`, `LLMResponse` | One call from the model (id, name, arguments, error) and a response (calls, error). |
 | `LLMMessage`, `LLMToolCallMessage`, `LLMToolCallResponseMessage` | Messages of a request with roles `user`, `assistant`, and `tool`. |
 | `LLMRequest`, `LLMProvider` | A request (messages, tools, token limit, reasoning mode) and the base class of provider plugins. |
-| `registerLLMProvider(id, provider)` | Register a provider under the name used by `provider`. |
+| `registerLLMProvider(id, provider)` | Register a provider under the id that the `provider` configuration parameter uses. |
 | `llmProviderStart(provider)` | Start the selected provider. |
 | `llmProviderChat(request)` | Send a request to the selected provider and check the response with `_validate_response`. Returns an empty `LLMResponse` if the provider raises an exception. |
 | `getTools(skills)` | Turn the `(name description arguments)` triples from `getSkills` into `LLMTool` objects. |

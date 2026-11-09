@@ -64,8 +64,8 @@ Each reasoning hop is a synchronous five-step dance:
    (e.g. (robin --> animal) (stv 0.72 0.32)).
 
 5. INJECTION & RESUMPTION
-   Results go back to the LLM as messages with role
-   `tool`, as immutable data. The LLM resumes, reads them,
+   Results go back to the LLM as immutable data, in
+   messages with role `tool`. The LLM resumes, reads them,
    and decides the next move.
 ```
 
@@ -285,9 +285,9 @@ Full detail in [reference-internals-memory-store.md](./reference-internals-memor
 
 ### Tools
 
-A tool is an action the agent can take during a turn, such as `send`, `shell`, `remember`, `query`, or `metta`. A tool has a name, a one-line description, and a list of arguments, and it runs as a MeTTa function. Built-in tools and tools from plugins are registered the same way, with `add-skill` in `src/skills.metta`, and `remove-skill` unregisters one. Each turn the registered tools go to the LLM in the `tools` field of the request, one schema per tool with a string parameter for every argument. The `SKILLS:` part of the system message holds only extra rules for some tools.
+A tool is an action the agent can take during a turn, such as `send`, `shell`, `remember`, `query`, or `metta`. A tool has a name, a one-line description, and a list of arguments, and it runs as a MeTTa function. Built-in tools and tools from plugins are registered the same way, with `add-skill`. Built-in ones are registered in `src/skills.metta`, and `remove-skill` unregisters a tool. Each turn the registered tools go to the LLM in the `tools` field of the request, one schema per tool with a string parameter for every argument. The `SKILLS:` part of the system message holds only extra rules for some tools.
 
-A tool call is the LLM's request to run a tool. The request requires the model to call at least one tool, and the text the model writes next to its calls is not used. `llmResponseToSExpr` in `src/providers.py` turns each call into a MeTTa expression, so a `send` call with the content `Hello` becomes `(send "Hello")`, and Omega evaluates it. A reply with no tool calls, or a call to a tool that is not registered, is reported as an error. The value a tool returns is its tool result. Omega sends each result back as a message with role `tool` and the id of the call, cut to the last `maxFeedback` characters, and the model reads it on the next turn.
+A tool call is the LLM's request to run a tool. The request requires the model to call at least one tool, and the text the model writes next to its calls is not used. `llmResponseToSExpr` in `src/providers.py` turns each call into a MeTTa expression, so a `send` call with the content `Hello` becomes `(send "Hello")`, and Omega evaluates it. A reply with no tool calls, or a call to a tool that is not registered, is reported as an error. The value a tool returns is its tool result. Omega cuts each result to its last `maxFeedback` characters and sends it back as a message with role `tool` and the id of the call, and the model reads it on the next turn.
 
 ### Skills
 

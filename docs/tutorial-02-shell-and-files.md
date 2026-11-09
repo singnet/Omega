@@ -44,7 +44,7 @@ The agent should call `append-file` with `filename` set to `/tmp/session.log` an
 
 ## Safety notes
 
-- **Apostrophes in `shell` commands are not checked** by the Prolog-side `shell` helper, which passes the command to `sh -c` unchanged. An apostrophe inside a single-quoted shell string ends it. Write such text to a file first and operate on the file.
+- Apostrophes in `shell` commands are not checked by the Prolog-side `shell` helper, which passes the command to `sh -c` unchanged. An apostrophe inside a single-quoted shell string ends it. Write such text to a file first and operate on the file.
 - **There is no sandbox beyond the Landlock policy.** File access is limited only by the policy from `securityPolicyPath` (see `get-io-policy` in [reference-tools-io.md](./reference-tools-io.md#get-io-policy)). If you expose destructive commands (`rm -rf`, etc.) through the shell you will get what you ask for. Run in Docker and treat the container as ephemeral.
 - File paths are resolved relative to the Omega working directory unless absolute.
 

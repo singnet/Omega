@@ -432,7 +432,7 @@ The other half of this property - that `OMEGA_OPENCLAW_TOKEN` never reaches the 
 
 ### 41. test_tool_result_for_every_call_mock.py
 
-Each call of a model answer gets exactly one tool result in the next request, also when the skill fails without a value, as `read-file` of a missing file does. Anthropic and OpenAI reject a request with a call that has no result.
+Each call of a model answer gets exactly one tool result in the next request, also when the tool fails without a value, as `read-file` of a missing file does. Anthropic and OpenAI reject a request with a call that has no result.
 
 - Mock answer: `[("read-file", {"filename": "/tmp/omega-missing-<run_id>.txt"}), ("send", {"content": "done <run_id>"})]`.
 - Checks: the `REQUEST:` line after the one carrying the prompt lists both calls in the assistant message and one tool result for each of them; the `send` result is its own, and the `read-file` result says the call returned no value.

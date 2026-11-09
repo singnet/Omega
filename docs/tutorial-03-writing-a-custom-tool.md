@@ -11,7 +11,7 @@
 
 A tool is three things:
 
-1. **A registration** that tells the LLM the tool exists: a line `!(add-skill <name> "<description>" (<argument> ...))`. The description goes into the `description` field of the tool schema sent with every request, and each element of the argument tuple becomes a string parameter of that schema. The name is the name of the MeTTa function that runs the tool. A tool without arguments takes `()`. Built-in tools are registered in `src/skills.metta` by the `!(add-skill ...)` lines under `Embedded skills`.
+1. **A registration** that tells the LLM the tool exists: a line `!(add-skill <name> "<description>" (<argument> ...))`. The description goes into the `description` field of the tool schema sent with every request, and each element of the argument tuple becomes a string parameter of that schema. The name must match the MeTTa function that runs the tool. A tool without arguments takes `()`. Built-in tools are registered in `src/skills.metta` by the `!(add-skill ...)` lines under `Embedded skills`.
 2. **A MeTTa definition** of how the tool executes. Pure-MeTTa tools are written directly; tools that need system access delegate to Python or Prolog.
 3. **Optional Python/Prolog glue** imported through `py-call` or `translatePredicate`.
 
@@ -78,11 +78,11 @@ Restart the agent with the command you started it with (`sh run.sh run.metta ...
 how many words are in "the quick brown fox"?
 ```
 
-The LLM calls the tool `word-count` with the argument `text` set to `the quick brown fox`. The loop evaluates `(word-count "the quick brown fox")` and returns the result, 4, to the LLM in a message with the role `tool`. The agent then answers with `send`.
+The LLM calls the tool `word-count` with the parameter `text` set to `the quick brown fox`. The loop evaluates `(word-count "the quick brown fox")` and returns the result, 4, to the LLM in a message with the role `tool`. The agent then answers with `send`.
 
 ## Conventions
 
-- Tool names are letters, digits, hyphens and underscores, up to 64 characters, as the LLM APIs expect. The built-in names are lowercase and hyphen-separated, such as `read-file`.
+- Tool names consist of letters, digits, hyphens and underscores, up to 64 characters, as the LLM APIs expect. The built-in names are lowercase and hyphen-separated, such as `read-file`.
 - Every element of the argument tuple is a separate string parameter, and the LLM must fill all of them. The element name is the parameter name in the schema, so choose a name that tells the LLM what to pass, such as `research_name` or `filename`.
 - Arguments arrive as plain strings. A `$x`, brackets or quotes inside an argument are text, not MeTTa syntax.
 - The loop runs the result through `helper.normalize_string`, puts `SUCCESS, RETURN: ` in front of it and cuts it to the last `maxFeedback` characters before sending it to the LLM, so return a value that is safe to render as text.

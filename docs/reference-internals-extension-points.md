@@ -42,7 +42,7 @@ To add a provider:
 
 ## Change the prompt
 
-The agent's identity and values are in `memory/prompt.txt`. The run-time prompt template that sandwiches it is in `getContext` in `src/loop.metta`. Edit carefully — the tool schemas, not the prompt text, tell the LLM how to call tools (see [reference-internals-tool-dispatch.md](./reference-internals-tool-dispatch.md)).
+The agent's identity and values are in `memory/prompt.txt`. The run-time prompt template that sandwiches it is in `getContext` in `src/loop.metta`. Edit carefully. The tool schemas tell the LLM how to call tools (see [reference-internals-tool-dispatch.md](./reference-internals-tool-dispatch.md)).
 
 ## Change the embedding model
 

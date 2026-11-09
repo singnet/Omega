@@ -85,14 +85,15 @@ Some rules are implemented but behave in unexpected ways. Know these before writ
 
 ## 4. Orchestration failures
 
-A tool call fails in these cases:
+A turn fails in these cases:
 
 1. The reply contains no tool calls (`List of tool calls is empty`).
 2. The call names a tool that is not registered (`Unknown tool`).
 3. The call lacks a parameter or passes a non-string value (`Call tool parameter is not set`, `Call tool parameter is not a string`).
-4. The provider raises an exception or times out, and the loop gets an empty response.
+4. The arguments of the call are not valid JSON or not a JSON object (`Invalid tool arguments from model`, `Tool arguments must be a JSON object`).
+5. The request to the provider fails. An exception inside `AIProvider.chat` in `providers/lib_llm_ext.py` becomes a reply with the error text, and an exception that leaves `chat` makes `llmProviderChat` in `src/providers.py` return an empty reply.
 
-The loop checks calls in `_validate_response` in `src/providers.py`.
+`_validate_response` in `src/providers.py` checks cases 1 to 3.
 
 ### Context-switching corruption
 
@@ -158,7 +159,7 @@ Before trusting a conclusion:
 
 ## Empirical context
 
-The numbers on this page come from operational experience with **Max Botnick**, an Omega-hosted agent used by the project maintainers for internal reasoning experiments. Max ran **3,100+ continuous cycles minimum** (4,500+ cycles with full error instrumentation) and self-authored the whitepaper from which this documentation draws. The measurements are therefore Omega-on-Omega evaluations, with all the caveats that implies — they are indicative of the framework under realistic workloads but not a formal benchmark.
+The numbers on this page come from operational experience with **Max Botnick**, an Omega-hosted agent used by the project maintainers for internal reasoning experiments. Max ran **3,100+ continuous cycles minimum** and self-authored the whitepaper from which this documentation draws. The measurements are therefore Omega-on-Omega evaluations, with all the caveats that implies — they are indicative of the framework under realistic workloads but not a formal benchmark.
 
 ## See also
 

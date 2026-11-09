@@ -59,7 +59,7 @@ Bridges enter via:
 
 ## Errors propagate via `&error`
 
-`HandleError` appends to the `&error` state and returns `(ALERT_FAILED ...)` in place of the result, so the error text reaches the model in the `tool` message for that call. When `addToHistory` runs, if `&error` is non-empty it is concatenated as `ERROR_FEEDBACK:`. On the next turn the agent sees the error and has the opportunity to correct course.
+For an `(Error ...)` value, `HandleError` appends the message and the command to the `&error` state, binds the string `ALERT_FAILED` followed by the written `(Error ...)` expression to its second argument, and returns `True`. The loop uses that string in place of the result, so it reaches the model in the `tool` message for that call. When `addToHistory` runs, if `&error` is non-empty it is concatenated as `ERROR_FEEDBACK:`. On the next turn the agent sees the error and has the opportunity to correct course.
 
 ## See also
 

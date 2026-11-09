@@ -8,14 +8,14 @@
 
 ### Signature
 ```metta
-(send "message")
+(send "content")
 ```
 
 ### Purpose
 Send a message to the currently active communication channel (IRC, Telegram, Slack, Mattermost, or WebSocket).
 
 ### Parameters
-- `message` — the text to send. Newlines are replaced with `\n` before transmission.
+- `content` — the text to send. Newlines are replaced with `\n` before transmission.
 
 ### Returns
 No meaningful return value. Used for its side effect.
@@ -26,7 +26,7 @@ No meaningful return value. Used for its side effect.
 ```
 
 ### Notes / Limits
-- **Deduplication:** `send` silently drops the call if `message` is identical to the previous one (`&lastsend` state). Change the text to send a near-duplicate.
+- **Deduplication:** `send` silently drops the call if `content` is identical to the previous one (`&lastsend` state). Change the text to send a near-duplicate.
 - Channel selection is set at `initChannels` time via `commchannel`.
 
 ---
@@ -64,14 +64,14 @@ The loop calls `receive` itself:
 
 ### Signature
 ```metta
-(websearch "query")
+(websearch "content")
 ```
 
 ### Purpose
 Perform a web search through the `src/websearch.py` adapter.
 
 ### Parameters
-- `query` — the search string.
+- `content` — the search string.
 
 ### Returns
 A string of search results suitable for feeding back into the prompt.
