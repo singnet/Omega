@@ -15,7 +15,7 @@ Defined in `src/skills.metta`; the `shell` tool is backed by `src/skills.pl`, th
 Execute a shell command and return what it prints to standard output and standard error.
 
 ### Parameters
-- `command` — the command line. `shell/2` passes it unchanged to `sh -c` and does not check for apostrophes, although the tool's line in the prompt asks the LLM to leave them out.
+- `command` — the command line. `shell/2` passes it unchanged to `sh -c` and does not check it for apostrophes.
 
 ### Returns
 The captured stdout and stderr of the command as one string, or `timeout_error` if the command is still running after 5 seconds. A failing command still returns its output, and the exit status is not reported.
@@ -102,7 +102,7 @@ A verification string read back from disk after the write:
 
 ### Purpose
 Create or overwrite a file with base64-decoded content — byte-exact for content containing
-quotes, backslashes or newlines, which the plain-text argument path can mangle.
+quotes, backslashes or newlines.
 
 ### Parameters
 - `path` — target filesystem path.

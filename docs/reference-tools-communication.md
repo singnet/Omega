@@ -39,7 +39,7 @@ No meaningful return value. Used for its side effect.
 ```
 
 ### Purpose
-Return the latest message received on the active channel since the previous call. `receive` is not a tool. It is not in the tool list or among the names the parser accepts, so the LLM cannot call it as a tool, only from inside a `metta` expression. `src/loop.metta` calls it once per loop iteration.
+Return the latest message received on the active channel since the previous call. `receive` is not a tool. It is not registered with `add-skill`, so it is not in the tool list, and `_validate_response` in `src/providers.py` rejects a call with that name as `Unknown tool`. The LLM can reach it only from inside a `metta` expression. `src/loop.metta` calls it once per loop iteration.
 
 ### Parameters
 None.

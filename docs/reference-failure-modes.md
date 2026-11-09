@@ -85,12 +85,14 @@ Some rules are implemented but behave in unexpected ways. Know these before writ
 
 ## 4. Orchestration failures
 
-Measured across 4,500+ operational cycles, the top error categories are:
+A tool call fails in these cases:
 
-1. **Tool calls not executed** (`NOTHING_WAS_DONE`) — the LLM produced output that was not a valid tool call.
-2. **Parsing failures in replies with several tool calls.**
+1. The reply contains no tool calls (`List of tool calls is empty`).
+2. The call names a tool that is not registered (`Unknown tool`).
+3. The call lacks a parameter or passes a non-string value (`Call tool parameter is not set`, `Call tool parameter is not a string`).
+4. The provider raises an exception or times out, and the loop gets an empty response.
 
-These are **the most frequent failure mode in the entire system**, not occasional glitches.
+The loop checks calls in `_validate_response` in `src/providers.py`.
 
 ### Context-switching corruption
 
@@ -98,7 +100,7 @@ When a new human message arrives during autonomous work, the LLM attempts to sim
 
 ### Bandwidth constraint
 
-The prompt asks for at most 5 tool calls per cycle, so complex reasoning chains require 10–20 cycles. Budget accordingly.
+Each cycle runs the tool calls of one LLM reply, and no code limits their number. Long reasoning chains still span many cycles, so budget accordingly.
 
 ### State fragility
 

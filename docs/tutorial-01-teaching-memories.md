@@ -28,7 +28,7 @@ Message the agent:
 remember that the morning standup is at 10am
 ```
 
-The LLM will reply with a line such as `remember morning standup at 10am`, which the parser turns into `(remember "morning standup at 10am")`. In the logs, the `RESPONSE:` lines show the call and its result `REMEMBER-SUCCESS`.
+The LLM will call the `remember` tool with the parameter `content` set to, for example, `morning standup at 10am`. In the logs, the second `RESPONSE:` line shows the call as `(<id> (remember "morning standup at 10am"))`, and the `COMMAND_RETURN:` line shows the result `REMEMBER-SUCCESS`.
 
 ## 2. Recall by meaning
 

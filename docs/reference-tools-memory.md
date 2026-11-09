@@ -1,8 +1,8 @@
 # Reference — Memory Tools
 
-`remember`, `query`, and `episodes` are defined in `src/memory.metta`, `pin` in `src/skills.metta`. All four are listed in `getStaticSkills` in `src/skills.metta`.
+`remember`, `query`, and `episodes` are defined in `src/memory.metta`, `pin` in `src/skills.metta`. All four are registered with `add-skill` in `src/skills.metta`.
 
-Each of the four tools takes one string argument. The LLM writes it after the tool name without quotes, for example `remember user prefers dark mode`, and the parser turns the line into `(remember "user prefers dark mode")`. The prompt asks the LLM not to use variables. A `$x` in the line arrives as plain text, unless the argument is a single line that starts and ends with a double quote, as in `remember "a" $x "b"`. The parser keeps such an argument as written, and `sread` then reads the `$x` outside the quotes as a variable.
+Each of the four tools takes one string parameter, which the model sets as a separate field of the tool call: `content` for `remember` and `query`, `timestamp` for `episodes`, `message` for `pin`. The prompt asks the LLM not to use variables.
 
 ---
 
