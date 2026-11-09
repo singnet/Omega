@@ -5,41 +5,41 @@
 (skill research-step "Mark research step done" (research_name step result next_action))
 (skill research-checkpoint "Pause for user approval" (researchname message))
 (skill research-complete "Finish research and unload workflow" (researchname))
-(skill load-research-dynamic-instructions " Load a generated file into active context" (researchname_in_quotes filename_in_quotes))
+(skill load-research-dynamic-skills " Load a generated file into active context" (researchname_in_quotes filename_in_quotes))
 (skill researchDir "Get research directory" ())
 
 ;; Actual skills implementation
 
 ;; Build a safe path or empty string if validation fails
-(= (safe-instruction-path $project_dir $research-name $filename)
+(= (safe-skill-path $project_dir $research-name $filename)
    ; TODO: calling Python validation code is replaced by stub.
    ; Can be returned back when https://github.com/trueagi-io/PeTTa/issues/196 is
    ; fixed.
    ;(py-call (utils.safe_path $project_dir $research-name $filename)))
    (joinPath ($project_dir $research-name $filename)))
 
-(= (load-research-dynamic-instructions  $research-name $filename)
-    (let $d (researchDir) (load-dynamic-instructions $d $research-name $filename)))
+(= (load-research-dynamic-skills  $research-name $filename)
+    (let $d (researchDir) (load-dynamic-skills $d $research-name $filename)))
 
 ; loads instructions created during workflow
-(= (load-dynamic-instructions $project_dir $research-name $filename)
+(= (load-dynamic-skills $project_dir $research-name $filename)
    (if (not (valid-file-or-folder-name $research-name))
        (send (strings-concat ("ERROR: invalid name: " $research-name)))
        (if (not (valid-file-or-folder-name $filename))
            (send (strings-concat ("ERROR: invalid filename: " $filename)))
-           (let $path (safe-instruction-path $project_dir $research-name $filename)
+           (let $path (safe-skill-path $project_dir $research-name $filename)
                 (if (== $path "")
                     (send (strings-concat ("ERROR: path traversal rejected for " $research-name "/" $filename)))
-                    (load-dynamic-instructions-safe $path $research-name $filename))))))
+                    (load-dynamic-skills-safe $path $research-name $filename))))))
 
 ; actually loads the file (internal). Only called after validation.
-(= (load-dynamic-instructions-safe $path $research-name $filename)
+(= (load-dynamic-skills-safe $path $research-name $filename)
    (if (not (exists-file $path))
        (send (strings-concat ("ERROR: file not found: " $path)))
        (let $content (read-file $path)
             (progn
               (log INFO "workflow-research" (strings-concat "Loading file into prompt: " $path))
-              (workflow-change-active-instructions $content)
+              (workflow-change-active-skills $content)
               (send (strings-concat ("Loaded " $filename " for " $research-name ". Following instructions.")))
              ))))
 
@@ -90,7 +90,7 @@
 ;; Unload research skill
 (= (research-complete $research-name)
     (if (valid-file-or-folder-name $research-name)
-        (progn (workflow-unload-instructions)
+        (progn (workflow-unload-skills)
               (send (strings-concat ("Research complete: " $research-name
                              "\nResults in " (researchDir) "/" $research-name "/"
                              "\nWorkflow unloaded from context.")))
