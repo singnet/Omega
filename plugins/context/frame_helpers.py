@@ -48,6 +48,19 @@ def _unquote_history_string(value):
     return "".join(out)
 
 
+def _decode_history_text(value):
+    """Decode one MeTTa/JSON string value when it is quoted."""
+    text = normalize_string(value)
+    if len(text) >= 2 and text[0] == '"' and text[-1] == '"':
+        try:
+            decoded = json.loads(text)
+            if isinstance(decoded, str):
+                return decoded
+        except (TypeError, ValueError):
+            pass
+    return _unquote_history_string(text)
+
+
 def cfv2_history_payload(value, limit=900):
     """Normalize, cap, and JSON-quote a payload for safe MeTTa event storage."""
     text = normalize_string(value).strip()
@@ -120,6 +133,129 @@ def cfv2_compact_history(events_repr, limit=2400):
         used += len(line) + separator
     selected.reverse()
     return "\n".join(selected)
+
+
+def _summary_parts(summary):
+    """Read the stable labeled sections of a prior pruning rollup."""
+    text = _decode_history_text(summary)
+    parts = {"directive": "", "decisions": [], "outcomes": []}
+    labels = {
+        "Original directive: ": "directive",
+        "Key decisions: ": "decisions",
+        "Outcomes: ": "outcomes",
+    }
+    for line in text.splitlines():
+        for prefix, name in labels.items():
+            if line.startswith(prefix):
+                value = line[len(prefix):].strip()
+                if name == "directive":
+                    parts[name] = value
+                elif value:
+                    parts[name] = [item.strip() for item in value.split(" | ") if item.strip()]
+                break
+    return parts
+
+
+def _clip_summary(value, limit):
+    value = re.sub(r"\s+", " ", str(value)).strip()
+    if len(value) <= limit:
+        return value
+    if limit <= 3:
+        return value[:limit]
+    excerpt = value[:limit - 3].rsplit(" ", 1)[0].rstrip()
+    return (excerpt or value[:limit - 3]) + "..."
+
+
+def cfv2_update_pruning_summary(
+    previous_summary_repr,
+    pruned_events_repr,
+    omitted_from,
+    omitted_to,
+    omitted_count,
+    summary_limit=1200,
+):
+    """Roll pruned events into a bounded, useful per-frame summary."""
+    limit = max(0, int(summary_limit))
+    if limit == 0:
+        return ""
+
+    previous = _summary_parts(previous_summary_repr)
+    directive = previous["directive"]
+    decisions = previous["decisions"]
+    outcomes = previous["outcomes"]
+    events = _balanced_exprs(normalize_string(pruned_events_repr), "FrameEvent")
+    for event in events:
+        fields = _fields(event, "category", "kind", "payload")
+        category = _unquote_history_string(fields.get("category", ""))
+        kind = _unquote_history_string(fields.get("kind", ""))
+        payload = fields.get("payload", "")
+        if len(payload) >= 2 and payload[0] == '"' and payload[-1] == '"':
+            try:
+                payload = json.loads(payload)
+            except (TypeError, ValueError):
+                payload = _unquote_history_string(payload)
+        else:
+            payload = _unquote_history_string(payload)
+        payload = re.sub(r"\s+", " ", payload).strip()
+        if category == "Directive" and kind == "UserDirective" and not directive:
+            directive = payload
+        elif category == "StateChange" or (category == "Directive" and kind == "AgentDirective"):
+            decisions.append(f"{kind}: {payload}" if kind else payload)
+        elif category in ("Observation", "Execution") or (
+            category == "Lifecycle" and kind in ("FrameCompleted", "FrameFailed")
+        ):
+            outcomes.append(f"{kind}: {payload}" if kind else payload)
+
+    # Keep the original directive and the most recent distinct decisions and
+    # outcomes. Their fields are clipped below, so this stays bounded over time.
+    decisions = list(dict.fromkeys(item for item in decisions if item))[-3:]
+    outcomes = list(dict.fromkeys(item for item in outcomes if item))[-3:]
+    notice = (
+        f"PRUNED HISTORY: {int(omitted_count)} events omitted from "
+        f"{_decode_history_text(omitted_from)} through {_decode_history_text(omitted_to)}. "
+        f'Retrieve details with episodes "{_decode_history_text(omitted_from)}" '
+        "(timestamp format YYYY-MM-DD HH:MM:SS)."
+    )
+    labels = ["Original directive: ", "Key decisions: ", "Outcomes: "]
+    separators = 3  # three line breaks
+    available = max(0, limit - len(notice) - separators - sum(map(len, labels)))
+    budgets = [int(available * 0.40), int(available * 0.32), 0]
+    budgets[2] = available - budgets[0] - budgets[1]
+    directive_text = _clip_summary(directive, budgets[0]) if directive else "(not recorded)"
+    decision_text = " | ".join(decisions) or "(none recorded)"
+    outcome_text = " | ".join(outcomes) or "(none recorded)"
+    rendered = "\n".join((
+        notice,
+        labels[0] + directive_text,
+        labels[1] + _clip_summary(decision_text, budgets[1]),
+        labels[2] + _clip_summary(outcome_text, budgets[2]),
+    ))
+    if len(rendered) <= limit:
+        return rendered
+    return _clip_summary(rendered, limit)
+
+
+def cfv2_compact_frame_history(events_repr, pruning_summary_repr, limit=2400):
+    """Render the pruning notice/rollup and recent events within one cap."""
+    limit = max(0, int(limit))
+    summary = _decode_history_text(pruning_summary_repr).strip()
+    if not summary:
+        return cfv2_compact_history(events_repr, limit)
+    if len(summary) >= limit:
+        return _clip_summary(summary, limit)
+    recent = cfv2_compact_history(events_repr, limit - len(summary) - 1)
+    return summary if not recent else summary + "\n" + recent
+
+
+def cfv2_pruned_audit_entry(event_repr):
+    """Format a pruned event as a timestamped line readable by `episodes`."""
+    event = _balanced_exprs(normalize_string(event_repr), "FrameEvent")
+    if not event:
+        return ""
+    timestamp = _unquote_history_string(_fields(event[0], "timestamp").get("timestamp", ""))
+    if not timestamp:
+        return ""
+    return f'({json.dumps(timestamp)}\nPRUNED_FRAME_EVENT: {event[0]}\n)'
 
 
 def cfv2_now() -> str:

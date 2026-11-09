@@ -32,6 +32,7 @@
 
 (= (cfv2PayloadLimit) 900)
 (= (cfv2HistorySummaryLimit) 2400)
+(= (cfv2PrunedHistorySummaryLimit) 1200)
 (= (cfv2LastResultsLimit) 1200)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -67,6 +68,26 @@
       (frame_helpers.cfv2_compact_history
          (repr $events)
          (cfv2HistorySummaryLimit))))
+
+(= (cfv2-compact-frame-history $events $pruningSummary)
+   (py-call
+      (frame_helpers.cfv2_compact_frame_history
+         (repr $events)
+         (repr $pruningSummary)
+         (cfv2HistorySummaryLimit))))
+
+(= (cfv2-update-pruning-summary $previous $pruned $from $to $count)
+   (py-call
+      (frame_helpers.cfv2_update_pruning_summary
+         (repr $previous)
+         (repr $pruned)
+         (repr $from)
+         (repr $to)
+         $count
+         (cfv2PrunedHistorySummaryLimit))))
+
+(= (cfv2-pruned-audit-entry $event)
+   (py-call (frame_helpers.cfv2_pruned_audit_entry (repr $event))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Defaults
@@ -282,6 +303,8 @@
       (change-state! &cfv2-goalspace ())
       (change-state! &cfv2-subframespace ())
       (change-state! &cfv2-frame-event-space ())
+      (change-state! &cfv2-frame-prune-space ())
+      (configure maxFrameHistoryEvents 100)
 
       ;; Relational states used in frame composition
       (change-state! &cfv2-relational-space ())
@@ -410,12 +433,94 @@
                     (payload (cfv2-history-payload $payload))
                     (timestamp (cfv2-now))))
           ($events (append (get-state &cfv2-frame-event-space) ($event))))
-      (change-state! &cfv2-frame-event-space $events)))
+      (progn
+         (change-state! &cfv2-frame-event-space $events)
+         (cfv2-prune-frame-events $frameID))))
+
+(= (cfv2-list-length ()) 0)
+(= (cfv2-list-length (cons $_ $tail))
+   (+ 1 (cfv2-list-length $tail)))
+
+(= (cfv2-prune-frame-events $frameID)
+   (let* (($frameEvents (cfv2-get-frame-events $frameID ()))
+          ($eventCount (cfv2-list-length $frameEvents))
+          ($limit (max 1 (maxFrameHistoryEvents)))
+          ($removeCount (max 0 (- $eventCount $limit))))
+      (if (== $removeCount 0)
+          NO-PRUNING-NEEDED
+          (let* (($pruned (take $removeCount $frameEvents))
+                 ($from (cfv2-event-timestamp (car-atom $pruned)))
+                 ($to (cfv2-event-timestamp (car-atom (cfv2-reverse-events $pruned))))
+                 ($oldRecord (cfv2-get-frame-prune-record $frameID))
+                 ($oldSummary (cfv2-prune-summary $oldRecord))
+                 ($oldFrom (cfv2-prune-from $oldRecord))
+                 ($oldCount (cfv2-prune-count $oldRecord))
+                 ($rangeFrom (if (== $oldFrom "") $from $oldFrom))
+                 ($rangeTo $to)
+                 ($totalCount (+ $oldCount $removeCount))
+                 ($summary (cfv2-update-pruning-summary
+                              $oldSummary $pruned $rangeFrom $rangeTo $totalCount))
+                 ($remaining (cfv2-remove-oldest-frame-events
+                               (get-state &cfv2-frame-event-space)
+                               $frameID $removeCount)))
+             (progn
+                (cfv2-archive-pruned-events $pruned)
+                (change-state! &cfv2-frame-event-space $remaining)
+                (cfv2-set-frame-prune-record
+                   $frameID $summary $rangeFrom $rangeTo $totalCount)
+                (if (== (get-state &cfv2-current-frame-id) $frameID)
+                    (cfv2-refresh-current-history-summary)
+                    ())
+                HISTORY-PRUNED)))))
+
+(= (cfv2-reverse-events ()) ())
+(= (cfv2-reverse-events (cons $head $tail))
+   (append (cfv2-reverse-events $tail) ($head)))
+
+(= (cfv2-remove-oldest-frame-events () $frameID $removeCount) ())
+(= (cfv2-remove-oldest-frame-events (cons $event $tail) $frameID $removeCount)
+   (if (and (> $removeCount 0)
+            (cfv2-check-frame-event $event $frameID ()))
+       (cfv2-remove-oldest-frame-events $tail $frameID (- $removeCount 1))
+       (cons $event (cfv2-remove-oldest-frame-events $tail $frameID $removeCount))))
+
+(= (cfv2-archive-pruned-events ()) ARCHIVE-COMPLETE)
+(= (cfv2-archive-pruned-events (cons $event $tail))
+   (progn
+      (append-file-raw
+         (library Omega ./memory/history.metta)
+         (cfv2-pruned-audit-entry $event))
+      (cfv2-archive-pruned-events $tail)))
+
+(= (cfv2-get-frame-prune-record $frameID)
+   (cfv2-get-frame-prune-record-from
+      (filter-atom (get-state &cfv2-frame-prune-space) $record
+         (cfv2-check-prune-record $record $frameID))
+      $frameID))
+(= (cfv2-get-frame-prune-record-from
+      (cons (FramePruneSummary $frameID $summary $from $to $count) $_) $frameID)
+   (FramePruneSummary $frameID $summary $from $to $count))
+(= (cfv2-get-frame-prune-record-from () $frameID)
+   (FramePruneSummary $frameID "" "" "" 0))
+(= (cfv2-check-prune-record
+      (FramePruneSummary $recordFrameID $summary $from $to $count) $frameID)
+   (== $recordFrameID $frameID))
+(= (cfv2-prune-summary (FramePruneSummary $frameID $summary $from $to $count)) $summary)
+(= (cfv2-prune-from (FramePruneSummary $frameID $summary $from $to $count)) $from)
+(= (cfv2-prune-count (FramePruneSummary $frameID $summary $from $to $count)) $count)
+
+(= (cfv2-set-frame-prune-record $frameID $summary $from $to $count)
+   (let $records (filter-atom (get-state &cfv2-frame-prune-space) $record
+                     (not (cfv2-check-prune-record $record $frameID)))
+      (change-state! &cfv2-frame-prune-space
+         (append $records ((FramePruneSummary $frameID $summary $from $to $count))))))
 
 (= (cfv2-refresh-current-history-summary)
    (change-state! &cfv2-current-history-summary
-      (cfv2-compact-history
-         (cfv2-get-frame-events (get-state &cfv2-current-frame-id) ()))))
+      (cfv2-compact-frame-history
+         (cfv2-get-frame-events (get-state &cfv2-current-frame-id) ())
+         (cfv2-prune-summary
+            (cfv2-get-frame-prune-record (get-state &cfv2-current-frame-id))))))
 
 (= (cfv2-update-current-history-summary $kind $summary)
    (let* (($frameID (get-state &cfv2-current-frame-id))
@@ -509,7 +614,10 @@
           ($subFrameSpaceID (cfv2-make-id &SubFrameSpace))
           ($now (cfv2-now))
           ($_ (cfv2-add-frame-event $frameID (cfv2-history-event-type $source) $description))
-          ($historySummary (cfv2-compact-history (cfv2-get-frame-events $frameID ())))
+          ($historySummary
+             (cfv2-compact-frame-history
+                (cfv2-get-frame-events $frameID ())
+                (cfv2-prune-summary (cfv2-get-frame-prune-record $frameID))))
           ($deliverables $description)
           ($subframe (cfv2-create-sub-frame $frameID $subFrameSpaceID $goalSpaceID $description $source $priority $deliverables))
           ($compFrame (Frame (frameID $frameID) (parent-frameID ()) (source $source) (priority $priority) (status Active) (frame-mode $mode) (deliverables ($deliverables)) (results ())))
@@ -686,6 +794,7 @@
                (change-state! &cfv2-current-updated-at $updatedAt)
                (change-state! &cfv2-current-completed-timestamp $completedTimestamp)
                (change-state! &cfv2-current-completed-summary $completedSummary)
+               (cfv2-refresh-current-history-summary)
 
                ((CurrentFrame (cfv2-current-frame))
                   (Relation (collapse $relation)))) ;; return the frame state after loading and its relation
