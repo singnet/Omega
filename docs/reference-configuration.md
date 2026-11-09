@@ -72,6 +72,17 @@ Local model loading still happens before indexing and can delay cold startup.
 | `MM_BOT_TOKEN` | Bot auth token. |
 | `SL_BOT_TOKEN` | Slack bot token (`xoxb-...`). |
 
+## Workflow plugin (`plugins/workflow/workflow.metta`)
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `pluginWorkflowCoreSkillsDir` | `<project_root>/plugins/workflow/core-skills` | Core skills shipped and updated with Omega. |
+| `pluginWorkflowCustomSkillsDir` | `<memoryDirectory>/workflow/custom-skills` | Persistent custom skills; override core skills with the same name. Created on startup if missing. |
+| `pluginWorkflowMemoryDir` | `<memoryDirectory>/workflow/space` | Workflow working files. Created on startup if missing. |
+
+See the [workflow plugin guide](../plugins/workflow/README.md) for file layout,
+loading commands, and configuration migration.
+
 ## Command-line overrides
 
 Any `configure`d parameter can be overridden at startup:

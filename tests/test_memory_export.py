@@ -185,7 +185,7 @@ def test_memory_store_receives_explicit_omega_storage_configuration(
     chroma_path = tmp_path / "custom-chroma"
     settings = {
         "embeddingprovider": "Local",
-        "pluginWorkflowCustomInstructionsDir": str(tmp_path / "custom-skills"),
+        "pluginWorkflowCustomSkillsDir": str(tmp_path / "custom-skills"),
         "pluginWorkflowMemoryDir": str(tmp_path / "custom-space"),
     }
     monkeypatch.setattr(handler, "_resolve_memory_dir", lambda: memory_dir)
@@ -249,7 +249,7 @@ def configure(monkeypatch, handler, tmp_path, provider, config_model="",
     settings = {
         "embeddingprovider": provider,
         "embeddingModel": config_model,
-        "pluginWorkflowCustomInstructionsDir": str(tmp_path / "skills"),
+        "pluginWorkflowCustomSkillsDir": str(tmp_path / "skills"),
         "pluginWorkflowMemoryDir": str(tmp_path / "space"),
     }
     monkeypatch.setattr(
@@ -405,7 +405,7 @@ def test_storage_paths_are_resolved_from_omega_config(
     configured = {
         "memoryDirectory": str(tmp_path / "configured-memory"),
         "chromaDbPath": str(tmp_path / "configured-chroma"),
-        "pluginWorkflowCustomInstructionsDir": str(tmp_path / "configured-skills"),
+        "pluginWorkflowCustomSkillsDir": str(tmp_path / "configured-skills"),
         "pluginWorkflowMemoryDir": str(tmp_path / "configured-space"),
     }
     monkeypatch.delenv("CHROMA_DB_PATH", raising=False)
@@ -418,10 +418,10 @@ def test_storage_paths_are_resolved_from_omega_config(
     assert handler._resolve_memory_dir() == tmp_path / "configured-memory"
     assert handler._resolve_chroma_path() == tmp_path / "configured-chroma"
     assert handler._resolve_config_path(
-        "pluginWorkflowCustomInstructionsDir"
+        "pluginWorkflowCustomSkillsDir", tmp_path / "default-skills"
     ) == tmp_path / "configured-skills"
     assert handler._resolve_config_path(
-        "pluginWorkflowMemoryDir"
+        "pluginWorkflowMemoryDir", tmp_path / "default-space"
     ) == tmp_path / "configured-space"
 
 

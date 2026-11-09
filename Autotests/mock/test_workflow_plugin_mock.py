@@ -2,14 +2,14 @@
 Mock tests for the workflow plugin.
 
 The workflow plugin lets skills be added via MarkDown workflows under
-plugins/workflow/instructions/<name>/ (SKILL.md + optional skill.metta). These
+plugins/workflow/core-skills/<name>/ (SKILL.md + optional skill.metta). These
 tests drive shipped workflows with a mocked LLM, so only the plugin machinery
 is exercised: the LLM decision is scripted, the skills run for real inside the
 agent and their output is observed on the test comm channel.
 
   - load + skill: load test-workflow, then run its workflow-only skill
                   test-skill (defined in
-                  plugins/workflow/instructions/test-workflow/skill.metta).
+                  plugins/workflow/core-skills/test-workflow/skill.metta).
                   test-skill is callable only after the workflow is loaded, so
                   its message reaching the channel proves a MarkDown-defined
                   skill is registered and executed.
@@ -74,7 +74,7 @@ class TestWorkflowPlugin:
                 "instructions.",
             )
             llm.set_answer(prompt1,
-                [("workflow-load-instructions", { "workflow_name": f"{WORKFLOW}" })]
+                [("workflow-load-skills", { "workflow_name": f"{WORKFLOW}" })]
             )
             if not comm.send_message(prompt1):
                 c.fail("comm-1", "could not deliver turn 1 prompt within 60s")
@@ -92,7 +92,7 @@ class TestWorkflowPlugin:
             llm.set_answer(
                 prompt2,
                 [(f"{WORKFLOW_SKILL}", { "message": f"{DEMO_MESSAGE}" }),
-                ("workflow-unload-instructions", {})]
+                ("workflow-unload-skills", {})]
             )
             if not comm.send_message(prompt2):
                 c.fail("comm-2", "could not deliver turn 2 prompt within 60s")
@@ -119,7 +119,7 @@ class TestWorkflowPlugin:
 
             c.step("turn 1: load the test-workflow")
             prompt1 = make_prompt(c.run_id, "Load the test-workflow instructions.")
-            llm.set_answer(prompt1, [("workflow-load-instructions", { "workflow_name": f"{WORKFLOW}" })])
+            llm.set_answer(prompt1, [("workflow-load-skills", { "workflow_name": f"{WORKFLOW}" })])
             if not comm.send_message(prompt1):
                 c.fail("comm-1", "could not deliver turn 1 prompt within 60s")
             if _recv_contains(comm, f"Loaded workflow: {WORKFLOW}", timeout=60) is None:
@@ -130,12 +130,12 @@ class TestWorkflowPlugin:
             unload_id = c.run_id + 1
             time.sleep(5)
             prompt2 = make_prompt(unload_id, "The workflow is done, unload it now.")
-            llm.set_answer(prompt2, [("workflow-unload-instructions", {})])
+            llm.set_answer(prompt2, [("workflow-unload-skills", {})])
             if not comm.send_message(prompt2):
                 c.fail("comm-2", "could not deliver turn 2 prompt within 60s")
             time.sleep(12)   # let the unload turn complete
             _flush(comm)     # drop anything emitted by the unload turn
-            c.ok("unload requested", "workflow-unload-instructions sent")
+            c.ok("unload requested", "workflow-unload-skills sent")
 
             c.step("turn 3: the workflow-only skill must no longer run")
             gone_id = c.run_id + 2
@@ -164,7 +164,7 @@ class TestWorkflowPlugin:
 
             c.step("turn 1: load research-workflow")
             prompt1 = make_prompt(c.run_id, f"Load the {RESEARCH_WORKFLOW} instructions.")
-            llm.set_answer(prompt1, [("workflow-load-instructions", { "workflow_name": f"{RESEARCH_WORKFLOW}" })])
+            llm.set_answer(prompt1, [("workflow-load-skills", { "workflow_name": f"{RESEARCH_WORKFLOW}" })])
             if not comm.send_message(prompt1):
                 c.fail("comm-1", "could not deliver turn 1 prompt within 60s")
             if _recv_contains(comm, f"Loaded workflow: {RESEARCH_WORKFLOW}", timeout=60) is None:

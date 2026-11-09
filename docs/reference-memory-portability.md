@@ -81,11 +81,13 @@ space/...
 ```
 
 History is the conversation trace. LTM is logical user-memory records from
-ChromaDB. Skills are custom workflows from `pluginWorkflowCustomInstructionsDir`
+ChromaDB. Skills are custom workflows from `pluginWorkflowCustomSkillsDir`
+(default: `<memoryDirectory>/workflow/custom-skills`)
 together with workflow working files from `pluginWorkflowMemoryDir`; only
 regular files are exported, symbolic links and empty directories are skipped.
-Built-in workflows, prompts, credentials, logs, and other operational state are
-not exported. SHA-256 detects corruption, not archive authorship.
+Core skills from `plugins/workflow/core-skills/`, prompts, credentials, logs,
+and other operational state are not exported. SHA-256 detects corruption, not
+archive authorship.
 
 ## Import
 
