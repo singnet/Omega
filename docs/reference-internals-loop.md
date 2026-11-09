@@ -54,7 +54,7 @@ When `&loops` hits zero and no new message has arrived, the loop skips the LLM c
 
 Errors are reported back into `&error` at two levels:
 
-- **Response failure** — the provider returned an error, the response has no tool calls (`List of tool calls is empty`), or the converted reply could not be parsed. No call runs, and no `assistant` or `tool` messages are added.
+- **Response failure** — the provider returned an error, the response has no tool calls (`List of tool calls is empty`), or the converted reply could not be parsed. No call runs, and no `assistant` or `tool` messages are added. An exception that leaves the provider `chat` is different: the reply is empty and has no error, so `&error` stays empty and the turn runs no calls.
 - **Tool call failure** — a call to an unknown tool (`Unknown tool`), a call with a missing or non-string parameter, or a call whose evaluation raised an error. The other calls of the reply still run.
 
 For a failed call, `HandleError` binds the string `ALERT_FAILED` followed by the written `(Error ...)` expression to its second argument, and the loop uses that string as the result. This result goes to the model in the `tool` message of that call. Errors are also appended to the episodic trace as `ERROR_FEEDBACK:`, so the agent sees them and can self-correct.

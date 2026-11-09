@@ -86,7 +86,7 @@ The LLM calls the tool `word-count` with the parameter `text` set to `the quick 
 - Every element of the argument tuple is a separate string parameter, and the LLM must fill all of them. The element name is the parameter name in the schema, so choose a name that tells the LLM what to pass, such as `research_name` or `filename`.
 - Arguments arrive as plain strings. A `$x`, brackets or quotes inside an argument are text, not MeTTa syntax.
 - The loop runs the result through `helper.normalize_string`, puts `SUCCESS, RETURN: ` in front of it and cuts it to the last `maxFeedback` characters before sending it to the LLM, so return a value that is safe to render as text.
-- If your tool may fail, wrap error-producing subcalls in `catch` or let them fall through to the loop's `HandleError`.
+- If your tool may fail, wrap error-producing subcalls in `catch` or let an exception reach the loop, which turns it into an `ALERT_FAILED` result.
 
 ## Verification
 

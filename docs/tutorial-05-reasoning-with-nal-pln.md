@@ -129,7 +129,7 @@ is pingu a bird?
 A well-behaved response:
 
 1. Atomizes the two premises.
-2. Emits a `metta (|~ ...)` tool call with those premises. The expression arrives in the `sexpression` parameter as one string, even when it spans several lines.
+2. Emits a `metta (|~ ...)` tool call with those premises. The expression arrives in the `sexpression` parameter as one string.
 3. Reads the `(stv ...)` of the conclusion.
 4. Checks the action threshold (ACT / HYPOTHESIZE / IGNORE).
 5. `send`s an answer that includes the derived confidence and the rule used.

@@ -143,16 +143,16 @@ Each iteration of `(omega $k)` in `src/loop.metta` performs:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ 1. receive()        pull latest message from channel        │
-│ 2. getContext()     PROMPT + SKILLS rules + extensions +    │
+│ 1. getContext()     PROMPT + SKILLS rules + extensions +    │
 │                     HISTORY + TIME                          │
+│ 2. receive()        pull latest message from channel        │
 │ 3. LLM call         request with tool schemas to the        │
 │                     provider (Anthropic, OpenAI, ASICloud,  │
 │                     ASI:One, OpenRouter, ...)               │
 │ 4. llmResponseToSExpr + sread                               │
 │                     tool calls into s-exprs                 │
 │ 5. eval each call   (remember ...), (metta ...), ...,       │
-│                     result sent as a `tool` message         │
+│                     result sent as a tool message           │
 │ 6. addToHistory     append human msg + tool calls +         │
 │                     any errors                              │
 │ 7. sleep            sleepInterval seconds                   │

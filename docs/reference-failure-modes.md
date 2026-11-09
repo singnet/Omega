@@ -85,15 +85,15 @@ Some rules are implemented but behave in unexpected ways. Know these before writ
 
 ## 4. Orchestration failures
 
-A turn fails in these cases:
+A reply or a single call fails in these cases:
 
 1. The reply contains no tool calls (`List of tool calls is empty`).
 2. The call names a tool that is not registered (`Unknown tool`).
 3. The call lacks a parameter or passes a non-string value (`Call tool parameter is not set`, `Call tool parameter is not a string`).
 4. The arguments of the call are not valid JSON or not a JSON object (`Invalid tool arguments from model`, `Tool arguments must be a JSON object`).
-5. The request to the provider fails. An exception inside `AIProvider.chat` in `providers/lib_llm_ext.py` becomes a reply with the error text, and an exception that leaves `chat` makes `llmProviderChat` in `src/providers.py` return an empty reply.
+5. The request to the provider fails. An exception inside `AIProvider.chat` in `providers/lib_llm_ext.py` becomes a reply with the error text. A request that times out becomes a `send` call with a notice, and a second timeout in a row becomes the error `Timeout out more than once`. An exception that leaves `chat` makes `llmProviderChat` in `src/providers.py` return an empty reply, and the turn then runs no calls and records no error.
 
-`_validate_response` in `src/providers.py` checks cases 1 to 3.
+`_validate_response` in `src/providers.py` checks cases 1 to 3. In cases 2 to 4 only that call fails, and the other calls of the reply still run. In cases 1 and 5 the whole turn fails.
 
 ### Context-switching corruption
 

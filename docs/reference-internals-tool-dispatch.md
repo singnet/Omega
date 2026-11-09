@@ -24,7 +24,7 @@ The model answers with tool calls, each holding an id, a tool name, and a value 
 - A call without a parameter from the schema gets `Call tool parameter is not set: ...`.
 - A parameter whose value is not a string gets `Call tool parameter is not a string: ...`.
 
-`llmResponseToSExpr` turns the checked response into text. A response error becomes `(Error () "<text>")`. Otherwise the text is a list of `(<id> (<name> "arg1" "arg2" ...))` pairs with the arguments in schema order. Only `"` and `\` are escaped in the strings, so `$x`, parentheses, and line breaks in an argument are plain text. Arguments that are not in the schema are dropped. A call with an error becomes `(<id> (Error (<name> ...) "<text>"))`.
+`llmResponseToSExpr` turns the checked response into text. A response error becomes `(Error () "<text>")`. Otherwise the text is a list of `(<id> (<name> "arg1" "arg2" ...))` pairs with the arguments in schema order. Only `"` and `\` are escaped in the strings, so `$x` and parentheses in an argument are plain text. Arguments that are not in the schema are dropped. A call with an error becomes `(<id> (Error (<name> ...) "<text>"))`.
 
 For example, the calls `send` with `content` set to `Checking the disk` and `shell` with `cmd` set to `df -h /tmp` become `((id1 (send "Checking the disk")) (id2 (shell "df -h /tmp")))`.
 
