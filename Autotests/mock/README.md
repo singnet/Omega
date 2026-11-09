@@ -302,10 +302,10 @@ Four-step pipeline: search NY weather → write `w.txt` with the forecast → wr
 
 ### 25. test_last_skill_results_visible_next_turn_mock.py
 
-Verifies the one-iteration carry of last tool call results. Output of a tool call in turn N is exposed to the LLM at turn N+1 via this prompt section. The test does not require the agent to "behave intelligently"; it confirms the carry exists.
+Verifies the one-iteration carry of last tool call results. Output of a tool call in turn N is exposed to the LLM at turn N+1 in the `REQUEST:` payload. The test does not require the agent to "behave intelligently"; it confirms the carry exists.
 
 - Mock answer (turn 1): `(metta "(+ 1 1)")`.
-- Checks: the docker log line `REQUEST:` for the next iteration contains a last tool call section that reflects the metta output.
+- Checks: the docker log line `REQUEST:` for the next iteration carries the `[TOOL CALL]` marker and the sentinel from the metta output.
 
 ### 26. test_memory_history_byte_window_truncation_mock.py
 
@@ -372,7 +372,7 @@ Delegation is asynchronous, so these tests assert two stages: the acceptance env
 
 Two phases:
 
-- Phase 1 - mock answer: `(send "Delegating task <run_id>") (delegate-task-to-openclaw-agent "Reply with exactly: unused")`. Checks: the `send` argument does not swallow the following tool call (parser regression guard).
+- Phase 1 - mock answer: `(send "Delegating task <run_id>") (delegate-task-to-openclaw-agent "Reply with exactly: unused")`. Checks: the `send` argument does not contain the following tool call, which arrives as a separate call.
 - Phase 2 - mock answer: `(metta (write-file "<out>.json" (delegate-task-to-openclaw-agent "Reply with exactly: PONG-<run_id>"))) (send "Delegation saved <run_id>")`. Checks: the acknowledging `send` lands within 30s; the saved envelope has `status: "accepted"`, a non-empty `id`, and a `task` echo containing `PONG-<run_id>`; an `id=<task id> status=ok` record later reaches history; that line sits inside a well-formed `("YYYY-MM-DD HH:MM:SS"` block, so the `episodes` tool can still parse the file.
 
   The wait keys on the task id rather than on the `PONG-<run_id>` marker alone: history also stores the agent's own response text, which quotes the `delegate-task-to-openclaw-agent "…PONG-<run_id>"` tool call verbatim, so the marker is present immediately and would satisfy a marker-only wait before any reply exists.

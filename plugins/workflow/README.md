@@ -59,7 +59,7 @@ added as MeTTa functions.
 
 For example:
 ```metta
-(skill test-skill "Test skill to demonstrate workflow by sending message to the user" (message_in_quotes))
+(skill test-skill "Test skill to demonstrate workflow by sending message to the user" (message))
 
 (= (test-skill $message)
    (send $message))
@@ -79,7 +79,7 @@ send: `Demonstrate workflow plugin`
 
 New workflows put into `pluginWorkflowInstructionsDir` while the agent is
 running become available after the agent calls the `workflow-refresh-list`
-skill. Ask the agent to refresh the list of workflows, or just ask it to load
+tool. Ask the agent to refresh the list of workflows, or just ask it to load
 the new workflow by name.
 
 ## Workflow parameters
