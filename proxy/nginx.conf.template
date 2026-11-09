@@ -40,9 +40,9 @@ http {
         }
 
         location /asicloud/ {
-            proxy_pass https://inference.asicloud.cudos.org/v1/;
+            proxy_pass https://llm.a.singularitycompute.com/v1/;
             proxy_set_header Authorization "Bearer ${ASI_API_KEY}";
-            proxy_set_header Host inference.asicloud.cudos.org;
+            proxy_set_header Host llm.a.singularitycompute.com;
             proxy_set_header Content-Type $content_type;
             proxy_ssl_server_name on;
             proxy_ssl_protocols TLSv1.2 TLSv1.3;
