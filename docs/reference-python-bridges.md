@@ -72,17 +72,12 @@ The module also defines `AIProvider`, an OpenAI-compatible client, and its base 
 
 ## `src/helper.py`
 
-String and time utilities used by the loop, including the parser for tool calls.
+String and time utilities used by the loop.
 
 | Function | Purpose |
 |---|---|
-| `balance_parentheses(str)` | Turn the LLM reply into one s-expression with a sub-expression per tool call and quote the arguments. Text up to the first call becomes an `UNKNOWN_SKILL_CALL` error, or a `pin` call when it starts with `-`. A line with an unknown name after a call stays in that call's argument. Despite the name, it does not balance parentheses (see [reference-internals-tool-dispatch.md](./reference-internals-tool-dispatch.md)). |
-| `add_llm_command(name)` | Add a tool name to the names the parser accepts. Called by `add-skill`. |
-| `remove_llm_command(name)` | Remove a name added by `add_llm_command`. Built-in names stay. Called by `remove-skill`. |
 | `normalize_string(obj)` | Render a tool result into a string safe to embed in the next prompt. |
 | `around_time(ts, n)` | Backs `(episodes ts)`. Finds the line of `memory/history.metta` whose timestamp is closest to `ts` and returns it with up to `n` lines before and after it, at most `2n+1` lines, each prefixed with its line number. |
-
-The parser takes the built-in tool names from `STATIC_LLM_COMMANDS`. `TWO_ARG_COMMANDS` lists the tools that take a file name and content.
 
 ## `src/skills.pl`
 

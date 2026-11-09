@@ -63,14 +63,14 @@ The LLM should reply with the line `word-count the quick brown fox`, with or wit
 - Tool names are lowercase, hyphen-separated.
 - The tool gets everything after its name as one string, because the parser adds the quotes. The prompt tells the LLM not to quote arguments and not to use variables. Nothing checks this. A `$x` arrives as plain text, except when the argument is a single line that starts and ends with a double quote and the `$x` stands outside the quoted parts, as in `word-count "a" $x "b"`. The parser keeps such an argument as written.
 - A tool that takes a file name and content also needs its name in `TWO_ARG_COMMANDS` in `src/helper.py`. Any other tool gets several arguments only when the LLM puts each one in double quotes.
-- Return a value that is safe to render into the `LAST_SKILL_USE_RESULTS` context — the loop runs the result through `helper.normalize_string`.
+- Return a value that is safe to render into the context — the loop runs the result through `helper.normalize_string`.
 - If your tool may fail, wrap error-producing subcalls in `catch` or let them fall through to the loop's `HandleError`.
 
 ## Verification
 
 - The new tool appears in the prompt (search the `CHARS_SENT:` log lines for `word-count`).
 - The LLM invokes it without prompting tweaks.
-- The return value shows up in `LAST_SKILL_USE_RESULTS` on the next turn.
+- The return value shows up in LLM request on the next turn.
 
 ## Next steps
 

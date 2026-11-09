@@ -15,3 +15,5 @@ jobs:
     with:
       publish_docker: false
       platforms: 'linux/amd64'
+    secrets:
+      CICD_GITHUB_PAT: ${{ secrets.CICD_GITHUB_PAT }}

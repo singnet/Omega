@@ -37,10 +37,10 @@ Notes:
 - `TEST_SERVER_IP=172.17.0.1` is the host's docker-bridge address used by both the mock LLM provider and the test channel client.
 - The container is created with the name `omega` (the script default).
 
-Wait until the agent loop is up. The first runtime `CHARS_SENT:` line (with a byte count after the colon) in the container log marks the end of `initChannels` / `initMemory` and the start of real iterations; the bare `CHARS_SENT:` string also appears earlier as part of the MeTTa source dump, so match on the numeric form to avoid a premature exit:
+Wait until the agent loop is up. The first runtime `iteration 1` line (with a byte count after the colon) in the container log marks the end of `initChannels` / `initMemory` and the start of real iterations; the bare `iteration` string also appears earlier as part of the MeTTa source dump, so match on the numeric form to avoid a premature exit:
 
 ```
-until docker logs omega 2>&1 | grep -qE "CHARS_SENT: [0-9]+"; do sleep 2; done
+until docker logs omega 2>&1 | grep -qE "iteration 1"; do sleep 2; done
 ```
 
 ## 4. Configure the test environment
@@ -65,7 +65,7 @@ source venv/bin/activate
 pytest -s -v mock/test_*_mock.py
 ```
 
-The `LlmMockController`, `CommMockServer`, and the OpenClaw Gateway stub are provided by session-scoped fixtures in `mock/conftest.py`, so all three are started once per pytest session. Expected output: `42 passed`, minus the ones whose optional variables are unset - `test_git_push_to_remote_mock` skips without `OMEGA_GIT_TOKEN`, and the six OpenClaw tests skip without `OMEGA_OPENCLAW_TOKEN` (see "OpenClaw plugin" below).
+The `LlmMockController`, `CommMockServer`, and the OpenClaw Gateway stub are provided by session-scoped fixtures in `mock/conftest.py`, so all three are started once per pytest session. Expected output: `54 passed`, minus the ones whose optional variables are unset - `test_git_push_to_remote_mock` skips without `OMEGA_GIT_TOKEN`, and the eight OpenClaw tests skip without `OMEGA_OPENCLAW_TOKEN` (see "OpenClaw plugin" below).
 
 ## 5a. OpenClaw plugin (`test_openclaw_delegate_mock.py`)
 
@@ -108,7 +108,7 @@ This removes the `omega` container and the `omega-memory` volume created by the 
 
 # Tests description
 
-All 42 tests follow the same pattern: the test registers a fixed mock-LLM answer for the prompt via `llm.set_answer(prompt, response)`, delivers the prompt to the agent over the test channel via `comm.send_message(prompt)`, then verifies the resulting tool calls and side effects (filesystem, `history.metta`, ChromaDB, docker logs). The OpenClaw group additionally drives the stub Gateway, whose replies are real rather than scripted. Because the LLM is deterministic, no `try_with_clarification` retries are needed; every test either passes on the first attempt or fails outright.
+All 54 tests follow the same pattern: the test registers a fixed mock-LLM answer for the prompt via `llm.set_answer(prompt, response)`, delivers the prompt to the agent over the test channel via `comm.send_message(prompt)`, then verifies the resulting tool calls and side effects (filesystem, `history.metta`, ChromaDB, docker logs). The OpenClaw group additionally drives the stub Gateway, whose replies are real rather than scripted. Because the LLM is deterministic, no `try_with_clarification` retries are needed; every test either passes on the first attempt or fails outright.
 
 ## Creating files
 
@@ -302,10 +302,10 @@ Four-step pipeline: search NY weather → write `w.txt` with the forecast → wr
 
 ### 25. test_last_skill_results_visible_next_turn_mock.py
 
-Verifies the one-iteration carry of `LAST_SKILL_USE_RESULTS`. The result of a tool call in turn N is exposed to the LLM at turn N+1 via this prompt section. The test does not require the agent to "behave intelligently"; it confirms the carry exists.
+Verifies the one-iteration carry of last tool call results. Output of a tool call in turn N is exposed to the LLM at turn N+1 via this prompt section. The test does not require the agent to "behave intelligently"; it confirms the carry exists.
 
-- Mock answer (turn 1): `(metta "(quote <sentinel>)") (send "computed")`.
-- Checks: the `CHARS_SENT:` line for the next iteration contains the `LAST_SKILL_USE_RESULTS` marker and the sentinel.
+- Mock answer (turn 1): `(metta "(+ 1 1)")`.
+- Checks: the docker log line `REQUEST:` for the next iteration contains a last tool call section that reflects the metta output.
 
 ### 26. test_memory_history_byte_window_truncation_mock.py
 
@@ -327,7 +327,7 @@ A `(pin ...)` emitted in turn 1 must land in `history.metta` and remain inside t
 Negative test: a `(pin ...)` emitted within an iteration is NOT visible inside that same iteration's HISTORY context. The prompt is assembled before the tool calls run, so the pin block, written by `addToHistory` at the end of the iteration, only enters HISTORY at the next prompt-build.
 
 - Mock answer: `(pin "<marker>")` followed by a `(send ...)`.
-- Checks: the `CHARS_SENT` line carrying the PROMPT for the iteration that contained the pin does NOT contain the pin's unique marker; the next iteration's `CHARS_SENT` line does.
+- Checks: the `REQUEST` line carrying the PROMPT for the iteration that contained the pin does NOT contain the pin's unique marker; the next iteration's `REQUEST` line does.
 
 ### 29. test_transition_episodes_after_eviction_mock.py
 
@@ -427,3 +427,28 @@ The delegation path is authenticated by Nginx rather than by the agent, checked 
 - Checks: the stub recorded at least one request whose `Authorization` header matched the token, and no request arrived without that header. Since the agent process never holds the token, a matching header can only have come from the proxy.
 
 The other half of this property - that `OMEGA_OPENCLAW_TOKEN` never reaches the agent process - belongs to `test_credentials_scrubbed_mock.py`, which reads the environment the agent dumps for itself. Do not check it with `dexec`: `docker exec` starts a new process from the container's own configuration, which does carry the token by design, so such a check fails while the scrubbing works correctly.
+
+## Tool call results
+
+### 41. test_tool_result_for_every_call_mock.py
+
+Each call of a model answer gets exactly one tool result in the next request, also when the skill fails without a value, as `read-file` of a missing file does. Anthropic and OpenAI reject a request with a call that has no result.
+
+- Mock answer: `[("read-file", {"filename": "/tmp/omega-missing-<run_id>.txt"}), ("send", {"content": "done <run_id>"})]`.
+- Checks: the `REQUEST:` line after the one carrying the prompt lists both calls in the assistant message and one tool result for each of them; the `send` result is its own, and the `read-file` result says the call returned no value.
+
+## Workflows and idle turns
+
+### 42. test_workflow_reload_tools_mock.py
+
+Loading a workflow again must not repeat its tools in the request to the LLM. Anthropic rejects a request that names the same tool twice.
+
+- Mock answers: `workflow-unload-instructions` for a workflow left by an earlier test, then `workflow-load-instructions test-workflow`, `workflow-unload-instructions`, `workflow-load-instructions test-workflow` twice in a row, `send`, and `workflow-unload-instructions` at the end so that the next tests start without a workflow.
+- Checks: in the `REQUEST:` line after each turn every tool name appears once; after the first load every tool name matches `^[a-zA-Z0-9_-]{1,64}$`; `test-skill` is there after a load and gone after the unload; the second load in a row is rejected with `There is an active workflow`; after the reload and the last turn the tool names are the same as after the first load.
+
+### 43. test_idle_nop_mock.py
+
+`tool_choice` is `required`, so on an idle turn the model has to call a tool, and `nop` is the one that does nothing.
+
+- Mock answers: `send` for an ordinary turn, then `nop` for the idle message. The test removes the idle answer with `clear_answer`, so later tests get no answer on idle turns. Then it answers one more ordinary turn with `send`, which restarts the idle iteration count, so idle requests follow it again.
+- Checks: `nop` is among the tools of the request that carries its result; the result is `SUCCESS` without an error; nothing reaches the channel while the agent idles; after `clear_answer` the idle requests get no answer again.

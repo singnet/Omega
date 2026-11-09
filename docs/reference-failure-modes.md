@@ -87,9 +87,8 @@ Some rules are implemented but behave in unexpected ways. Know these before writ
 
 Measured across 4,500+ operational cycles, the top error categories are:
 
-1. **Tool calls not executed** (`NOTHING_WAS_DONE`) — the reply could not be parsed, or a call raised an error. Text that is not a tool call is reported as `UNKNOWN_SKILL_CALL` instead.
+1. **Tool calls not executed** (`NOTHING_WAS_DONE`) — the LLM produced output that was not a valid tool call.
 2. **Parsing failures in replies with several tool calls.**
-3. **Parenthesis mismatches** — the parser drops one enclosing pair or a lone opening parenthesis and quotes the arguments, so a mismatch now shows up mainly inside `metta` expressions, which `sread` parses.
 
 These are **the most frequent failure mode in the entire system**, not occasional glitches.
 

@@ -107,6 +107,7 @@ RUN apt-get update \
       nginx-light \
       gettext-base \
       poppler-utils \
+      util-linux \
       curl \
  && rm -rf /var/lib/apt/lists/*
 

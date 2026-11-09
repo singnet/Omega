@@ -47,7 +47,7 @@ can be started before or after the pytest session. Wait until the agent loop is
 running:
 
 ```
-until docker logs omega 2>&1 | grep -qE "CHARS_SENT: [0-9]+"; do sleep 2; done
+until docker logs omega 2>&1 | grep -qE "iteration 1"; do sleep 2; done
 ```
 
 ## 4. Configure the test environment

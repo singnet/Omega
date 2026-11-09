@@ -29,14 +29,13 @@ Also creates shared state slots:
 ## Every turn
 
 1. **Decrement `&loops`** (turns > 1 only).
-2. **Build the prompt** — `getContext` assembles `PROMPT + SKILLS + OUTPUT_FORMAT + SAVE_PERMANENT_FILES_DIR + LAST_SKILL_USE_RESULTS + HISTORY + TIME`, with the prompt extensions between `SKILLS` and `OUTPUT_FORMAT`. `SKILLS` is the tool list from `getSkills`, and `OUTPUT_FORMAT` asks for up to 5 lines with one tool call each, without quotes around arguments and without variables.
+2. **Build the prompt** — `getContext` assembles `PROMPT + SKILLS + HISTORY + TIME`, plus information about previous tool calls if any and list of available tools.
 3. **Receive** — `(receive)` via the active channel.
 4. **Detect new input** — compare against `&prevmsg`. If different and non-empty, reset `&loops` to `maxNewInputLoops`.
 5. **Set next wake** — `&nextWakeAt := now + wakeupInterval`.
-6. **Call the LLM** — `(llmProviderChat $send (maxOutputToken) (reasoningMode))` passes the prompt and the new message to the provider started on turn 1. Providers are plugins registered with `registerLLMProvider` (see [reference-plugin-api.md](./reference-plugin-api.md#llm-provider-integration)).
-7. **Convert the reply** — `helper.balance_parentheses` turns the lines with tool calls into one s-expression with a sub-expression per call and quotes the arguments. If the reply does not start with a tool name, the text up to the first call becomes `(Error UNKNOWN_SKILL_CALL ...)`, or a `pin` call when that text starts with `-`.
-8. **Parse** — `sread` on the converted string. The loop would feed back a reminder if the string did not start with `(`, but the converted string always does.
-9. **Dispatch tool calls** — `(superpose $sexpr)` runs each call, capturing errors via `HandleError`. Calls marked `UNKNOWN_SKILL_CALL` are reported without running. Every other call runs, even when the reply holds more than 5.
+6. **Call the LLM** — `(llmProviderChat $request)` passes the request with the tool definitions to the provider started on turn 1. Providers are plugins registered with `registerLLMProvider` (see [reference-plugin-api.md](./reference-plugin-api.md#llm-provider-integration)).
+7. **Parse** — the reply is converted to an s-expression of tool calls by `providers.llmResponseToSExpr`, then `sread` parses it.
+8. **Dispatch tool calls** — `(superpose $resp)` runs each tool call, capturing errors via `HandleError`.
 10. **Record** — `addToHistory` appends human message + response + any errors to `memory/history.metta`, provided something new happened.
 11. **Save last results** — into `&lastresults` for the next turn's prompt.
 12. **Sleep** — `(sleep (sleepInterval))`.

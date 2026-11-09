@@ -107,7 +107,7 @@ def test_git_push_to_remote_mock(llm, comm):
             f"git commit -m 'qa run {c.run_id}' && "
             f"git push -u origin {branch}"
         )
-        llm.set_answer(prompt, f'(shell "{chain}")')
+        llm.set_answer(prompt, [("shell", { "cmd": f"{chain}" })])
         if not comm.send_message(prompt):
             c.fail("comm", "could not deliver prompt within 60s")
         c.ok("comm", f"run-id={c.run_id}")

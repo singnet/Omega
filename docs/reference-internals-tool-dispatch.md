@@ -38,14 +38,13 @@ becomes `((send "Checking the disk") (shell "df -h /tmp"))`.
 
 From `src/loop.metta`:
 
-1. **Raw LLM string** → `$respi`, the reply returned by `llmProviderChat`.
-2. **Conversion** — `helper.balance_parentheses $respi` → `$resp`, as described above.
-3. **First-character check** — if `$resp` does not start with `(`, the loop logs it and parses the reminder `(REMEMBER:OUTPUT_NOTHING_ELSE_THAN: ((skill arg) ...))` instead. The conversion always returns a string that starts with `(`, so this branch does not fire.
-4. **Parse** — `catch (sread $response)` → `$sexpr`. On parse failure, `HandleError` records `MULTI_COMMAND_FAILURE_...` and no call runs.
-5. **Fan out** — `(superpose $sexpr)` produces one binding per tool call in `$sexpr`. A call that the conversion turned into `(Error UNKNOWN_SKILL_CALL ...)` is recorded by `HandleError` and not evaluated.
-6. **Evaluate each** — `(catch (eval $s))`. On success, the result is normalized via `helper.normalize_string`. On failure, `HandleError` records `SINGLE_COMMAND_ERROR_...`.
-7. **Aggregate** — all results are collapsed into `RESULTS: ((COMMAND_RETURN: (cmd result)) ...)`.
-8. **Feedback** — stored as `&lastresults`, fed back into the next prompt as `LAST_SKILL_USE_RESULTS`, cut to its last `maxFeedback` characters.
+1. **Raw LLM string** → `$respstr`.
+2. **Parse** — `catch (sread $respstr)` → `$resp`. On parse failure, `HandleError` records error.
+3. **Fan out** — `(superpose $resp)` produces one binding per tool call in the tuple.
+4. **Evaluate each** — `(catch (eval $s))`. On success, the result is normalized via `helper.normalize_string`. On failure, `HandleError` records error.
+5. **Feedback** - `(llmToolCallResponseMessage role "tool" callid $callid content (last_chars $result (maxFeedback)))`. Add tool call result to the request.
+6. **Aggregate** — all results are collapsed into `$sexpr`.
+7. **History** — `$sexpr` is stored in the history.
 
 ## How `eval $s` resolves to a tool
 

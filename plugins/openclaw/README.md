@@ -135,7 +135,7 @@ On Omega startup the `openclaw-plugin` logger should print
 The result arrives in two stages.
 
 **1. Immediately** the tool returns an acceptance envelope, which the agent
-sees in `LAST_SKILL_USE_RESULTS` on its next iteration:
+sees on its next iteration:
 
 ```json
 {"status": "accepted", "id": "oc-1", "task": "first 80 characters of the task"}

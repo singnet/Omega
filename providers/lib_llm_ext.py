@@ -1,11 +1,15 @@
-import os, hashlib
+import os, hashlib, time
+import threading
+from datetime import datetime
 import openai
+from providers import *
 from typing import Optional, Tuple, Dict, Any
 from config import config_get_by_key
-from src.helper import quote_arg
+import json
 from src.logger import get_logger
+import uuid
 
-PROMPT_DELIMITER = ":-:-:-:"
+NO_HUMAN_MESSAGE_MARKER = "NO NEW USER INPUT"
 LLM_EMPTY_RESPONSE_MESSAGE = (
     "The agent didn\'t return an answer: reasoning exceeded the token limit for "
     "this response before it could produce one."
@@ -21,11 +25,48 @@ LLM_EMPTY_RESPONSE_MESSAGE = (
     "reasoning levels need a higher token limit."
 )
 
+LLM_TIMEOUT_MESSAGE = (
+    "LLM request timed out at {time}. Please try again later."
+    "\n\n"
+    "If you are the Omega administrator: the provider did not answer within the "
+    "{timeout} s request timeout, and a timed-out request is not retried. This is "
+    "timeout notice {count} since the agent started. The failed request is in the "
+    "agent log; check the provider status. The limit is enforced by the client and "
+    "by the provider's route in the proxy, so allowing longer answers means "
+    "raising both."
+)
+
+# Statuses a gateway returns when the upstream did not answer in time.
+GATEWAY_TIMEOUT_STATUSES = (408, 504, 524)
+
+# The request timeout the client enforces. It matches the proxy route timeout, so
+# a slow answer is cut once, by whichever limit is reached first, and the notice
+# can name a single number.
+CHAT_REQUEST_TIMEOUT_SECONDS = 600
+
+# One attempt per chat request inside the SDK. Its retry loop repeats a timed-out
+# request unconditionally, which would multiply the request timeout before the
+# user hears anything. Transient failures are retried by _retrying() below
+# instead, where a timeout can be excluded.
+CHAT_MAX_RETRIES = 0
+
+# Failures worth trying again right away. The SDK retries 409, 429 and any 5xx,
+# so keep that rule rather than a list that misses one (529 and 522 both reach
+# here). The timeout statuses are excluded by _is_timeout_error, so they are
+# reported instead of retried.
+TRANSIENT_STATUSES = (409, 429)
+# First attempt plus two retries, and only while the whole call stays inside the
+# budget: a failure that already cost minutes is not "transient", and the user is
+# waiting for an answer.
+CHAT_ATTEMPTS = 3
+CHAT_RETRY_BUDGET_SECONDS = 60
+CHAT_RETRY_BACKOFF_SECONDS = 0.5
+
 
 logger = get_logger(__name__)
 
-def _log_raw(provider: str, model: str, raw: str) -> None:
-    logger.debug(f"[LLM_RAW] provider={provider} model={model} chars={len(raw or '')} raw={raw!r}")
+def _log_raw(kind: str, provider: str, model: str, raw: Dict) -> None:
+    logger.debug(f"[{kind}] provider={provider} model={model} raw={raw!r}")
 
 def _log_chat_completion(provider: str, model: str, response) -> None:
     """Report how the completion budget was actually spent (Chat Completions API)."""
@@ -61,37 +102,103 @@ def _log_responses_completion(provider: str, model: str, response) -> None:
     )
     logger.info(line)
 
-def _llm_empty_response_command() -> str:
+def _llm_empty_response_tool_call() -> LLMToolCall:
     """Return an explanatory message as a MeTTa `send` command when the LLM
     spends the entire output token budget on reasoning and returns no content.
     """
-    return f"(send {quote_arg(LLM_EMPTY_RESPONSE_MESSAGE)})"
+    return (LLMToolCall().with_name("send")
+            .with_id(f"call_{uuid.uuid4().hex}")
+            .add_argument("content", LLM_EMPTY_RESPONSE_MESSAGE))
 
-def _split_system_user(content: str) -> Tuple[str, str]:
+def _is_timeout_error(error: BaseException) -> bool:
+    """True when the request ran out of time rather than failing outright: the
+    client's own timeout, or a timeout status from the gateway in front of the
+    provider (the proxy answers 504 when the upstream is still thinking).
     """
-    MeTTa sends:
-        <system/context> :-:-:-: <last human/wakeup message>
+    # The classes are looked up rather than referenced: classifying a failure must
+    # never raise one of its own, whatever the installed client exposes.
+    if isinstance(error, getattr(openai, "APITimeoutError", ())):
+        return True
+    return getattr(error, "status_code", None) in GATEWAY_TIMEOUT_STATUSES
 
-    Keep the split intact so providers receive a real system prompt.
+_timeout_notices = 0
+
+def _llm_timeout_command() -> str:
+    """Return a status message as a MeTTa `send` command when the request times
+    out, so the turn ends with the user told instead of in silence.
+
+    `send` drops a message equal to the last one it sent, so two notices must
+    never render the same: a second timeout would leave that turn silent, which is
+    the symptom this whole change is about. The time alone does not guarantee it,
+    since two cycles can fail inside the same second, so the notice carries the
+    time to the millisecond and a count that rises with every notice.
     """
-    if PROMPT_DELIMITER not in content:
-        return "", content.strip()
+    global _timeout_notices
+    _timeout_notices += 1
+    stamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+    message = LLM_TIMEOUT_MESSAGE.format(
+        time=stamp, count=_timeout_notices, timeout=CHAT_REQUEST_TIMEOUT_SECONDS)
+    return (LLMToolCall().with_name("send")
+            .with_id(f"call_{uuid.uuid4().hex}")
+            .add_argument("content", message))
 
-    sysmsg, _, usermsg = content.partition(PROMPT_DELIMITER)
-    sysmsg = sysmsg.strip()
-    usermsg = usermsg.strip()
+def _is_transient_error(error: BaseException) -> bool:
+    """True for a failure that another attempt may get past. A timeout is not
+    one of them: it already spent the request timeout, so retrying it only keeps
+    the user waiting.
+    """
+    if _is_timeout_error(error):
+        return False
+    if isinstance(error, getattr(openai, "APIConnectionError", ())):
+        return True
+    status = getattr(error, "status_code", None)
+    if status is None:
+        return False
+    return status in TRANSIENT_STATUSES or status >= 500
 
-    if not usermsg:
-        usermsg = "EMPTY / NO NEW USER INPUT."
+def _retry_delay(error: BaseException, attempt: int) -> float:
+    """How long to wait before the next attempt: the provider's Retry-After when
+    it sends one in seconds, otherwise a short exponential backoff. A Retry-After
+    given as an HTTP date falls back to the backoff.
+    """
+    headers = getattr(getattr(error, "response", None), "headers", None)
+    value = headers.get("retry-after") if hasattr(headers, "get") else None
+    if value is not None:
+        try:
+            return max(0.0, float(value))
+        except (TypeError, ValueError):
+            pass
+    return CHAT_RETRY_BACKOFF_SECONDS * (2 ** (attempt - 1))
 
-    return sysmsg, usermsg
+def _retrying(call, provider: str):
+    """Run call(), retrying only transient failures and only briefly.
+
+    The SDK's own retries are off (CHAT_MAX_RETRIES), so this is the single place
+    that decides what gets another attempt: transient failures do, a timeout does
+    not, and nothing is retried once the budget is spent.
+    """
+    started = time.monotonic()
+    for attempt in range(1, CHAT_ATTEMPTS + 1):
+        try:
+            return call()
+        except Exception as error:
+            if attempt == CHAT_ATTEMPTS or not _is_transient_error(error):
+                raise
+            delay = _retry_delay(error, attempt)
+            if time.monotonic() - started + delay >= CHAT_RETRY_BUDGET_SECONDS:
+                logger.warning(
+                    f"[{provider}.chat]: retry budget spent, giving up: {error}")
+                raise
+            logger.warning(
+                f"[{provider}.chat]: transient failure, retrying in {delay:.1f}s: {error}")
+            time.sleep(delay)
 
 def _stable_cache_key(provider: str, model: str, sysmsg: str) -> str:
     """
     Stable key for requests sharing the same system-prefix family.
     Do not include the user message here.
     """
-    marker = " LAST_SKILL_USE_RESULTS: "
+    marker = " HISTORY: "
     stable = sysmsg.split(marker, 1)[0].strip()
     digest = hashlib.sha256(stable.encode("utf-8")).hexdigest()[:24]
     return f"{provider.lower()}:{model}:{digest}"
@@ -110,7 +217,7 @@ class AbstractAIProvider:
     def name(self) -> str:
         return self._name
 
-    def chat(self, content: str, max_tokens: int = 6000, reasoning: str = "medium", **kwargs) -> str:
+    def chat(self, request: LLMRequest) -> LLMResponse:
         raise NotImplementedError
 
     @property
@@ -129,6 +236,42 @@ class AIProvider(AbstractAIProvider):
         self._model_name = model_name
         self._base_url = base_url
         self._client = None  # lazy initialization
+        self._timeout_notice_sent = False
+
+    def _start_of_turn(self, request: LLMRequest) -> None:
+        """A prompt carrying a human message starts a fresh turn, which deserves
+        its own answer even if the previous cycle already timed out.
+
+        Only a tagged message counts. The tail also carries the spamShield
+        reminder on every follow-up cycle when that option is on, and treating
+        that as a turn would bring back one notice per cycle. The tail is read
+        straight from the prompt rather than through _split_system_user, which
+        substitutes a placeholder when it is empty.
+        """
+        user = [m for m in request.messages if m.role == "user"]
+        if len(user) > 0:
+            content = user[-1].content
+            if not NO_HUMAN_MESSAGE_MARKER in content:
+                self._timeout_notice_sent = False
+
+    def _answered(self) -> None:
+        """The provider answered, so the next timeout is a new run."""
+        self._timeout_notice_sent = False
+
+    def _timeout_reply(self) -> str:
+        """The notice for a timed-out request, once per run of timeouts.
+
+        The loop keeps calling for up to maxNewInputLoops cycles, so a notice per
+        cycle would fill the chat with the same text. The run ends when a call
+        succeeds or a new human message arrives; until then the timeout is logged
+        and nothing is sent.
+        """
+        if self._timeout_notice_sent:
+            logger.warning(
+                f"[{self.name}.chat]: timed out again, the user was already told")
+            return LLMResponse().with_error("Timeout out more than once")
+        self._timeout_notice_sent = True
+        return LLMResponse().add_tool_call(_llm_timeout_command())
 
     def _ensure_client(self):
         """Initialize client on first use."""
@@ -145,9 +288,13 @@ class AIProvider(AbstractAIProvider):
             return openai.OpenAI(
                     api_key="proxy",
                     base_url=base_url,
+                    max_retries=CHAT_MAX_RETRIES,
+                    timeout=CHAT_REQUEST_TIMEOUT_SECONDS,
                     )
         if self._var_name in os.environ:
-            return openai.OpenAI(api_key=os.environ.get(self._var_name), base_url=self._base_url)
+            return openai.OpenAI(api_key=os.environ.get(self._var_name), base_url=self._base_url,
+                                 max_retries=CHAT_MAX_RETRIES,
+                                 timeout=CHAT_REQUEST_TIMEOUT_SECONDS)
 
         return None
 
@@ -156,50 +303,98 @@ class AIProvider(AbstractAIProvider):
         """Check if provider is configured (without initializing)."""
         return bool(config_get_by_key("GATEWAY_URL")) or bool(os.environ.get(self._var_name))
 
-    def _build_messages(self, content: str):
-        sysmsg, usermsg = _split_system_user(content)
+    def convert_message(self, message: LLMMessage) -> Dict:
+        result = { "role": message.role, "content": message.content }
+        if isinstance(message, LLMToolCallResponseMessage):
+            result["tool_call_id"] = message.callid
+        if isinstance(message, LLMToolCallMessage):
+            result["tool_calls"] = [self.convert_tool_call(call) for call in message.calls]
+        return result
 
-        if sysmsg:
-            return [
-                {"role": "system", "content": sysmsg},
-                {"role": "user", "content": usermsg},
-            ]
+    def convert_tool_call(self, call: LLMToolCall) -> Dict:
+        return {
+            "type": "function",
+            "id": call.id,
+            "function": {
+                "name": call.name,
+                "arguments": json.dumps(call.arguments)
+            }
+        }
 
-        return [{"role": "user", "content": usermsg}]
+    def convert_tool(self, tool: LLMTool) -> Dict:
+        return {
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": tool.description,
+                "strict": True,
+                "parameters": {
+                    "type": "object",
+                    "properties": { param.name: { "type": "string" } for param in tool.parameters },
+                    "required": [ param.name for param in tool.parameters ],
+                    "additionalProperties": False
+                }
+            }
+        }
 
-    def chat(self, content: str, max_tokens: int = 6000, reasoning: str = "medium", **kwargs) -> str:
+    def convert_request(self, request: LLMRequest) -> Dict[str, Any]:
+        return {
+            "model": self._model_name,
+            "messages": [self.convert_message(msg) for msg in request.messages],
+            "max_tokens": request.max_tokens,
+            "tools": [self.convert_tool(tool) for tool in request.tools],
+            "tool_choice": "required",
+        }
+
+    def convert_response(self, raw):
+        response = LLMResponse()
+
+        choice = raw.choices[0]
+        message = choice.message
+
+        if not message.tool_calls:
+            logger.warning("LLM returned an empty response")
+            finish_reason = getattr(choice, "finish_reason", None)
+            if finish_reason == "length":
+                response.add_tool_call(_llm_empty_response_tool_call())
+            return response
+
+        for tool_call in message.tool_calls:
+            tc = LLMToolCall().with_name(tool_call.function.name).with_id(tool_call.id)
+            try:
+                arguments = json.loads(tool_call.function.arguments)
+            except json.JSONDecodeError as error:
+                response.add_tool_call(tc.with_error(f"Invalid tool arguments from model: {error}"))
+            else:
+                if isinstance(arguments, dict):
+                    response.add_tool_call(tc.with_arguments(arguments))
+                else:
+                    response.add_tool_call(tc.with_error("Tool arguments must be a JSON object"))
+
+        return response
+
+    def chat(self, request: LLMRequest) -> LLMResponse:
         """Send chat request, initializing client if needed."""
+        self._start_of_turn(request)
         self._ensure_client()
 
         if self._client is None:
             raise RuntimeError(f"{self.name} not configured (set {self._var_name})")
 
         try:
-            response = self._client.chat.completions.create(
-                model=self._model_name,
-                messages=self._build_messages(content),
-                max_tokens=max_tokens,
-                **kwargs
-            )
-
-            raw = response.choices[0].message.content or ""
-            finish_reason = getattr(response.choices[0], "finish_reason", None)
-            _log_raw(self._name, self._model_name, raw)
-            _log_chat_completion(self._name, self._model_name, response)
-            if not raw:
-                logger.warning("LLM returned an empty response")
-                if finish_reason == "length":
-                    raw = _llm_empty_response_command()
-            resp = self._clean_text(raw)
-            return resp
+            raw_request = self.convert_request(request)
+            _log_raw("LLM_RAW_REQUEST", self._name, self._model_name, raw_request)
+            raw_response = _retrying(lambda: self._client.chat.completions.create(**raw_request), self._name)
+            self._answered()
+            _log_raw("LLM_RAW_RESPONSE", self._name, self._model_name, raw_response)
+            _log_chat_completion(self._name, self._model_name, raw_response)
+            return self.convert_response(raw_response)
         except Exception as e:
-            logger.exception(f"[AIProvider.chat]: Exception while communicating with LLM: {e}")
-            return ""
-
-    def _clean_text(self, text: str) -> str:
-        """Unescape special characters."""
-        return text.replace("_quote_", '"').replace("_apostrophe_", "'").replace("</arg_value>", " ") \
-                    .replace("</tool_call>", " ").replace("<arg_value>", " ").replace("<tool_call>", " ")
+            error = f"Exception while communicating with LLM: {e}"
+            logger.exception(f"[AIProvider.chat]: {error}")
+            if _is_timeout_error(e):
+                return self._timeout_reply()
+            return LLMResponse().with_error(error)
 
     def stop(self) -> None:
         self._client.close()
@@ -207,6 +402,7 @@ class AIProvider(AbstractAIProvider):
 
 
 _embedding_model = None
+_embedding_lock = threading.Lock()
 
 def initLocalEmbedding():
     model_name="intfloat/e5-large-v2"
@@ -219,11 +415,13 @@ def initLocalEmbedding():
 
 def useLocalEmbedding(atom):
     global _embedding_model
-    if _embedding_model is None:
-        raise RuntimeError("Call initLocalEmbedding() first.")
-    return _embedding_model.encode(
-        atom,
-        normalize_embeddings=True
-    ).tolist()
+    # The tokenizer mutates shared state during encode.
+    with _embedding_lock:
+        if _embedding_model is None:
+            raise RuntimeError("Call initLocalEmbedding() first.")
+        return _embedding_model.encode(
+            atom,
+            normalize_embeddings=True
+        ).tolist()
 
 
