@@ -121,7 +121,7 @@ openaiapi_model: "qwen3.5:9b"
 # ASICloud
 # Enabled with provider: ASICloud
 # Default model
-asicloud_model: "minimax/minimax-m3.1"
+asicloud_model: "minimax/minimax-m3.1-flash"
 
 # Anthropic
 # Enabled with provider: Anthropic
