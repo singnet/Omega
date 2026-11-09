@@ -85,20 +85,20 @@ def test_workflow_reload_tools_mock(llm, comm):
             nonlocal loaded
             loaded = True
             turn(run_id, f"Load the {WORKFLOW} instructions.",
-                 [("workflow-load-instructions", {"workflow_name": WORKFLOW})],
+                 [("workflow-load-skills", {"workflow_name": WORKFLOW})],
                  f"Loaded workflow: {WORKFLOW}")
 
         def unload(run_id):
             nonlocal loaded
             turn(run_id, "The workflow is done, unload it now.",
-                 [("workflow-unload-instructions", {})],
+                 [("workflow-unload-skills", {})],
                  f"Unloaded workflow: {WORKFLOW}")
             loaded = False
 
         c.step("start without an active workflow")
         _flush(comm)
         prompt = make_prompt(ids[6], "Unload the active workflow if there is one.")
-        llm.set_answer(prompt, [("workflow-unload-instructions", {})])
+        llm.set_answer(prompt, [("workflow-unload-skills", {})])
         if not comm.send_message(prompt):
             c.fail("comm-clean", "could not deliver the prompt within 60s")
         _recv_contains(comm, "Unloaded workflow:", timeout=15)
@@ -150,7 +150,7 @@ def test_workflow_reload_tools_mock(llm, comm):
             c.step("load the workflow once more without unloading it")
             _flush(comm)
             prompt = make_prompt(ids[7], f"Load the {WORKFLOW} instructions once more.")
-            llm.set_answer(prompt, [("workflow-load-instructions", {"workflow_name": WORKFLOW})])
+            llm.set_answer(prompt, [("workflow-load-skills", {"workflow_name": WORKFLOW})])
             if not comm.send_message(prompt):
                 c.fail(f"comm-{ids[7]}", "could not deliver the prompt within 60s")
             request = wait_request_after(f"REQ-{ids[7]}", timeout=60)

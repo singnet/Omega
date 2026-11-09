@@ -50,7 +50,7 @@
 ; evaluation started from - it does not find the Omega alias
 ; reached this way. append-file takes a plain path and has no such
 ; dependency, so the path is built with projectRootDirectory/joinPath
-; (same as pluginWorkflowInstructionsDir in workflow.metta) instead of
+; (same as pluginWorkflowCoreSkillsDir in workflow.metta) instead of
 ; going through library.
 (= (openclaw-collect-results $iteration)
     (let $results (repr (py-call (openclaw.take_completed)))
