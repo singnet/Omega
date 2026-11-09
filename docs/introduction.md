@@ -47,12 +47,12 @@ Each reasoning hop is a synchronous five-step dance:
 ```
 1. NEURAL PHASE
    LLM synthesizes context, emits a tool call
-   (e.g. metta (|- ...))
+   (e.g. metta with the expression (|- ...))
 
-2. INTERCEPTION
-   The agent framework intercepts the tool call
-   and parses it into an s-expression;
-   LLM generation is suspended.
+2. CONVERSION
+   The agent framework turns the tool call from the
+   response into an s-expression; LLM generation
+   is suspended.
 
 3. SYMBOLIC PHASE
    Framework passes the s-expression to the MeTTa /
@@ -64,8 +64,8 @@ Each reasoning hop is a synchronous five-step dance:
    (e.g. (robin --> animal) (stv 0.72 0.32)).
 
 5. INJECTION & RESUMPTION
-   Results are injected into the next prompt context
-   as immutable data. The LLM resumes, reads the data,
+   Results go back to the LLM as messages with role
+   `tool`, as immutable data. The LLM resumes, reads them,
    and decides the next move.
 ```
 
@@ -120,7 +120,8 @@ lib_omega.metta               loads all submodules
 ├── src/channels.metta        receive/send dispatch
 ├── src/utils.metta           utility, string ops, time
 ├── src/config.metta          configure
-├── src/helper.py             tool-call parser, normalization
+├── src/helper.py             string normalization, time helpers
+├── src/providers.py          tool schemas, response checks, call conversion
 ├── src/skills.pl             Prolog helpers (shell, first_char)
 ├── src/websearch.py          web search
 ├── lib_nal.metta             NAL truth functions
@@ -143,12 +144,16 @@ Each iteration of `(omega $k)` in `src/loop.metta` performs:
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ 1. receive()        pull latest message from channel        │
-│ 2. getContext()     PROMPT + SKILLS +                       │
+│ 2. getContext()     PROMPT + SKILLS rules + extensions +    │
 │                     HISTORY + TIME                          │
-│ 3. LLM call         Anthropic / OpenAI / ASICloud / ASI:One │
-│ 4. sread            parse tool calls into s-exprs           │
-│ 5. eval each call   (remember ...), (metta ...), ...        │
-│ 6. addToHistory     append human msg + response +           │
+│ 3. LLM call         request with tool schemas to the        │
+│                     provider (Anthropic, OpenAI, ASICloud,  │
+│                     ASI:One, OpenRouter, ...)               │
+│ 4. llmResponseToSExpr + sread                               │
+│                     tool calls into s-exprs                 │
+│ 5. eval each call   (remember ...), (metta ...), ...,       │
+│                     result sent as a `tool` message         │
+│ 6. addToHistory     append human msg + tool calls +         │
 │                     any errors                              │
 │ 7. sleep            sleepInterval seconds                   │
 │ 8. recurse          (omega (+ 1 $k))                        │
@@ -280,15 +285,17 @@ Full detail in [reference-internals-memory-store.md](./reference-internals-memor
 
 ### Tools
 
-A tool is an action the agent can take during a turn, such as `send`, `shell`, `remember`, `query`, or `metta`. A tool has a name, a one-line description, and a list of arguments, and it runs as a MeTTa function. The built-in tools are listed by `getStaticSkills` in `src/skills.metta`. A plugin adds a tool with `add-skill` and removes it with `remove-skill`. The prompt lists all available tools in its `SKILLS:` section.
+A tool is an action the agent can take during a turn, such as `send`, `shell`, `remember`, `query`, or `metta`. A tool has a name, a one-line description, and a list of arguments, and it runs as a MeTTa function. Built-in tools and tools from plugins are registered the same way, with `add-skill` in `src/skills.metta`, and `remove-skill` unregisters one. Each turn the registered tools go to the LLM in the `tools` field of the request, one schema per tool with a string parameter for every argument. The `SKILLS:` part of the system message holds only extra rules for some tools.
 
-A tool call is the LLM's request to run a tool. The LLM writes each tool call as the tool name followed by its arguments, starting on a new line, and the prompt asks for up to five tool calls per turn. Omega turns each tool call into a MeTTa expression and evaluates it. A call starts at a line that begins with a tool name, and the lines after it, up to the next such line, belong to its argument. The line `send Hello`, for instance, becomes `(send "Hello")`. The value a tool returns is its tool result, and Omega puts the results of a turn into the `LAST_SKILL_USE_RESULTS` section of the next prompt.
+A tool call is the LLM's request to run a tool. The request requires the model to call at least one tool, and the text the model writes next to its calls is not used. `llmResponseToSExpr` in `src/providers.py` turns each call into a MeTTa expression, so a `send` call with the content `Hello` becomes `(send "Hello")`, and Omega evaluates it. A reply with no tool calls, or a call to a tool that is not registered, is reported as an error. The value a tool returns is its tool result. Omega sends each result back as a message with role `tool` and the id of the call, cut to the last `maxFeedback` characters, and the model reads it on the next turn.
 
 ### Skills
 
-A skill is a directory with a `SKILL.md` file in the [Agent Skills](https://agentskills.io/specification) format. The file holds Markdown instructions that tell the agent how to carry out a task step by step, and the directory can also hold a `skill.metta` file with the tools the skill needs. The workflow plugin loads skills and refers to a loaded skill as the active workflow. While a skill is loaded, its instructions are part of the prompt and its tools appear in the `SKILLS:` section. See [plugins/workflow/README.md](../plugins/workflow/README.md).
+A skill is a directory with a `SKILL.md` file in the [Agent Skills](https://agentskills.io/specification) format. The file holds Markdown instructions that tell the agent how to carry out a task step by step, and the directory can also hold a `skill.metta` file with the tools the skill needs. The workflow plugin loads skills and refers to a loaded skill as the active workflow. While a skill is loaded, its instructions are part of the prompt and its tools are added to the request. See [plugins/workflow/README.md](../plugins/workflow/README.md).
 
-The word `skill` means a tool in some names from the code, such as `add-skill`, `remove-skill`, `getSkills`, `getStaticSkills`, `src/skills.metta`, `src/skills.pl`, the `SKILLS:` and `LAST_SKILL_USE_RESULTS` prompt sections, and the `skill` entries in `skill.metta`. The documentation quotes these names as they are.
+The word `skill` means a tool in some identifiers from the code: `add-skill`, `remove-skill`, `dynamic-skill`, `getSkills`, `getSkillRules`, `src/skills.metta`, `src/skills.pl`, `skill.metta` with its `(skill ...)` entries, `&workflow_skills`, the `SKILLS:` label in the prompt, and the log lines `Add skill:`. The documentation quotes these names as they are.
+
+The texts the model reads at run time (`memory/prompt*.txt`, `memory/tg_prompt.txt`, the `SKILLS:` section of the prompt, and the workflow `description.txt` files) sometimes use `skill` for a tool as well. The documentation quotes them unchanged.
 
 ### Channels
 

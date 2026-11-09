@@ -2,49 +2,43 @@
 
 This page traces what happens between an LLM response landing in the loop and a tool actually running.
 
-## Expected LLM output shape
+## Tool schema
 
-The `OUTPUT_FORMAT` section of the prompt asks for "Up to 5 lines, do not wrap quotes around args, do not use variables" and shows this template:
+Each turn the loop sends the model the list of tools as structured data. `collectTools` calls `providers.getTools` with the result of `getSkills`, the list of `(name description arguments)` triples that `add-skill` registered. Every triple becomes one schema:
 
-```
-toolName1 arg1
-toolName2 arg2
-toolName3 arg3
-toolName4 arg4
-toolName5 arg5
-```
+- the tool name and its description;
+- one parameter per argument name, each of type `string` and all required;
+- no other properties (`additionalProperties: false`);
+- `strict: true`.
 
-Each tool call starts on a new line with the tool name, followed by its arguments. The limit of 5 exists only in the prompt. Nothing counts the calls, and the loop runs every call in a longer reply.
+The request also sets `tool_choice: required`, so the model has to call at least one tool. The Chat Completions providers build this in `AIProvider.convert_tool` and `convert_request` (`providers/lib_llm_ext.py`). The OpenAI provider sends the same fields in the flat Responses API form (`providers/omega_openai.py`).
 
-Despite its name, `helper.balance_parentheses` does not balance parentheses. It turns the reply into one s-expression with a sub-expression per call:
+The model answers with tool calls, each holding an id, a tool name, and a value for every parameter. The text the model writes next to the calls is not read. The prompt does not limit the number of calls per turn, and the loop runs every call in the reply.
 
-- A call starts at a line whose first word, after an optional `(`, is a known tool name (`LLM_COMMANDS`). The lines that follow, up to the next such line, belong to the same call, so an argument can span several lines.
-- Parentheses around a call are optional, so `send Hello` and `(send "Hello")` give the same call.
-- If the reply does not start with a tool name, the text up to the first call becomes `(Error UNKNOWN_SKILL_CALL "<text>")` and does not run. Commentary after a call stays in that call's argument.
-- `write-file`, `append-file`, and `write-file-b64` (`TWO_ARG_COMMANDS`) get two arguments: the file name (the first word, or a quoted name) and the text after it as content.
-- Every other tool gets everything after its name as one string, quoted by the helper. If that text starts and ends with `"` and has no line break, the helper keeps it unchanged, which lets a tool receive several arguments, for example `research-start "q1" "topic x"`.
-- If the reply starts with `-` or `(-`, the text up to the first call becomes a `pin` call instead of an `UNKNOWN_SKILL_CALL` error. A `-` line after a call stays in that call's argument.
+## Response checks
 
-For example, the reply
+`llmProviderChat` passes the provider's `LLMResponse` through `_validate_response` (`src/providers.py`):
 
-```
-send Checking the disk
-shell df -h /tmp
-```
+- A response with no calls and no error becomes the error `List of tool calls is empty`. The one exception is a reply cut off by the output limit, which the provider turns into a `send` call with a fixed message.
+- A call to a name that is not in the request gets the error `Unknown tool: '<name>'`.
+- A call without a parameter from the schema gets `Call tool parameter is not set: ...`.
+- A parameter whose value is not a string gets `Call tool parameter is not a string: ...`.
 
-becomes `((send "Checking the disk") (shell "df -h /tmp"))`.
+`llmResponseToSExpr` turns the checked response into text. A response error becomes `(Error () "<text>")`. Otherwise the text is a list of `(<id> (<name> "arg1" "arg2" ...))` pairs with the arguments in schema order. Only `"` and `\` are escaped in the strings, so `$x`, parentheses, and line breaks in an argument are plain text. Arguments that are not in the schema are dropped. A call with an error becomes `(<id> (Error (<name> ...) "<text>"))`.
+
+For example, the calls `send` with `content` set to `Checking the disk` and `shell` with `cmd` set to `df -h /tmp` become `((id1 (send "Checking the disk")) (id2 (shell "df -h /tmp")))`.
 
 ## Step-by-step dispatch
 
 From `src/loop.metta`:
 
-1. **Raw LLM string** → `$respstr`.
-2. **Parse** — `catch (sread $respstr)` → `$resp`. On parse failure, `HandleError` records error.
-3. **Fan out** — `(superpose $resp)` produces one binding per tool call in the tuple.
-4. **Evaluate each** — `(catch (eval $s))`. On success, the result is normalized via `helper.normalize_string`. On failure, `HandleError` records error.
-5. **Feedback** - `(llmToolCallResponseMessage role "tool" callid $callid content (last_chars $result (maxFeedback)))`. Add tool call result to the request.
-6. **Aggregate** — all results are collapsed into `$sexpr`.
-7. **History** — `$sexpr` is stored in the history.
+1. **Request** — `llmRequest` combines the system message, the messages in `&messages_all`, and `(collectTools)`. `llmProviderChat` sends it and checks the response.
+2. **Convert** — `providers.llmResponseToSExpr` gives `$respstr`, and `catch (sread $respstr)` gives `$resp`. If `$resp` is an `(Error ...)`, `HandleError` records the error, and no `assistant` or `tool` messages are added.
+3. **Assistant message** — one message with role `assistant` carries the calls of the response (`llmResponseCalls`) and the text `[TOOL CALL]`.
+4. **Fan out** — `(superpose $resp)` produces one binding of `($callid $s)` per call.
+5. **Evaluate each** — an `$s` that is an `(Error ...)` goes to `HandleError`. Any other `$s` runs as `(catch (let $R (collapse (eval $s)) ...))`, and the value is normalized with `helper.normalize_string`. An error from `eval` goes to `HandleError`. A normal result gets the prefix `SUCCESS, RETURN: `.
+6. **Feedback** — `(llmToolCallResponseMessage role "tool" callid $callid content (last_chars $result (maxFeedback)))` adds the result to the request for every call, so each call id gets an answer.
+7. **History** — the list of calls without ids and without results is stored with `addToHistory`.
 
 ## How `eval $s` resolves to a tool
 
@@ -65,7 +59,7 @@ Bridges enter via:
 
 ## Errors propagate via `&error`
 
-`HandleError` appends to the `&error` state and returns `(ALERT_FAILED ...)` in place of the result, so the error also reaches `LAST_SKILL_USE_RESULTS` in the next prompt. When `addToHistory` runs, if `&error` is non-empty it is concatenated as `ERROR_FEEDBACK:`. On the next turn the agent sees the error and has the opportunity to correct course.
+`HandleError` appends to the `&error` state and returns `(ALERT_FAILED ...)` in place of the result, so the error text reaches the model in the `tool` message for that call. When `addToHistory` runs, if `&error` is non-empty it is concatenated as `ERROR_FEEDBACK:`. On the next turn the agent sees the error and has the opportunity to correct course.
 
 ## See also
 
