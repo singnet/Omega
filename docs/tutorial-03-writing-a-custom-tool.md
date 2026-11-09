@@ -11,42 +11,64 @@
 
 A tool is three things:
 
-1. **An entry in the tool list** in `src/skills.metta` (the `getStaticSkills` list) so the LLM learns the tool exists. The tool name must also be in `STATIC_LLM_COMMANDS` in `src/helper.py` so the parser accepts calls to it.
+1. **A registration** that tells the LLM the tool exists: a line `!(add-skill <name> "<description>" (<argument> ...))`. The description goes into the `description` field of the tool schema sent with every request, and each element of the argument tuple becomes a string parameter of that schema. The name is the name of the MeTTa function that runs the tool. A tool without arguments takes `()`. Built-in tools are registered in `src/skills.metta` by the `!(add-skill ...)` lines under `Embedded skills`.
 2. **A MeTTa definition** of how the tool executes. Pure-MeTTa tools are written directly; tools that need system access delegate to Python or Prolog.
 3. **Optional Python/Prolog glue** imported through `py-call` or `translatePredicate`.
 
-A MeTTa plugin can add a tool without editing `src/skills.metta` or `src/helper.py`. It defines the tool in its own `.metta` file and calls `add-skill` from its `loadOmegaPlugin`. `add-skill` adds the tool's line to the prompt and registers the name with the parser (see [reference-plugin-api.md](./reference-plugin-api.md#other-agent-related-apis)). For the `word-count` example below, the call would be `(add-skill word-count "Count space-separated words in a string" (string))`.
+No other file needs an edit. The loop collects the registered tools before each request, so a new tool is visible to the LLM from the next iteration, and a call to a name that is not registered is rejected with `Unknown tool`.
+
+A MeTTa plugin registers a tool the same way from its `loadOmegaPlugin`, without editing `src/skills.metta` (see [reference-plugin-api.md](./reference-plugin-api.md#other-agent-related-apis)). The [OpenClaw plugin](/plugins/openclaw/openclaw.metta) calls `add-skill` for `delegate-task-to-openclaw-agent` and defines the function in the same file, and the [workflow plugin](/plugins/workflow/workflow.metta) registers `workflow-load-instructions`, `workflow-unload-instructions` and `workflow-refresh-list` the same way.
 
 ## Example: a `word-count` tool
 
 We'll add `word-count`, which returns the number of space-separated words in its argument.
 
-### Step 1 — Declare it in `getStaticSkills`
+### Step 1 — Register it with `add-skill`
 
-Open `src/skills.metta` and add this line inside the `getStaticSkills` list, after the `version` line:
+Open `src/skills.metta` and add this line after the last `!(add-skill ...)` line (the `metta` tool), before the `; TODO` comment:
 
 ```metta
-"- Count space-separated words in a string: word-count string"
+!(add-skill word-count "Count space-separated words in a string." (text))
 ```
 
-This text goes into the `SKILLS:` section of the prompt, so the LLM knows the tool is callable.
+The description becomes the `description` of the tool in the request. The tuple `(text)` gives the tool one string parameter named `text`, so the LLM passes the words to count as `text`.
 
-### Step 2 — Register the name with the parser
+### Step 2 — Define the implementation
 
-Open `src/helper.py` and add `"word-count",` to the `STATIC_LLM_COMMANDS` set. Without it the parser does not know `word-count` as a tool name. A `word-count` line at the start of the reply becomes `(Error UNKNOWN_SKILL_CALL "...")`, and a `word-count` line after another call is added to that call's argument. In both cases the loop does not run `word-count`.
-
-### Step 3 — Define the implementation
-
-Back in `src/skills.metta`, add at the end of the file:
+Right below that line, add:
 
 ```metta
-(= (word-count $str)
-   (progn (translatePredicate (split_string $str " " "" $parts))
+(= (word-count $text)
+   (progn (translatePredicate (split_string $text " " "" $parts))
           (translatePredicate (length $parts $count))
           $count))
 ```
 
-If you prefer Python, register a function in a `.py` module and call `(py-call (mymodule.word_count $str))`.
+If you prefer Python, register a function in a `.py` module and call `(py-call (mymodule.word_count $text))`.
+
+### Step 3 — Or add it from a plugin
+
+The same tool as a plugin needs a MeTTa file `plugins/wordcount/wordcount.metta`:
+
+```metta
+(= (loadOmegaPlugin)
+   (add-skill word-count "Count space-separated words in a string." (text)))
+
+(= (word-count $text)
+   (progn (translatePredicate (split_string $text " " "" $parts))
+          (translatePredicate (length $parts $count))
+          $count))
+```
+
+and an entry in [config/plugins.yaml](/config/plugins.yaml):
+
+```yaml
+- name: wordcount
+  loader: metta
+  location: "{REPO}/plugins/wordcount"
+```
+
+Use one of the two ways, not both: a second `add-skill` with the same name replaces the first.
 
 ### Step 4 — Test
 
@@ -56,21 +78,24 @@ Restart the agent with the command you started it with (`sh run.sh run.metta ...
 how many words are in "the quick brown fox"?
 ```
 
-The LLM should reply with the line `word-count the quick brown fox`, with or without quotes around the text. The parser turns it into `(word-count "the quick brown fox")`. The result `4` comes back in `LAST_SKILL_USE_RESULTS` on the next turn, and the agent answers with `send`.
+The LLM calls the tool `word-count` with the argument `text` set to `the quick brown fox`. The loop evaluates `(word-count "the quick brown fox")` and returns the result, 4, to the LLM in a message with the role `tool`. The agent then answers with `send`.
 
 ## Conventions
 
-- Tool names are lowercase, hyphen-separated.
-- The tool gets everything after its name as one string, because the parser adds the quotes. The prompt tells the LLM not to quote arguments and not to use variables. Nothing checks this. A `$x` arrives as plain text, except when the argument is a single line that starts and ends with a double quote and the `$x` stands outside the quoted parts, as in `word-count "a" $x "b"`. The parser keeps such an argument as written.
-- A tool that takes a file name and content also needs its name in `TWO_ARG_COMMANDS` in `src/helper.py`. Any other tool gets several arguments only when the LLM puts each one in double quotes.
-- Return a value that is safe to render into the context — the loop runs the result through `helper.normalize_string`.
+- Tool names are letters, digits, hyphens and underscores, up to 64 characters, as the LLM APIs expect. The built-in names are lowercase and hyphen-separated, such as `read-file`.
+- Every element of the argument tuple is a separate string parameter, and the LLM must fill all of them. The element name is the parameter name in the schema, so choose a name that tells the LLM what to pass, such as `research_name` or `filename`.
+- Arguments arrive as plain strings. A `$x`, brackets or quotes inside an argument are text, not MeTTa syntax.
+- The loop runs the result through `helper.normalize_string`, puts `SUCCESS, RETURN: ` in front of it and cuts it to the last `maxFeedback` characters before sending it to the LLM, so return a value that is safe to render as text.
 - If your tool may fail, wrap error-producing subcalls in `catch` or let them fall through to the loop's `HandleError`.
 
 ## Verification
 
-- The new tool appears in the prompt (search the `CHARS_SENT:` log lines for `word-count`).
-- The LLM invokes it without prompting tweaks.
-- The return value shows up in LLM request on the next turn.
+Check the agent log. For `word-count`:
+
+- The `REQUEST:` line of the iteration lists the tool: `LLMTool[name='word-count', description='Count space-separated words in a string.', parameters=[LLMToolParameter[name='text']]]`.
+- The first `RESPONSE:` line after it holds the LLM's call: `LLMToolCall[id='...',name='word-count',arguments={'text': 'the quick brown fox'},error=None]`. The next `RESPONSE:` line shows the same call as the s-expression the loop evaluates: `(<id> (word-count "the quick brown fox"))`.
+- A `COMMAND_RETURN:` line follows with the call and its result: `COMMAND_RETURN: ((word-count "the quick brown fox") "SUCCESS, RETURN: ...")`, where the result is 4.
+- The next `REQUEST:` line contains the call result as a message with the role `tool`: `LLMToolCallResponseMessage[role='tool',content='SUCCESS, RETURN: ...',callid='<id>']`.
 
 ## Next steps
 

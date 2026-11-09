@@ -4,13 +4,12 @@ Where to plug in new behavior, in order of increasing depth.
 
 ## Add a tool
 
-Most common extension. A built-in tool takes three edits:
+Most common extension. A built-in tool takes two edits in `src/skills.metta`:
 
-1. A line in `getStaticSkills` (`src/skills.metta`) so the LLM knows the tool exists. It follows the form of the lines already in that function, `"- <description>: <name> <argument>"`.
-2. The tool name in `STATIC_LLM_COMMANDS` (`src/helper.py`) so the parser accepts calls to it. A tool that takes a file name and content also goes into `TWO_ARG_COMMANDS`.
-3. A `(= (my-tool $arg) ...)` definition, either pure MeTTa or a `py-call` / `translatePredicate`.
+1. A registration line `!(add-skill my-tool "<description>" (<argument> ...))` next to the existing `!(add-skill ...)` lines. The description goes into the tool schema sent to the LLM, and each element of the argument tuple becomes a string parameter of that schema.
+2. A `(= (my-tool $arg) ...)` definition, either pure MeTTa or a `py-call` / `translatePredicate`.
 
-A MeTTa plugin adds a tool with `add-skill` in its `loadOmegaPlugin` instead of edits 1 and 2. `add-skill` puts the tool's line into the prompt and registers the name with the parser (see [reference-plugin-api.md](./reference-plugin-api.md#other-agent-related-apis)).
+A MeTTa plugin does the same from its `loadOmegaPlugin`: it calls `add-skill` and defines the function in its own file (see [reference-plugin-api.md](./reference-plugin-api.md#other-agent-related-apis)). `remove-skill` unregisters a tool, built-in ones included.
 
 Full walkthrough: [tutorial-03-writing-a-custom-tool.md](./tutorial-03-writing-a-custom-tool.md).
 
@@ -29,20 +28,21 @@ Full walkthrough: [tutorial-04-adding-a-channel.md](./tutorial-04-adding-a-chann
 In `src/loop.metta`, the LLM call is:
 
 ```metta
-($respi (llmProviderChat $send (maxOutputToken) (reasoningMode)))
+($request (llmRequest $system (messagesGet) (maxOutputToken) (reasoningMode) (collectTools)))
+($response (llmProviderChat $request))
 ```
 
-`llmProviderChat` (`src/providers.metta`, `src/providers.py`) hands the call to the provider that `llmProviderStart` selected on turn 1. Providers are plugins, so the loop has no branch per provider.
+`llmRequest` builds an `LLMRequest` from the system message, the message list, the output limits and the tool schemas from `collectTools`. `llmProviderChat` (`src/providers.metta`, `src/providers.py`) hands the request to the provider that `llmProviderStart` selected on turn 1 and validates the `LLMResponse` it returns. Providers are plugins, so the loop has no branch per provider.
 
 To add a provider:
 
-1. Implement a class derived from `providers.LLMProvider` with a `chat` method (see [reference-plugin-api.md](./reference-plugin-api.md#llm-provider-integration)).
+1. Implement a class derived from `providers.LLMProvider` with a `chat(self, request: LLMRequest) -> LLMResponse` method (see [reference-plugin-api.md](./reference-plugin-api.md#llm-provider-integration)).
 2. Register it with `providers.registerLLMProvider` in the plugin's `loadOmegaPlugin`, and list the plugin in `config/plugins.yaml`.
 3. Use the new provider name in the `configure provider ...` line or via command-line `provider=...`.
 
 ## Change the prompt
 
-The agent's identity and values are in `memory/prompt.txt`. The run-time prompt template that sandwiches it is in `getContext` in `src/loop.metta`. Edit carefully — the `OUTPUT_FORMAT` instruction is what keeps the LLM writing tool calls in the line format that `helper.balance_parentheses` parses (see [reference-internals-tool-dispatch.md](./reference-internals-tool-dispatch.md)).
+The agent's identity and values are in `memory/prompt.txt`. The run-time prompt template that sandwiches it is in `getContext` in `src/loop.metta`. Edit carefully — the tool schemas, not the prompt text, tell the LLM how to call tools (see [reference-internals-tool-dispatch.md](./reference-internals-tool-dispatch.md)).
 
 ## Change the embedding model
 
