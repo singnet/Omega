@@ -78,7 +78,7 @@ Restart the agent with the command you started it with (`sh run.sh run.metta ...
 how many words are in "the quick brown fox"?
 ```
 
-The LLM calls the tool `word-count` with the parameter `text` set to `the quick brown fox`. The loop evaluates `(word-count "the quick brown fox")` and returns the result, 4, to the LLM in a message with the role `tool`. The agent then answers with `send`.
+The LLM calls the tool `word-count` with the parameter `text` set to `the quick brown fox`. The loop evaluates `(word-count "the quick brown fox")` and returns the result to the LLM in a message with the role `tool`. The loop collects every result of the call into a list, so the result arrives as `[4]`. The agent then answers with `send`.
 
 ## Conventions
 
@@ -94,8 +94,8 @@ Check the agent log. For `word-count`:
 
 - The `REQUEST:` line of the iteration lists the tool: `LLMTool[name='word-count', description='Count space-separated words in a string.', parameters=[LLMToolParameter[name='text']]]`.
 - The first `RESPONSE:` line after it holds the LLM's call: `LLMToolCall[id='...',name='word-count',arguments={'text': 'the quick brown fox'},error=None]`. The next `RESPONSE:` line shows the same call as the s-expression the loop evaluates: `(<id> (word-count "the quick brown fox"))`.
-- A `COMMAND_RETURN:` line follows with the call and its result: `COMMAND_RETURN: ((word-count "the quick brown fox") "SUCCESS, RETURN: ...")`, where the result is 4.
-- The next `REQUEST:` line contains the call result as a message with the role `tool`: `LLMToolCallResponseMessage[role='tool',content='SUCCESS, RETURN: ...',callid='<id>']`.
+- A `COMMAND_RETURN:` line follows with the call and its result: `COMMAND_RETURN: ((word-count "the quick brown fox") "SUCCESS, RETURN: [4]")`.
+- The next `REQUEST:` line contains the call result as a message with the role `tool`: `LLMToolCallResponseMessage[role='tool',content='SUCCESS, RETURN: [4]',callid='<id>']`.
 
 ## Next steps
 
