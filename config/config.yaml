@@ -157,13 +157,17 @@ asione_model: "asi1-ultra"
 # Plugins
 
 # Workflow
-# Path to the directory which contains available workflows. Default value is
-# <project_root>/plugins/workflow/instructions. See plugins/workflow/README.md
-# for details.
-#pluginWorkflowInstructionsDir: ./plugins/workflow/instructions
+# Path to the directory which contains core skills shipped with Omega.
+# Default value is <project_root>/plugins/workflow/core-skills. See
+# plugins/workflow/README.md for details.
+pluginWorkflowCoreSkillsDir: ./repos/Omega/plugins/workflow/core-skills
+# Path to the directory which contains custom skills. A custom skill
+# overrides the core skill with the same name. Default value is
+# <memoryDirectory>/workflow/custom-skills
+pluginWorkflowCustomSkillsDir: ./repos/Omega/memory/workflow/custom-skills
 # Path to the directory to keep workflow working files when workflow is active.
-# Default value is <memoryDirectory>/workflow_space
-#pluginWorkflowMemoryDir: ./memory/workflow_space
+# Default value is <memoryDirectory>/workflow/space
+pluginWorkflowMemoryDir: ./repos/Omega/memory/workflow/space
 
 # OpenClaw
 openClawEnabled: disabled

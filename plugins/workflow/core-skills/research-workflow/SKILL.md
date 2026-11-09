@@ -46,8 +46,8 @@ save plan:
   `(let $d (researchDir) (write-file (strings-concat ($d "/<research-name>/02_plan.md")) "approved plan text"))`
   `(research-step <research-name>_in_quotes "plan-approved" "milestones A B C"
                   "follow plan from Milestone A")`
-IMPORTANT!!!: load plan to active &active_instructions variable:
-  `(load-research-dynamic-instructions <research-name>_in_quotes "02_plan.md")` 
+IMPORTANT!!!: load plan to active &workflow_active_skills variable:
+  `(load-research-dynamic-skills <research-name>_in_quotes "02_plan.md")` 
   take into account that this function receives 2 arguments <research-name> and "02_plan.md" both in quotes.
 - If user requests changes:
   Revise plan, send again, wait again
