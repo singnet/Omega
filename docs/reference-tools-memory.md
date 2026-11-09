@@ -2,7 +2,7 @@
 
 `remember`, `query`, and `episodes` are defined in `src/memory.metta`, `pin` in `src/skills.metta`. All four are registered with `add-skill` in `src/skills.metta`.
 
-Each of the four tools takes one string parameter, which the model sets as a separate field of the tool call: `content` for `remember` and `query`, `timestamp` for `episodes`, `message` for `pin`. The prompt asks the LLM not to use variables.
+Each of the four tools takes one string parameter, which the model sets as a separate field of the tool call: `content` for `remember` and `query`, `timestamp` for `episodes`, `message` for `pin`.
 
 ---
 
