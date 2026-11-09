@@ -51,7 +51,7 @@ def test_memory_history_byte_window_truncation_mock(llm, comm):
             c.run_id,
             f"Send back exactly this token in a single send: {early_marker}",
         )
-        llm.set_answer(prompt1, f'(send "{early_marker}")')
+        llm.set_answer(prompt1, [("send", { "content": f"{early_marker}" })])
         if not comm.send_message(prompt1):
             c.fail("comm-1", "could not deliver turn 1 prompt within 60s")
         c.ok("comm-1", f"run-id={c.run_id}")
@@ -84,7 +84,7 @@ def test_memory_history_byte_window_truncation_mock(llm, comm):
         c.add_cleanup_marker(str(c.run_id + 1))
         llm.set_answer(
             prompt2,
-            f'(remember "{padding_body}") (send "padded")',
+            [("remember", { "content": f"{padding_body}" })]
         )
         if not comm.send_message(prompt2):
             c.fail("comm-2", "could not deliver padding prompt within 60s")

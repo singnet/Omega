@@ -59,6 +59,7 @@ User-facing MeTTa skills the agent invokes. Each page follows the template **Sig
 - [reference-python-bridges.md](./reference-python-bridges.md) — `lib_llm_ext.py`, `src/helper.py`, `src/skills.pl`
 - [reference-memory-portability.md](./reference-memory-portability.md) — Operator backup, restore, and archive-transfer workflow
 - [reference-memory-migration.md](./reference-memory-migration.md) — Automatic migration from OmegaClaw Docker volumes and interrupted-copy recovery
+- [reference-gpu.md](./reference-gpu.md) - Experimental NVIDIA GPU access: host setup, building and running a GPU-enabled container
 
 ### Plugin API
 

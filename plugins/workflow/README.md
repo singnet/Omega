@@ -60,6 +60,11 @@ For example:
 Start an agent and ask it to use the workflow. For the test workflow above
 send: `Demonstrate workflow plugin`
 
+New workflows put into `pluginWorkflowInstructionsDir` while the agent is
+running become available after the agent calls the `workflow-refresh-list`
+skill. Ask the agent to refresh the list of workflows, or just ask it to load
+the new workflow by name.
+
 ## Workflow parameters
 
 Wofkflow plugin Omega configuration parameters:

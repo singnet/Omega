@@ -55,14 +55,14 @@ The LLM should emit `(word-count "the quick brown fox")` and respond with `4`.
 
 - Skill names are lowercase, hyphen-separated.
 - Every argument is a string literal in quotes. Variables are forbidden in LLM-generated skill calls (the loop rejects them in `getContext`).
-- Return a value that is safe to render into the `LAST_SKILL_USE_RESULTS` context — the loop runs the result through `helper.normalize_string`.
+- Return a value that is safe to render into the context — the loop runs the result through `helper.normalize_string`.
 - If your skill may fail, wrap error-producing subcalls in `catch` or let them fall through to the loop's `HandleError`.
 
 ## Verification
 
 - The new skill appears in the prompt (search logs for `word-count`).
 - The LLM invokes it without prompting tweaks.
-- The return value shows up in `LAST_SKILL_USE_RESULTS` on the next turn.
+- The return value shows up in LLM request on the next turn.
 
 ## Next steps
 
