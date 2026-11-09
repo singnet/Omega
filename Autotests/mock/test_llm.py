@@ -63,6 +63,21 @@ class TestLlmMock:
         msg = "Step 2026-09-24 15:12:23: hello"
         assert agent.chat(_llm_request(msg)) == _llm_response("world")
 
+    def test_clear_answer(self, agent, controller):
+        assert controller.set_answer("hello", _llm_response_json("world"))
+        assert agent.chat(_llm_request('test: hello')) == _llm_response("world")
+        assert controller.clear_answer("hello")
+        assert agent.chat(_llm_request('test: hello')) == LLMResponse()
+
+    def test_clear_answer_keeps_other_answers(self, agent, controller):
+        assert controller.set_answer("hello", _llm_response_json("world"))
+        assert controller.set_answer("bye", _llm_response_json("earth"))
+        assert controller.clear_answer("hello")
+        assert agent.chat(_llm_request('test: bye')) == _llm_response("earth")
+
+    def test_clear_unknown_answer(self, agent, controller):
+        assert controller.clear_answer("never set")
+
     def test_context_manager(self, agent):
         with llm_mock_controller(address=TEST_ADDRESS) as controller:
             assert controller.set_answer("hello", _llm_response_json("world"))
