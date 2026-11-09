@@ -36,6 +36,38 @@ This reads a command-line override via `argk` (`name=value` on the MeTTa command
 | `embeddingprovider` | `Local` | `Local` (Python-side model), or the id of a provider that serves an OpenAI-compatible `/embeddings` endpoint — `OpenAI` and `ASICloud` are known to. The gateway supplies that provider's key. |
 | `embeddingModel` | empty | Model asked of a non-`Local` `embeddingprovider`. Empty means the provider default: `text-embedding-3-large` for `OpenAI`, `WhereIsAI/UAE-Large-V1` for `ASICloud`. |
 
+Keep the same embedding provider and model when reusing a memory collection.
+Changing either can make existing vectors incompatible: different dimensions
+cause writes and searches to fail, while models with the same dimensions can
+still produce incompatible vectors and unreliable search results.
+Use the launcher option `-e Local|OpenAI|ASICloud` or `EMBEDDING_PROVIDER`
+to select embeddings independently of the LLM provider.
+
+### Startup memory profile check
+
+Before starting the agent container, `scripts/omega` runs `ltm_precheck` against
+the persistent memory collection. If the collection is empty, its profile is
+set to the configured provider and model before comparison, replacing any
+different or incomplete profile without a warning. A matching provider and model produce no
+warning. A mismatch produces a warning showing the stored and configured
+profiles. If the stored profile is unknown or incomplete, the launcher warns
+that the original provider and model must be checked manually. This check
+compares profile metadata only; it does not compare vector dimensions.
+
+The same check runs during `rag.init_knowledge()`, including standalone startup,
+before checking for knowledge files. With the launcher, warnings can appear both
+in the launcher console and in the agent's configured logs.
+
+These warnings do not stop startup or convert existing vectors. If the check
+itself fails, the launcher reports that it could not complete the check and
+continues startup.
+
+For a new installation, Docker creates the missing `omega-memory` volume and
+the precheck creates the collection and records its profile while it is empty.
+This happens before the optional knowledge import (`IMPORT_KB_ON_START=1`).
+The knowledge importer does not validate the collection profile itself. If the
+precheck fails, recording a profile before that import is not guaranteed.
+
 ## Channels (`src/channels.metta`, `initChannels`)
 
 | Parameter | Default | Meaning |

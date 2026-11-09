@@ -297,6 +297,7 @@ def _choose_channel():
 
 
 def _choose_provider():
+    print("WARNING: Existing memory requires the same embedding provider and model used to create it.")
     while True:
         print("Please select your LLM provider.")
         print("1) Anthropic/Claude 2) OpenAI/ChatGPT 3) ASI Cloud Minimax 4) ASI:One")
@@ -1004,6 +1005,23 @@ prepare_memory_transfer_dir() {
     python3 "$tmp_memory_transfer_validator" "${memory_transfer_dir}" "${memory_transfer_gid}"
 }
 
+ltm_precheck() {
+    docker run --rm \
+        --user 65534:65534 \
+        --volume omega-memory:/PeTTa/repos/Omega/memory \
+        --workdir /PeTTa \
+        --env PYTHONPATH=/PeTTa/repos/Omega:/PeTTa/repos/Omega/src:/PeTTa/repos/petta_lib_chromadb \
+        --entrypoint python3 "${image}" -c '
+import sys
+import rag
+from config import init_config
+
+init_config([f"embeddingprovider={sys.argv[1]}"])
+
+rag.check_embedding_profile()
+' "$embeddingprovider"
+}
+
 start() {
     container_log_config_path=""
     log_config_volume=()
@@ -1079,6 +1097,8 @@ start() {
     migrate_omegaclaw_memory || return 1
 
     docker rm -f omega 2>/dev/null || true
+
+    ltm_precheck || echo "WARNING: Memory profile check could not be completed." >&2
 
     docker_cmd=(
         docker run -d -it
