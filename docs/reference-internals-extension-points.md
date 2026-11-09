@@ -13,6 +13,10 @@ A MeTTa plugin does the same from its `loadOmegaPlugin`: it calls `add-skill` an
 
 Full walkthrough: [tutorial-03-writing-a-custom-tool.md](./tutorial-03-writing-a-custom-tool.md).
 
+## Add a skill
+
+A skill is a directory in `plugins/workflow/instructions`, or in the directory set by `pluginWorkflowInstructionsDir`. Its `description.txt` holds the one-line description the agent sees in the list of workflows, `SKILL.md` holds the instructions in the [Agent Skills](https://agentskills.io/specification) format, and the optional `skill.metta` declares the tools of the skill with `(skill ...)` entries and defines them. The workflow plugin lists the skill when the agent starts or after `workflow-refresh-list`, and the agent loads it with `workflow-load-instructions`. [plugins/workflow/README.md](../plugins/workflow/README.md) describes the files, and [research-workflow](../plugins/workflow/instructions/research-workflow) is a complete example.
+
 ## Add a channel
 
 Three touch points:

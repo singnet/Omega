@@ -75,4 +75,4 @@ Built-in tools the agent can call. Each page follows the template **Signature �
 - [reference-internals-loop.md](./reference-internals-loop.md) — `src/loop.metta` lifecycle and turn structure
 - [reference-internals-memory-store.md](./reference-internals-memory-store.md) — The three-tier memory architecture, including `knowledge-priors` markdown seeding into ChromaDB
 - [reference-internals-tool-dispatch.md](./reference-internals-tool-dispatch.md) — How tool calls are converted and dispatched
-- [reference-internals-extension-points.md](./reference-internals-extension-points.md) — Where to hook in new tools, channels, LLM providers, and engines
+- [reference-internals-extension-points.md](./reference-internals-extension-points.md) — Where to hook in new tools, skills, channels, LLM providers, and engines

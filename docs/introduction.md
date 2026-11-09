@@ -12,13 +12,14 @@ This page is the conceptual introduction: what Omega is, why the hybrid architec
 
 ## What Omega does
 
-- Runs a token-efficient agentic loop that receives messages, selects tools, and acts.
+- Runs a token-efficient agentic loop that receives messages, selects tools and skills, and acts.
 - Delegates reasoning to one of two formal engines, orchestrated by the LLM:
   - **NAL** — Non-Axiomatic Logic, symbolic inference under uncertainty.
   - **PLN** — Probabilistic Logic Networks, probabilistic higher-order reasoning.
   - ONA (OpenNARS for Applications) is a planned third engine but is **not installed by default** — see [reference-lib-ona.md](./reference-lib-ona.md) for the current experimental status.
 - Maintains a **three-tier memory** architecture (working, long-term, AtomSpace — described below).
 - Exposes an extensible **set of tools** covering memory, shell and file I/O, communication channels, web search, remote agents, and formal reasoning.
+- Loads **skills** (step-by-step instructions for a task, in the [Agent Skills](https://agentskills.io/specification) format) through the workflow plugin. A loaded skill adds its instructions to the prompt and its own tools to the request, as the bundled research workflow does (see [Skills](#skills)).
 
 ---
 
@@ -346,7 +347,7 @@ The failure mode where a flawed premise is run through the formal engine and eme
 
 - **Transparency by design, not by post-hoc explanation.** Every conclusion can be traced to its premises, rule, and truth-value math.
 - **Simplicity.** A small core that is readable end-to-end.
-- **Extensibility.** New tools, channels, and engines are short additions — see [reference-internals-extension-points.md](./reference-internals-extension-points.md).
+- **Extensibility.** New tools, skills, channels, and engines are short additions — see [reference-internals-extension-points.md](./reference-internals-extension-points.md).
 - **Flexibility in memory representation.** Memory items coexist with other Hyperon components in the same AtomSpace; no single representation is hardcoded.
 
 ### When to use Omega

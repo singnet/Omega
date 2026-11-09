@@ -78,8 +78,8 @@ vector/records.jsonl
 ```
 
 History is the conversation trace. LTM is logical user-memory records from
-ChromaDB. Prompts, credentials, logs, tools, and other operational state are
-not exported. SHA-256 detects corruption, not archive authorship.
+ChromaDB. Prompts, credentials, logs, tools, skills, and other operational
+state are not exported. SHA-256 detects corruption, not archive authorship.
 
 ## Import
 

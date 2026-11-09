@@ -85,7 +85,7 @@ The loader skips the step when the folder is missing, or when the folder exists 
 ### Use it for
 - Facts that must persist across sessions.
 - Verified, grounded premises (attach provenance in the atom body).
-- Accumulated user preferences, procedures learned, lessons.
+- Accumulated user preferences, skills learned, lessons.
 
 ### Do not use it for
 - Ephemeral scratchpad state — use `pin`.
