@@ -20,6 +20,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -55,8 +56,13 @@ def _fake_repo(root, plugins):
     return root
 
 
-def _stub_pip(bin_dir, log, failing_subcommand):
-    """A python3 on PATH that records how pip was called instead of calling it."""
+def _stub_pip(bin_dir, log, failing_subcommand, checker):
+    """A python3 on PATH that records how pip was called instead of calling it.
+
+    Anything other than "python3 -m ..." is the script checking a plugin file,
+    which is handed to `checker`, a real interpreter, so the check reads the
+    file with a real pip.
+    """
     bin_dir.mkdir()
     stub = bin_dir / "python3"
     fail = ""
@@ -64,6 +70,7 @@ def _stub_pip(bin_dir, log, failing_subcommand):
         fail = f'case " $* " in *" {failing_subcommand} "*) exit 1 ;; esac\n'
     stub.write_text(
         "#!/bin/sh\n"
+        f'[ "$1" = -m ] || exec {checker} "$@"\n'
         f'printf "%s\\n" "$*" >> "{log}"\n'
         f"{fail}"
         "exit 0\n",
@@ -73,11 +80,13 @@ def _stub_pip(bin_dir, log, failing_subcommand):
     return bin_dir
 
 
-def _install(tmp_path, plugins, *pip_options, failing_subcommand=None):
+def _install(
+    tmp_path, plugins, *pip_options, failing_subcommand=None, checker=sys.executable
+):
     """Run the script against a made-up tree; hand back its exit and pip's calls."""
     repo = _fake_repo(tmp_path / "omega", plugins)
     log = tmp_path / "pip.log"
-    bin_dir = _stub_pip(tmp_path / "bin", log, failing_subcommand)
+    bin_dir = _stub_pip(tmp_path / "bin", log, failing_subcommand, checker)
 
     result = subprocess.run(
         [str(repo / "scripts" / SCRIPT.name), *pip_options],
@@ -250,15 +259,63 @@ def test_a_byte_order_mark_does_not_hide_an_option(tmp_path):
     assert not _installs(calls), "pip installed something anyway"
 
 
-def test_a_file_grep_cannot_read_is_refused(tmp_path):
-    """pip decodes a UTF-16 file by its byte order mark, but to grep it is
-    bytes with a zero after every letter, so no option in it would be found."""
+def test_an_option_in_a_utf16_file_is_found(tmp_path):
+    """pip decodes a UTF-16 file by its byte order mark. Read as bytes it has a
+    zero after every letter, and no option in it would be found."""
     utf16 = "--index-url https://elsewhere.example/simple\n".encode("utf-16")
     _, result, calls = _install(tmp_path, {"wide": utf16})
 
     assert result.returncode != 0, "the install went ahead"
     assert not _installs(calls), "pip installed something anyway"
-    assert "UTF-8" in result.stderr
+    assert "1:--index-url https://elsewhere.example/simple" in result.stderr
+
+
+def test_a_coding_line_does_not_hide_an_option(tmp_path):
+    """pip decodes a file in the encoding its first two lines name. In UTF-7
+    "+AC0ALQ-" is "--", so the option is only there once the file is decoded."""
+    disguised = (
+        "# -*- coding: utf-7 -*-\n"
+        "+AC0ALQ-index-url https://elsewhere.example/simple\n"
+        "requests\n"
+    )
+    _, result, calls = _install(tmp_path, {"coded": disguised})
+
+    assert result.returncode != 0, "the install went ahead"
+    assert not _installs(calls), "pip installed something anyway"
+    assert "2:--index-url https://elsewhere.example/simple" in result.stderr
+
+
+def test_every_line_break_pip_knows_ends_a_line(tmp_path):
+    """pip splits the file with str.splitlines, which breaks at characters such
+    as \\x1c as well as at newlines, so an option behind one is on a line of
+    its own."""
+    for name, separator in (("fs", "\x1c"), ("ls", "\u2028"), ("cr", "\r")):
+        joined = f"requests{separator}--index-url https://elsewhere.example/simple\n"
+        _, result, calls = _install(tmp_path / name, {"joined": joined})
+
+        assert result.returncode != 0, f"the install went ahead after {name}"
+        assert not _installs(calls), f"pip installed something after {name}"
+
+
+def test_a_continued_line_does_not_hide_an_option(tmp_path):
+    """pip joins a line ending in a backslash with the next one."""
+    continued = "requests \\\n  --hash=sha256:00ff\n"
+    _, result, calls = _install(tmp_path, {"continued": continued})
+
+    assert result.returncode != 0, "the install went ahead"
+    assert not _installs(calls), "pip installed something anyway"
+
+
+def test_a_pip_the_check_cannot_use_refuses_the_file(tmp_path):
+    """The check uses pip's own reader. Without it the file has not been read,
+    so it is refused rather than passed to pip unchecked."""
+    _, result, calls = _install(
+        tmp_path, {"plain": "requests\n"}, checker=f"{sys.executable} -S -I"
+    )
+
+    assert result.returncode != 0, "the install went ahead"
+    assert not _installs(calls), "pip installed something anyway"
+    assert "cannot be used to check plugin files" in result.stderr
 
 
 def test_ordinary_requirements_are_not_mistaken_for_options(tmp_path):

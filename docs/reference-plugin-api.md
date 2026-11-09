@@ -88,7 +88,8 @@ would let one plugin choose where Omega's own packages are fetched from. Sharing
 one invocation is what makes Omega's pins win, so there is nowhere to scope such
 an option to. A plugin file that carries one, at the start of a line or after a
 requirement (`foo==1.0 --hash=...`), stops the install with the line quoted. The
-file must be UTF-8.
+check reads the file with pip's own code, so an option counts wherever pip would
+find one, including behind a `# -*- coding: -*-` line or an unusual line break.
 
 Some limits are worth knowing:
   - Only the exact versions in Omega's own `requirements.txt` are protected. A

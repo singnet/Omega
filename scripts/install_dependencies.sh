@@ -29,27 +29,44 @@ repo="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 # what makes core's pins win, so there is nowhere to scope such an option to,
 # and the file is refused instead.
 #
-# pip reads an option anywhere a word on the line starts with "-", so one after
-# a requirement counts too ("foo==1.0 --hash=..."). It also drops a leading
-# UTF-8 byte order mark before reading the file, so the check drops it as well,
-# and it decodes UTF-16 and UTF-32 files that grep cannot read, so those are
-# refused outright. A comment is removed first, the way pip removes it.
+# The file is read by pip's own code, the same that will read it for the
+# install. pip decodes it by its byte order mark or a "# -*- coding: -*-"
+# line, splits it at every character Python counts as a line break, joins
+# lines ending in "\", drops comments, expands ${VARIABLES}, and then takes
+# any word starting with "-" as the start of options. A check that copies any
+# of those steps by hand can be fooled where the copy differs. This pip is the
+# one that installs, so the two cannot disagree. A pip without these functions
+# refuses every plugin file rather than letting one through unread.
 refuse_pip_options() {
-    case "$(head -c 4 "$1" | od -An -tx1 | tr -d ' \n')" in
-        fffe*|feff*|0000feff*)
-            echo "$1: save this file as UTF-8; it is UTF-16 or UTF-32." >&2
-            exit 1
-            ;;
-    esac
-    bom="$(printf '\357\273\277')"
-    options="$(LC_ALL=C sed -e "1s/^$bom//" -e 's/^#.*//' -e 's/[[:space:]]#.*//' "$1" \
-        | grep -n -e '^[[:space:]]*-' -e '[[:space:]]-' || :)"
-    if [ -n "$options" ]; then
-        echo "$1: a plugin lists requirements here, and nothing else." >&2
-        echo "pip would apply these to the whole install, core's own packages included:" >&2
-        echo "$options" >&2
-        exit 1
-    fi
+    python3 - "$1" <<'PY'
+import sys
+
+path = sys.argv[1]
+try:
+    from pip._internal.req.req_file import (
+        break_args_options,
+        get_file_content,
+        preprocess,
+    )
+except ImportError as error:
+    sys.exit(f"{path}: this pip cannot be used to check plugin files ({error}).")
+
+try:
+    _, content = get_file_content(path, None)
+except Exception as error:
+    sys.exit(f"{path}: pip cannot read this file: {error}")
+
+options = [
+    f"{number}:{line}"
+    for number, line in preprocess(content)
+    if break_args_options(line)[1].strip()
+]
+if options:
+    print(f"{path}: a plugin lists requirements here, and nothing else.", file=sys.stderr)
+    print("pip would apply these to the whole install, core's own packages included:", file=sys.stderr)
+    print("\n".join(options), file=sys.stderr)
+    sys.exit(1)
+PY
 }
 
 set -- "$@" -r "$repo/requirements.txt"
