@@ -100,9 +100,9 @@ All frames are UTF-8 JSON objects with a `type` field; unknown types are logged 
 - Outbound messages produced while disconnected queue in a bounded outbox (100 entries) and flush after the next successful connect, before any new inbound traffic is processed.
 - Duplicate `user_message` frames (`seq <= last_seen_seq`, or already buffered) are dropped, so server replays after `resume` are idempotent.
 
-## `channels/websearch.py`
+## `src/websearch.py`
 
-Not a communication channel in the `send`/`receive` sense — this is the backend for the `search` skill. Exposes `search(query)`.
+Not a communication channel in the `send`/`receive` sense. This is the backend for the `websearch` tool and exposes `search(query, max_results=10)`.
 
 ## Adding a new channel
 
@@ -110,5 +110,5 @@ See [tutorial-04-adding-a-channel.md](./tutorial-04-adding-a-channel.md).
 
 ## Related reference
 
-- [reference-skills-communication.md](./reference-skills-communication.md) — the MeTTa surface (`send`, `receive`, `websearch`).
+- [reference-tools-communication.md](./reference-tools-communication.md) — the MeTTa surface (`send`, `receive`, `websearch`).
 - [reference-configuration.md](./reference-configuration.md) — channel parameters.
