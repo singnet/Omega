@@ -47,7 +47,7 @@
 
 - name: default
   loader: metta
-  location: "{REPO}/routers"
+  location: "{REPO}/plugins/router"
 
 - name: workflow
   loader: metta
