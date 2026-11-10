@@ -1,6 +1,6 @@
-# Reference — I/O Skills
+# Reference — I/O Tools
 
-Defined in `src/skills.metta`; the `shell` primitive is backed by `src/skills.pl`, the write and delete skills by `src/fileio.py`.
+Defined in `src/skills.metta`; the `shell` tool is backed by `src/skills.pl`, the write and delete tools by `src/fileio.py`.
 
 ---
 
@@ -8,17 +8,17 @@ Defined in `src/skills.metta`; the `shell` primitive is backed by `src/skills.pl
 
 ### Signature
 ```metta
-(shell "command")
+(shell "cmd")
 ```
 
 ### Purpose
-Execute a shell command and return its standard output.
+Execute a shell command and return what it prints to standard output and standard error.
 
 ### Parameters
-- `command` — a string without apostrophes. Apostrophes are rejected by the Prolog helper.
+- `cmd` — the command line. `shell/2` passes it unchanged to `sh -c` and does not check it for apostrophes.
 
 ### Returns
-The captured stdout of the command as a string.
+The captured stdout and stderr of the command as one string, or `timeout_error` if the command is still running after 5 seconds. A failing command still returns its output, and the exit status is not reported.
 
 ### Examples
 ```metta
@@ -28,7 +28,8 @@ The captured stdout of the command as a string.
 
 ### Notes / Limits
 - Runs with the permissions of the Omega process.
-- No sandboxing. Run in a container for anything resembling untrusted use.
+- Executed as `timeout -k 1s 5s sh -c <cmd>`. A command still running after 5 seconds gets a TERM signal, and a KILL signal one second later.
+- File access is limited only by the Landlock policy from `securityPolicyPath` (see `get-io-policy`). There is no other sandbox. Run in a container for anything resembling untrusted use.
 - Prefer writing complex commands to a file and invoking the file rather than embedding quotes-within-quotes.
 
 ---
@@ -37,14 +38,14 @@ The captured stdout of the command as a string.
 
 ### Signature
 ```metta
-(read-file "path")
+(read-file "filename")
 ```
 
 ### Purpose
 Read a file into a string.
 
 ### Parameters
-- `path` — absolute or relative filesystem path. MeTTa library paths of the form `(library Omega ./memory/prompt.txt)` are also accepted (see `getPrompt`).
+- `filename` — absolute or relative filesystem path. MeTTa library paths of the form `(library Omega ./memory/prompt.txt)` are also accepted (see `getPrompt`).
 
 ### Returns
 The file's contents as a single string.
@@ -63,20 +64,20 @@ The file's contents as a single string.
 
 ### Signature
 ```metta
-(write-file "path" "contents")
+(write-file "filename" "content")
 ```
 
 ### Purpose
 Create or overwrite a file with the given contents.
 
 ### Parameters
-- `path` — target filesystem path.
-- `contents` — the exact bytes to write.
+- `filename` — target filesystem path.
+- `content` — the exact bytes to write.
 
 ### Returns
 A verification string read back from disk after the write:
 `WRITE-VERIFIED file=<path> bytes=<size> sha256=<16 hex chars> head='<first 80 bytes>' tail='<last 80 bytes>'`
-— or `WRITE-FAILED file=<path>: <error>` on failure (the skill returns, never raises).
+— or `WRITE-FAILED file=<path>: <error>` on failure (the tool returns, never raises).
 
 ### Examples
 ```metta
@@ -96,16 +97,16 @@ A verification string read back from disk after the write:
 
 ### Signature
 ```metta
-(write-file-b64 "path" "base64content")
+(write-file-b64 "filename" "content_base64")
 ```
 
 ### Purpose
 Create or overwrite a file with base64-decoded content — byte-exact for content containing
-quotes, backslashes or newlines, which the plain-text argument path can mangle.
+quotes, backslashes or newlines.
 
 ### Parameters
-- `path` — target filesystem path.
-- `base64content` — base64 encoding of the exact bytes to write, as a single line
+- `filename` — target filesystem path.
+- `content_base64` — base64 encoding of the exact bytes to write, as a single line
   (whitespace inside the argument is tolerated).
 
 ### Returns
@@ -126,15 +127,15 @@ The same `WRITE-VERIFIED …` / `WRITE-FAILED …` string as `write-file`.
 
 ### Signature
 ```metta
-(append-file "path" "line")
+(append-file "filename" "content")
 ```
 
 ### Purpose
 Append a line to an existing file, followed by a newline.
 
 ### Parameters
-- `path` — target filesystem path. File must exist.
-- `line` — string to append.
+- `filename` — target filesystem path. File must exist.
+- `content` — string to append.
 
 ### Returns
 `APPEND-VERIFIED file=<path> bytes=<file size after append> sha256=<16 hex chars> head='…' tail='…'`
@@ -146,7 +147,7 @@ read back from disk — or `APPEND-FAILED file=<path>: <error>` (e.g. when the f
 ```
 
 ### Notes / Limits
-- Fails if the file does not exist (the skill checks existence first). Create it with `write-file` first if needed.
+- Fails if the file does not exist (the tool checks existence first). Create it with `write-file` first if needed.
 - For files up to 160 bytes the `tail` snippet is empty (`head` plus `sha256` already cover the content); for files over 2 MB the hash is reported as `sha256=skipped(large)`.
 - A trailing newline is always added.
 
@@ -211,12 +212,12 @@ DELETE-VERIFIED file=/tmp/delete-file-example.txt
 
 Return the filesystem paths allowed by Omega's active security policy.
 
-Agent should use this skill before reading, writing, appending, or otherwise modifying a
-file when the target path is not known to be allowed.
+The agent should use this tool before reading, writing, appending, or otherwise
+modifying a file when the target path is not known to be allowed.
 
 ### Parameters
 
-This skill does not take any parameters. It reads the policy file configured
+This tool does not take any parameters. It reads the policy file configured
 by the `securityPolicyPath` runtime option.
 
 ### Returns
@@ -235,7 +236,7 @@ Example:
 }
 ```
 
-If no security policy is configured, the skill returns:
+If no security policy is configured, the tool returns:
 
 ```text
 Could not retrieve policy: policy is not set
@@ -261,14 +262,14 @@ A typical workflow before writing a file is:
 
 ### Notes / Limits
 
-- The skill reports the paths the policy resolves to: glob patterns are
+- The tool reports the paths the policy resolves to: glob patterns are
   expanded and paths missing on the host are dropped. It does not grant
   permissions.
 - Paths in `read_only` must not be used for writing.
 - Paths in `read_write` may be read and modified.
-- The skill does not check a particular requested path automatically.
+- The tool does not check a particular requested path automatically.
 - The result contains policy paths, not the contents of the policy file.
 - Does not reveal the complete security-policy configuration to the user.
 - If a requested path is denied, suggest using `/tmp` when appropriate.
-- If `securityPolicyPath` is empty, the skill reports that the policy is not
+- If `securityPolicyPath` is empty, the tool reports that the policy is not
   set.
