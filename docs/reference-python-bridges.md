@@ -59,28 +59,54 @@ sh run.sh run.metta logConfigPath=/path/to/logging.conf
 
 If no custom config is provided, Omega uses `config/logging.conf`. If the configured file is missing, Omega falls back to basic stderr logging.
 
-## `lib_llm_ext.py`
+## `providers/lib_llm_ext.py`
 
-LLM and embedding bridges.
+Embedding bridges and the LLM clients that the provider plugins delegate to.
 
 | Function | Purpose |
 |---|---|
-| `useClaude(prompt)` | Call an Anthropic Claude model. Used when `provider = Anthropic`. |
-| `useMiniMax(prompt)` | Call MiniMax. Used when `provider = ASICloud` (or similar routing). |
-| `useAsi1(prompt)` | Call ASI1. Used when `provider = ASIOne`. |
 | `useLocalEmbedding(str)` | Compute an embedding with a locally loaded model. Used when `embeddingprovider = Local`. |
 | `initLocalEmbedding()` | Load the local embedding model once at startup. |
 
-OpenAI calls go through MeTTa-side helpers (`useGPT`, `useGPTEmbedding`) that are defined elsewhere in the library but use the same LLM call pattern.
+The module also defines `AIProvider`, an OpenAI-compatible client, and its base class `AbstractAIProvider`. The provider plugins in `providers/` derive from `providers.LLMProvider` and delegate their chat calls to objects of these classes. The loop does not call this module for the LLM. It calls `llmProviderChat` (`src/providers.metta`), which goes to the provider plugin selected by `provider` (see [reference-plugin-api.md](./reference-plugin-api.md#llm-provider-integration)).
 
 ## `src/helper.py`
 
-String and time utilities used by the loop.
+String, time, path, and version utilities used by the loop and the tools.
 
 | Function | Purpose |
 |---|---|
-| `normalize_string(obj)` | Render a skill return value into a string safe to embed in the next prompt. |
-| `around_time(ts, n)` | Backs `(episodes ts)` — returns `n` lines of `memory/history.metta` around `ts`. |
+| `extract_timestamp(line)` | Parse the timestamp in a `memory/history.metta` line, or return `None`. |
+| `around_time(ts, n)` | Backs `(episodes ts)`. Finds the line of `memory/history.metta` whose timestamp is closest to `ts` and returns it with up to `n` lines before and after it, at most `2n+1` lines, each prefixed with its line number. |
+| `normalize_string(obj)` | Render a tool result into a string. Bytes are decoded as UTF-8, and characters that are not valid UTF-8 are dropped. |
+| `joinPath(parts)` | Join path parts with `os.path.join`. |
+| `projectRootDirectory()` | Return the repository root. |
+| `omega_version(repo_root)` | Return the Omega version string. |
+
+## `src/providers.py`
+
+Request and response types for the LLM, the provider registry, and the conversion between MeTTa and tool calls. The MeTTa side calls it through `src/providers.metta` and `src/loop.metta`.
+
+| Name | Purpose |
+|---|---|
+| `LLMTool`, `LLMToolParameter` | A tool schema: name, description, and parameters, each of which has only a name. |
+| `LLMToolCall`, `LLMResponse` | One call from the model (id, name, arguments, error) and a response (calls, error). |
+| `LLMMessage`, `LLMToolCallMessage`, `LLMToolCallResponseMessage` | Messages of a request with roles `user`, `assistant`, and `tool`. |
+| `LLMRequest`, `LLMProvider` | A request (messages, tools, token limit, reasoning mode) and the base class of provider plugins. |
+| `registerLLMProvider(id, provider)` | Register a provider under the id that the `provider` configuration parameter uses. |
+| `llmProviderStart(provider)` | Start the selected provider. |
+| `llmProviderChat(request)` | Send a request to the selected provider and check the response with `_validate_response`. Returns an empty `LLMResponse` if the provider raises an exception. |
+| `getTools(skills)` | Turn the `(name description arguments)` triples from `getSkills` into `LLMTool` objects. |
+| `llmRequestMessage`, `llmToolCallMessage`, `llmToolCallResponseMessage` | Build a message of the types above. |
+| `llmRequest(prompt, episodes, max_tokens, reasoning_mode, tools)` | Build a request from the system message, the other messages, and the tools. |
+| `llmResponseCalls`, `llmResponseIsEmpty`, `llmResponseIsError`, `llmResponseGetError` | Read a response. |
+| `llmToolCallGetName`, `llmToolCallGetId`, `llmToolCallGetArguments`, `llmToolCallIsError`, `llmToolCallGetError` | Read a tool call. |
+| `llmToolCallToSExpr(call)` | Write one call as `(<id> (<name> "arg" ...))`, or as an `Error` form if the call has an error. |
+| `llmResponseToSExpr(response)` | Write a response as a list of such pairs, or as `(Error () "<text>")` if the response has an error. |
+
+## `src/utils.py`
+
+List helpers for the message list of the loop: `listNew`, `listAppend`, and `listSlice`.
 
 ## `src/skills.pl`
 
@@ -88,8 +114,8 @@ Prolog helpers imported via `import_prolog_functions_from_file`.
 
 | Predicate | Purpose |
 |---|---|
-| `shell/2` | Run a shell command and capture stdout. Rejects apostrophes. |
-| `first_char/2` | Return the first character of a string — used by the loop to detect whether the LLM produced a valid s-expression. |
+| `shell/2` | Run a shell command as `timeout -k 1s 5s sh -c <command>`, passing the command unchanged, and capture stdout and stderr together. Returns `timeout_error` if the command is still running after 5 seconds. |
+| `first_char/2` | Return the first character of a string. `src/skills.metta` imports it, and no code calls it. |
 
 ## `src/websearch.py`
 
