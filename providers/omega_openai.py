@@ -33,6 +33,13 @@ class OpenAIProviderImpl(llm.AIProvider):
 
     def convert_message(self, message: LLMMessage) -> [dict]:
         if isinstance(message, LLMToolCallMessage):
+            output = (message.provider_data or {}).get("openai_responses")
+            if output is not None:
+                items = [item.model_dump(mode="json", exclude_none=True) for item in output]
+                call_ids = {item.call_id for item in output if item.type == "function_call"}
+                # Local notices have no original response item.
+                return items + [self.convert_tool_call(call) for call in message.calls
+                                if call.id not in call_ids]
             return [self.convert_tool_call(call) for call in message.calls]
         elif isinstance(message, LLMToolCallResponseMessage):
             return [{
@@ -115,11 +122,12 @@ class OpenAIProviderImpl(llm.AIProvider):
         if not output:
             return response
 
+        response.with_provider_data({"openai_responses": output})
         for item in output:
             if item.type != "function_call":
                 continue
             tool_call = item
-            tc = LLMToolCall().with_name(tool_call.name).with_id(tool_call.id)
+            tc = LLMToolCall().with_name(tool_call.name).with_id(tool_call.call_id)
             try:
                 arguments = json.loads(tool_call.arguments)
             except json.JSONDecodeError as error:
