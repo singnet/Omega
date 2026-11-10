@@ -4,12 +4,10 @@ bootstrap() {
 ensure_launcher_matches_image || return 1
 
 # Create temporary files
-tmp_config_file="$(mktemp)"
 tmp_py_file="$(mktemp)"
-trap 'rm -f "$tmp_config_file" "$tmp_py_file"' EXIT
+trap 'rm -f "$tmp_py_file"' EXIT
 
 # Lock down permissions immediately after creation
-chmod 0600 "$tmp_config_file"
 chmod 0600 "$tmp_py_file"
 
 cat >"$tmp_py_file" <<'PY'
@@ -354,7 +352,7 @@ def _write_kv(fp, key, value):
 
 
 def config_run_omega(
-    config_output_path,
+    config_output,
     configured_memory_transfer_volume="omega-memory-transfer",
     configured_memory_export_enabled="0",
 ):
@@ -375,33 +373,38 @@ def config_run_omega(
         "1" if configured_memory_export_enabled == "1" else _choose_memory_export()
     )
 
-    with open(config_output_path, "w", encoding="utf-8") as f:
-        # Keep the default entry available for credentials and embedding setup.
-        for key, value in default_selection.items():
-            _write_kv(f, "api_token" if key == "token" else key, value)
-        _write_kv(f, "OMEGA_AUTH_SECRET", "".join(secrets.choice(string.digits) for _ in range(6)))
-        _write_kv(f, "router_catalog", json.dumps(router_catalog))
-        _write_kv(f, "LLM_router_switch", LLM_router_switch)
-        _write_kv(f, "embeddingprovider", embeddingprovider)
-        for role, selection in router_catalog.items():
-            for key, value in selection.items():
-                config_key = "api_token" if key == "token" else key
-                _write_kv(f, f"{role}_{config_key}", value)
-        _write_kv(f, "IMPORT_KB_ON_START", import_kb_on_start)
-        _write_kv(f, "memory_transfer_volume_name", configured_memory_transfer_volume)
-        _write_kv(f, "memory_export_enabled", memory_export_enabled)
-        for key, value in channel_config.items():
-            _write_kv(f, key, value)
-
+    f = config_output
+    # Keep the default entry available for credentials and embedding setup.
+    for key, value in default_selection.items():
+        _write_kv(f, "api_token" if key == "token" else key, value)
+    _write_kv(f, "OMEGA_AUTH_SECRET", "".join(secrets.choice(string.digits) for _ in range(6)))
+    _write_kv(f, "router_catalog", json.dumps(router_catalog))
+    _write_kv(f, "LLM_router_switch", LLM_router_switch)
+    _write_kv(f, "embeddingprovider", embeddingprovider)
+    for role, selection in router_catalog.items():
+        for key, value in selection.items():
+            config_key = "api_token" if key == "token" else key
+            _write_kv(f, f"{role}_{config_key}", value)
+    _write_kv(f, "IMPORT_KB_ON_START", import_kb_on_start)
+    _write_kv(f, "memory_transfer_volume_name", configured_memory_transfer_volume)
+    _write_kv(f, "memory_export_enabled", memory_export_enabled)
+    for key, value in channel_config.items():
+        _write_kv(f, key, value)
 
 if __name__ == "__main__":
-    config_run_omega(*sys.argv[1:4])
+    # Keep interactive output separate from the shell assignments captured by Bash.
+    config_output = sys.stdout
+    sys.stdout = sys.stderr
+    config_run_omega(config_output, *sys.argv[1:3])
 PY
 
-python3 "$tmp_py_file" "$tmp_config_file" \
-    "${memory_transfer_volume_name}" "${memory_export_enabled:-0}" </dev/tty
-
-. "$tmp_config_file"
+# Capture only shell assignments; prompts remain visible on the terminal.
+local config_assignments
+config_assignments="$(python3 "$tmp_py_file" \
+    "${memory_transfer_volume_name}" "${memory_export_enabled:-0}" </dev/tty)" || return 1
+# Every value is shell-quoted by _write_kv; no configuration is written to disk.
+eval "$config_assignments"
+unset config_assignments
 
 cat <<EOF
 
@@ -1202,7 +1205,8 @@ if sys.argv[1]:
     llm_env=()
     llm_options=()
     if [ "${LLM_router_switch:-none}" = "default" ]; then
-        llm_options+=("router=default" "router_catalog=${router_catalog:-}")
+        llm_env+=(-e "OMEGA_ROUTER_CATALOG=${router_catalog:-}")
+        llm_options+=("router=default")
     else
         llm_env+=(-e "${api_token_var}=${api_token}")
         llm_options+=("router=none" "provider=${provider}")

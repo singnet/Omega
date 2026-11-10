@@ -14,7 +14,8 @@ EMBEDDING_PROVIDER="${EMBEDDING_PROVIDER:-Local}"
 EMBEDDING_MODEL="${EMBEDDING_MODEL:-}"
 MM_URL="http://localhost:8080/" # dummy value
 OPENCLAW_URL="http://localhost:8080/" # dummy value
-router_catalog=""
+router_catalog="${OMEGA_ROUTER_CATALOG:-}"
+unset OMEGA_ROUTER_CATALOG
 legacy_llm_args=()
 agent_args=()
 for arg in "$@"; do
