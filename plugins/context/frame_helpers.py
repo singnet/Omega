@@ -149,9 +149,13 @@ def _summary_parts(summary):
             if line.startswith(prefix):
                 value = line[len(prefix):].strip()
                 if name == "directive":
-                    parts[name] = value
+                    parts[name] = "" if value == "(not recorded)" else value
                 elif value:
-                    parts[name] = [item.strip() for item in value.split(" | ") if item.strip()]
+                    parts[name] = [
+                        item.strip()
+                        for item in value.split(" | ")
+                        if item.strip() and item.strip() != "(none recorded)"
+                    ]
                 break
     return parts
 
@@ -164,6 +168,15 @@ def _clip_summary(value, limit):
         return value[:limit]
     excerpt = value[:limit - 3].rsplit(" ", 1)[0].rstrip()
     return (excerpt or value[:limit - 3]) + "..."
+
+
+def cfv2_pruned_event_timestamp(pruned_events_repr, position):
+    """Return the first or last timestamp from the pruned events in source order."""
+    events = _balanced_exprs(normalize_string(pruned_events_repr), "FrameEvent")
+    if not events:
+        return ""
+    selected = events[0] if _unquote_history_string(position) == "First" else events[-1]
+    return _unquote_history_string(_fields(selected, "timestamp").get("timestamp", ""))
 
 
 def cfv2_update_pruning_summary(
@@ -184,6 +197,13 @@ def cfv2_update_pruning_summary(
     decisions = previous["decisions"]
     outcomes = previous["outcomes"]
     events = _balanced_exprs(normalize_string(pruned_events_repr), "FrameEvent")
+    timestamps = [
+        _unquote_history_string(_fields(event, "timestamp").get("timestamp", ""))
+        for event in events
+    ]
+    timestamps = [timestamp for timestamp in timestamps if timestamp]
+    range_from = _decode_history_text(omitted_from) or (timestamps[0] if timestamps else "")
+    range_to = _decode_history_text(omitted_to) or (timestamps[-1] if timestamps else range_from)
     for event in events:
         fields = _fields(event, "category", "kind", "payload")
         category = _unquote_history_string(fields.get("category", ""))
@@ -212,8 +232,8 @@ def cfv2_update_pruning_summary(
     outcomes = list(dict.fromkeys(item for item in outcomes if item))[-3:]
     notice = (
         f"PRUNED HISTORY: {int(omitted_count)} events omitted from "
-        f"{_decode_history_text(omitted_from)} through {_decode_history_text(omitted_to)}. "
-        f'Retrieve details with episodes "{_decode_history_text(omitted_from)}" '
+        f"{range_from} through {range_to}. "
+        f'Retrieve details with episodes "{range_from}" '
         "(timestamp format YYYY-MM-DD HH:MM:SS)."
     )
     labels = ["Original directive: ", "Key decisions: ", "Outcomes: "]

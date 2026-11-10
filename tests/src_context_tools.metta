@@ -15,7 +15,6 @@
 
 !(register-context-frame-skills)
 
-(= (maxFrameHistoryEvents) 100)
 !(change-state! &cfv2-current-frame-id FrameToolTest)
 !(change-state! &cfv2-current-results ())
 !(change-state! &cfv2-current-history-summary "")

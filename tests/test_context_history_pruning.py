@@ -29,6 +29,9 @@ def test_pruning_rollup_preserves_directive_decisions_outcomes_and_is_bounded():
         "F1", "Execution", "CommandBatch", "SearchWeather returned rain", "2026-11-08 10:03:00"
     )
 
+    assert frame_helpers.cfv2_pruned_event_timestamp(f"({directive} {decision})", "First") == "2026-11-08 10:00:00"
+    assert frame_helpers.cfv2_pruned_event_timestamp(f"({directive} {decision})", "Last") == "2026-11-08 10:01:00"
+
     summary = frame_helpers.cfv2_update_pruning_summary(
         '""', f"({directive})", '"2026-11-08 10:00:00"',
         '"2026-11-08 10:00:00"', 1, 1200,
@@ -47,14 +50,16 @@ def test_pruning_rollup_preserves_directive_decisions_outcomes_and_is_bounded():
     assert len(summary) <= 1200
 
     for index in range(20):
+        expected_to = f"2026-11-08 10:{index + 3:02d}:00"
         next_event = _event(
             "F1", "StateChange", "ConstraintAdded", f"Constraint detail {index}",
-            f"2026-11-08 10:{index + 3:02d}:00",
+            expected_to,
         )
         summary = frame_helpers.cfv2_update_pruning_summary(
             json.dumps(summary), f"({next_event})", '"2026-11-08 10:00:00"',
-            f'"2026-11-08 10:{index + 3:02d}:00"', index + 4, 1200,
+            json.dumps(expected_to), index + 4, 1200,
         )
+        assert f"through {expected_to}" in summary
         assert len(summary) <= 1200
         assert "Original directive: Research the weather impacts" in summary
 

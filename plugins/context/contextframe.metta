@@ -34,6 +34,7 @@
 (= (cfv2HistorySummaryLimit) 2400)
 (= (cfv2PrunedHistorySummaryLimit) 1200)
 (= (cfv2LastResultsLimit) 1200)
+(= (maxFrameHistoryEvents) 100)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Python helper wrappers
@@ -75,6 +76,13 @@
          (repr $events)
          (repr $pruningSummary)
          (cfv2HistorySummaryLimit))))
+
+(= (cfv2-pruned-event-timestamp $events $position)
+   (swrite
+      (py-call
+         (frame_helpers.cfv2_pruned_event_timestamp
+            (repr $events)
+            (repr $position)))))
 
 (= (cfv2-update-pruning-summary $previous $pruned $from $to $count)
    (py-call
@@ -425,6 +433,11 @@
       (or (== $category ())
           (== $eventCategory $category))))
 
+(= (cfv2-event-timestamp
+      (FrameEvent (frameID $frameID) (category $category) (kind $kind)
+         (payload $payload) (timestamp $timestamp)))
+   $timestamp)
+
 (= (cfv2-add-frame-event $frameID (HistoryEventType $category $kind) $payload)
    (let* (($event (FrameEvent
                     (frameID $frameID)
@@ -449,8 +462,8 @@
       (if (== $removeCount 0)
           NO-PRUNING-NEEDED
           (let* (($pruned (take $removeCount $frameEvents))
-                 ($from (cfv2-event-timestamp (car-atom $pruned)))
-                 ($to (cfv2-event-timestamp (car-atom (cfv2-reverse-events $pruned))))
+                 ($from (cfv2-pruned-event-timestamp $pruned First))
+                 ($to (cfv2-pruned-event-timestamp $pruned Last))
                  ($oldRecord (cfv2-get-frame-prune-record $frameID))
                  ($oldSummary (cfv2-prune-summary $oldRecord))
                  ($oldFrom (cfv2-prune-from $oldRecord))
@@ -473,10 +486,6 @@
                     ())
                 HISTORY-PRUNED)))))
 
-(= (cfv2-reverse-events ()) ())
-(= (cfv2-reverse-events (cons $head $tail))
-   (append (cfv2-reverse-events $tail) ($head)))
-
 (= (cfv2-remove-oldest-frame-events () $frameID $removeCount) ())
 (= (cfv2-remove-oldest-frame-events (cons $event $tail) $frameID $removeCount)
    (if (and (> $removeCount 0)
@@ -488,7 +497,7 @@
 (= (cfv2-archive-pruned-events (cons $event $tail))
    (progn
       (append-file-raw
-         (library Omega ./memory/history.metta)
+         (joinPath ((projectRootDirectory) "memory" "history.metta"))
          (cfv2-pruned-audit-entry $event))
       (cfv2-archive-pruned-events $tail)))
 
