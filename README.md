@@ -78,25 +78,45 @@ embedding provider independently of the LLM provider. Switching can break
 memory writes and searches; equal vector dimensions do not guarantee
 that different models are compatible.
 
-Run Omega using the next command:
-```
-curl -fsSL https://github.com/singnet/Omega/raw/refs/tags/v0.1.19/scripts/omegaclaw | bash -s -- singularitynet/omega:v0.1.19
-```
-
-To run a specific version of Omega set version in `TAG` environment variable and run the following command:
-```
-export TAG=<version>; curl -fsSL  https://github.com/singnet/Omega/raw/refs/tags/$TAG/scripts/omegaclaw | bash -s -- singularitynet/omegaclaw:$TAG
+Run Omega using the interactive launcher for release `v0.1.23`:
+```bash
+curl -fsSL https://github.com/singnet/Omega/raw/refs/tags/v0.1.23/scripts/omega | bash -s -- singularitynet/omega:v0.1.23
 ```
 
-To stop the Omega Docker container:
-```
-docker stop omegaclaw
+To run a specific release, set `TAG` to the desired [release tag](https://github.com/singnet/Omega/releases). Use the same tag for the launcher and Docker image:
+```bash
+export TAG=v0.1.23
+curl -fsSL "https://github.com/singnet/Omega/raw/refs/tags/$TAG/scripts/omega" | bash -s -- "singularitynet/omega:$TAG"
 ```
 
-To restart the Omega Docker container:
+To stop Omega using the launcher (with `TAG` set as above):
+```bash
+curl -fsSL "https://github.com/singnet/Omega/raw/refs/tags/$TAG/scripts/omega" | bash -s -- stop
 ```
-docker start omegaclaw
+
+To start Omega again after a stop, start the same container. It keeps the settings you entered:
+```bash
+docker start omega
 ```
+
+To change the settings, rerun the interactive launcher:
+```bash
+curl -fsSL "https://github.com/singnet/Omega/raw/refs/tags/$TAG/scripts/omega" | bash -s -- "singularitynet/omega:$TAG"
+```
+
+The launcher replaces the container and asks for all settings again. It keeps
+the `omega-memory` Docker volume with the agent's memory. For a non-interactive
+launch from a checkout, use `scripts/omega start -d "singularitynet/omega:$TAG"`
+with your channel, provider, and other options; see `scripts/omega --help`.
+From a checkout, `scripts/omega stop` stops the container.
+
+The `scripts/omega` launcher and the Docker image must be the same version.
+In `main`, `scripts/omega start` (and the interactive bootstrap) compare the host
+script version with the version baked into the image and abort when both are
+known and differ. A `curl | bash` install has no checkout, so that path warns and
+continues. This check is not present in every older release; always use the same
+release tag for the checkout and the image, for example `git checkout v0.1.23`
+with `singularitynet/omega:v0.1.23`.
 
 ### Memory portability
 
@@ -108,15 +128,19 @@ for setup, export controls, archive contents, and import modes.
 > using `scripts/omega`, because both operations run from the container
 > entrypoint before the agent loop starts.
 
-To restore an archive while upgrading to a tagged image on Linux, use the same
-prepared transfer directory. Its group ID is required by the launcher:
+Archives are stored in the Docker volume `omega-memory-transfer`. Use the
+launcher to list, download, upload, or delete them; no host directory or group
+setup is required. The archive volume survives `scripts/omega clean`.
+
+To restore a host archive while upgrading, choose the target image and replace
+the archive filename below with your own. Missing images are pulled automatically:
 
 ```sh
-transfer_gid="$(stat -c %g "$HOME/omega-transfers")"
-scripts/omega start -d singularitynet/omega:<tag> -p OpenAI -t telegram \
-  --memory-transfer-dir "$HOME/omega-transfers" \
-  --memory-transfer-gid "$transfer_gid" \
-  --memory-import omegaclaw-memory-<timestamp>.tar.gz \
+image="singularitynet/omega:<tag>"
+archive="omega-memory-<UTC timestamp>-<ID>.tar.gz"
+scripts/omega memory-upload "$HOME/Downloads/$archive" -d "$image"
+scripts/omega start -d "$image" -p OpenAI -t telegram \
+  --memory-import "$archive" \
   --memory-mode overwrite
 ```
 

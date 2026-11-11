@@ -30,8 +30,10 @@ def test_skill_pin_telegram_mock(llm, tg):
         )
         llm.set_answer(
             prompt,
-            '(pin "Server restart progress: alpha done; beta and gamma pending.") '
-            '(send "Tracking: alpha done, beta and gamma pending.")',
+            [
+                ("pin", { "message": "Server restart progress: alpha done; beta and gamma pending." }),
+                ("send", { "content": "Tracking: alpha done, beta and gamma pending." }),
+            ],
         )
         tg_send_prompt(tg, prompt)
         c.ok("telegram", f"run-id={c.run_id}")

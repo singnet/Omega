@@ -61,7 +61,7 @@ def test_memory_chromadb_ws_mock(llm, ws):
         )
         llm.set_answer(
             prompt,
-            f'(remember "Unique smoke marker {marker} was emitted by CI.")',
+            [("remember", { "content": f"Unique smoke marker {marker} was emitted by CI." })],
         )
         ws_send_prompt(ws, prompt)
         c.ok("websocket", f"run-id={c.run_id}")

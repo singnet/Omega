@@ -1,8 +1,8 @@
 import os
 import lib_llm_ext as llm
-import providers
+from providers import *
 
-class MockProvider(providers.LLMProvider):
+class MockProvider(LLMProvider):
 
     def __init__(self):
         super().__init__()
@@ -13,11 +13,11 @@ class MockProvider(providers.LLMProvider):
     def stop(self) -> None:
         self.delegate.stop()
 
-    def chat(self, prompt: str, max_tokens: int = 6000, reasoning_mode: str = "medium") -> str:
-        return self.delegate.chat(prompt, max_tokens, reasoning_mode)
+    def chat(self, args: LLMRequest) -> LLMResponse:
+        return self.delegate.chat(args)
 
 def loadOmegaPlugin():
-    providers.registerLLMProvider("Test", MockProvider())
+    registerLLMProvider("Test", MockProvider())
 
 class MockProviderImpl(llm.AbstractAIProvider):
     """Test provider for mocking LLM output"""
@@ -37,8 +37,8 @@ class MockProviderImpl(llm.AbstractAIProvider):
     def is_available(self) -> bool:
         return self._controller_ip is not None
 
-    def chat(self, content: str, max_tokens: int = 6000, reasoning: str = "medium", **kwargs) -> str:
-        return self._llm_mock().chat(content)
+    def chat(self, request: LLMRequest) -> LLMResponse:
+        return self._llm_mock().chat(request)
 
     def stop(self) -> None:
         if self._mock is not None:

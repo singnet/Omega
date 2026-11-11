@@ -34,7 +34,7 @@ def test_search_weather_slack_mock(llm, sl):
         mocked_reply = (
             f"Current weather in Valencia, Spain: about {REF_TEMP_C:.1f}В°C."
         )
-        llm.set_answer(prompt, f'(send "{mocked_reply}")')
+        llm.set_answer(prompt, [("send", { "content": f"{mocked_reply}" })])
         sl_send_prompt(sl, prompt)
         c.ok("slack", f"run-id={c.run_id}")
 

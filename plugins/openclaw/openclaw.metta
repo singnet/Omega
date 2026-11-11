@@ -25,7 +25,7 @@
                     (add-skill
                         delegate-task-to-openclaw-agent
                         "Delegate a self-contained task to an external OpenClaw agent in a new separate session. Returns an id immediately, the reply arrives later on its own as an OPENCLAW_RESULT line."
-                        (task_in_quotes))
+                        (task))
                     (add-heartbeat-listener
                         openclaw
                         (|-> ($iter) (openclaw-collect-results $iter)))))
@@ -41,9 +41,8 @@
 
 ; Delegations run off the agent loop, so their replies are picked up here once
 ; per iteration and appended to the history, which - unlike a prompt extension
-; or LAST_SKILL_USE_RESULTS - also holds them while the agent is idle. Reading
-; the Python side is the only safe direction: the worker threads never touch
-; the atomspace.
+; - also holds them while the agent is idle. Reading the Python side is the
+; only safe direction: the worker threads never touch the atomspace.
 ;
 ; append-file rather than appendToHistory/library: this plugin's own
 ; definitions live in the plugin's own MeTTa space (src/plugin.metta),
