@@ -41,8 +41,10 @@ def test_skill_query_mock(llm, comm):
         )
         llm.set_answer(
             seed_prompt,
-            f'(remember "My favorite color is {secret_color}.") '
-            f'(send "Stored: favorite colour is {secret_color}.")',
+            [
+                ("remember", { "content": f"My favorite color is {secret_color}." }),
+                ("send", { "content": f"Stored: favorite colour is {secret_color}." })
+            ]
         )
         if not comm.send_message(seed_prompt):
             c.fail("comm-seed", "could not deliver seed prompt within 60s")
@@ -77,8 +79,8 @@ def test_skill_query_mock(llm, comm):
         )
         llm.set_answer(
             recall_prompt,
-            f'(query "favorite color") '
-            f'(send "Your favorite color is {secret_color}.")',
+            [("query", { "content": f"favorite color" }),
+            ("send", { "content": f"Your favorite color is {secret_color}." })]
         )
         if not comm.send_message(recall_prompt):
             c.fail("comm-recall", "could not deliver recall prompt within 60s")

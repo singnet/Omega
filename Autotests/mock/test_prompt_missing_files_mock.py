@@ -36,7 +36,9 @@ def test_missing_default_prompt_mock(llm, comm):
 
             c.step("Send message to agent")
             prompt = make_prompt(c.run_id, "Testing missing default prompt.")
-            llm.set_answer(prompt, f'(send "Prompt tested {c.run_id}")')
+            llm.set_answer(prompt, [
+                ("send", { "content": f"Prompt tested {c.run_id}" })
+            ])
             comm.send_message(prompt)
 
             c.step("Verify agent survived and responded")
@@ -62,7 +64,7 @@ def test_missing_provider_prompt_mock(llm, comm):
             
             c.step("Send message to agent")
             prompt = make_prompt(c.run_id, "Testing fallback to default prompt.")
-            llm.set_answer(prompt, f'(send "Fallback tested {c.run_id}")')
+            llm.set_answer(prompt, [("send", { "content": f"Fallback tested {c.run_id}" })])
             comm.send_message(prompt)
 
             c.step("Verify agent successfully used fallback prompt")

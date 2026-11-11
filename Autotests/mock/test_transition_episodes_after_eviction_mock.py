@@ -47,7 +47,7 @@ def test_transition_episodes_after_eviction_mock(llm, comm):
             c.run_id,
             f"Send back exactly this token in a single send: {beacon_marker}",
         )
-        llm.set_answer(prompt1, f'(send "{beacon_marker}")')
+        llm.set_answer(prompt1, [("send", { "content": f"{beacon_marker}" })])
         if not comm.send_message(prompt1):
             c.fail("comm-1", "could not deliver seed prompt within 60s")
         c.ok("comm-1",
@@ -74,7 +74,7 @@ def test_transition_episodes_after_eviction_mock(llm, comm):
         )
         llm.set_answer(
             prompt2,
-            f'(remember "{padding_body}") (send "padded")',
+            [("remember", { "content": f"{padding_body}" })]
         )
         if not comm.send_message(prompt2):
             c.fail("comm-2", "could not deliver padding prompt within 60s")
@@ -109,7 +109,8 @@ def test_transition_episodes_after_eviction_mock(llm, comm):
         )
         llm.set_answer(
             prompt3,
-            f'(episodes "{seed_ts_str}") (send "Recalled {beacon_marker}.")',
+            [("episodes", { "timestamp": f"{seed_ts_str}" }),
+             ("send", { "content": f"Recalled {beacon_marker}." })]
         )
         if not comm.send_message(prompt3):
             c.fail("comm-3", "could not deliver recall prompt within 60s")

@@ -59,7 +59,7 @@ def test_memory_chromadb_mock(llm, comm):
         )
         llm.set_answer(
             prompt,
-            f'(remember "Unique smoke marker {marker} was emitted by CI.")',
+            [("remember", { "content": f"Unique smoke marker {marker} was emitted by CI." })]
         )
         if not comm.send_message(prompt):
             c.fail("comm", "could not deliver prompt within 60s")
