@@ -10,6 +10,9 @@ import chromadb
 from openai import OpenAI
 import lib_llm_ext
 from config import config_get_by_key
+from src.logger import get_logger
+
+logger = get_logger(__name__)
 
 CHROMA_DB_PATH = os.environ.get("CHROMA_DB_PATH", "./chroma_db")
 FRAME_SKETCH_COLLECTION_BASE = os.environ.get("FRAME_SKETCH_COLLECTION", "cfv2_frame_sketches")
@@ -194,7 +197,7 @@ def _parse_frame_sketches(compact_frames_repr: str) -> list[dict[str, Any]]:
 
 
 def _frame_document(frame: dict[str, Any]) -> str:
-    # This exact text is embedded and stored.
+    # Compact representation used for retrieval and classification.
     return (
         f"(Frame "
         f"(frameID {frame['frameID']}) "
@@ -398,22 +401,45 @@ def _parse_relation_classes(relation_classes_repr: str) -> list[str]:
 def _call_selected_llm(content: str, max_tokens: int, reasoning_mode: str) -> str:
     import providers
 
-    # Classification is an internal result, not a user-facing send operation.
-    tools = providers.getTools([
-        ("frame_relations", "Return the relation classification as JSON", ["json"]),
-    ])
+    # Reuse the configured connection; the shared chat path returns only tool calls.
+    delegate = getattr(providers._llmprovider, "delegate", None)
+    if not callable(getattr(delegate, "convert_request", None)) or not callable(
+        getattr(delegate, "_ensure_client", None)
+    ):
+        raise RuntimeError("Frame relation classification failed: selected provider has no text client")
     request = providers.llmRequest(
-        providers.llmRequestMessage("system", "Classify frame relations and return JSON using frame_relations."),
+        providers.llmRequestMessage("system", "Classify frame relations and return only JSON matching the output schema."),
         [providers.llmRequestMessage("user", content)],
-        max_tokens, reasoning_mode, tools,
+        max_tokens, reasoning_mode, [],
     )
-    response = providers.llmProviderChat(request)
-    if response.is_error():
-        raise RuntimeError(f"Frame relation classification failed: {response.error}")
-    for call in response.calls:
-        if call.name == "frame_relations" and not call.is_error():
-            return str(call.arguments["json"])
-    raise RuntimeError("Frame relation classifier did not return a valid frame_relations call")
+    try:
+        delegate._ensure_client()
+        if delegate._client is None:
+            raise ValueError("selected provider is not configured")
+        payload = dict(delegate.convert_request(request))
+        payload.pop("tools", None)
+        payload.pop("tool_choice", None)
+        responses_api = "input" in payload
+        create = (delegate._client.responses.create if responses_api
+                  else delegate._client.chat.completions.create)
+        lib_llm_ext._log_raw("FRAME_RELATION_REQUEST", delegate.name, payload["model"], payload)
+        response = lib_llm_ext._retrying(lambda: create(**payload), delegate.name)
+        lib_llm_ext._log_raw("FRAME_RELATION_RESPONSE", delegate.name, payload["model"], response)
+        if responses_api:
+            lib_llm_ext._log_responses_completion(delegate.name, payload["model"], response)
+            text = "".join(
+                part.text for item in response.output or [] if item.type == "message"
+                for part in item.content if part.type == "output_text"
+            )
+        else:
+            text = response.choices[0].message.content if response.choices else None
+            if response.choices:
+                lib_llm_ext._log_chat_completion(delegate.name, payload["model"], response)
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError("classifier returned no text")
+        return text
+    except Exception as error:
+        raise RuntimeError(f"Frame relation classification failed: {error}") from error
 
 
 def _call_classifier_llm(payload: dict[str, Any]) -> dict[str, Any]:
@@ -463,10 +489,17 @@ Rules:
     raw = _call_selected_llm(content, max_tokens, reasoning_mode).strip()
 
     try:
-        return json.loads(raw)
-    except Exception:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
         match = re.search(r"\{.*\}", raw, flags=re.S)
-        return json.loads(match.group(0)) if match else {"relations": []}
+        if not match:
+            raise ValueError("Classifier did not return JSON")
+        data = json.loads(match.group(0))
+    if not isinstance(data, dict) or not isinstance(data.get("relations"), list) or any(
+        not isinstance(item, dict) for item in data["relations"]
+    ):
+        raise ValueError("Classifier result must contain a relations list of objects")
+    return data
 
 
 def _classify_relations(query_frame: dict[str, Any], hits: list[dict[str, Any]], relation_classes: list[str]) -> list[dict[str, Any]]:
@@ -507,11 +540,10 @@ def _classify_relations(query_frame: dict[str, Any], hits: list[dict[str, Any]],
 
     clean: list[dict[str, Any]] = []
     for item in data.get("relations", []):
-        frame_id_1 = _sym(item.get("frameID1", query_frame["frameID"]))
+        if item.get("frameID1") != query_frame["frameID"]:
+            raise ValueError("Classifier frameID1 must match the query frame ID")
         frame_id_2 = _sym(item.get("frameID2", ""))
 
-        if frame_id_1 != query_frame["frameID"]:
-            frame_id_1 = query_frame["frameID"]
         if frame_id_2 not in candidate_ids:
             continue
 
@@ -521,7 +553,7 @@ def _classify_relations(query_frame: dict[str, Any], hits: list[dict[str, Any]],
 
         confidence = max(0.0, min(1.0, _float(item.get("confidence", 0.0), 0.0)))
         clean.append({
-            "frameID1": frame_id_1,
+            "frameID1": query_frame["frameID"],
             "frameID2": frame_id_2,
             "class": rel_class,
             "reason": _compact(item.get("reason", ""), 300),
@@ -556,6 +588,7 @@ def cfv2_compose_frame_relations(
     relation_classes_repr: str,
     embedding_provider_repr: str = "OpenAI",
     top_k: int = 5,
+    current_frames_repr: str = "()",
 ) -> str:
     """
     Args:
@@ -575,6 +608,10 @@ def cfv2_compose_frame_relations(
 
         top_k:
             retrieved candidate count.
+
+        current_frames_repr:
+            current-session compact frames; later snapshots of the same ID win.
+            Refreshes retrieved candidate context without changing embeddings.
 
     Returns:
         String S-expression:
@@ -604,5 +641,20 @@ def cfv2_compose_frame_relations(
     if not hits:
         return "()"
 
-    relations = _classify_relations(query_frame, hits, relation_classes)
+    hits = hits.copy()
+    current_frames = {frame["frameID"]: frame
+                      for frame in _parse_frame_sketches(current_frames_repr)}
+    for index, hit in enumerate(hits):
+        frame = current_frames.get(hit["frameID"])
+        if frame is not None:
+            metadata = {**hit["metadata"], **{key: frame[key] for key in
+                        ("status", "priority", "parentID", "source", "mode")}}
+            metadata.pop("contentHash", None)
+            hits[index] = {**hit, "document": _frame_document(frame), "metadata": metadata}
+
+    try:
+        relations = _classify_relations(query_frame, hits, relation_classes)
+    except (RuntimeError, ValueError) as error:
+        logger.warning("Frame %s relationship classification failed: %s", query_frame_id, error)
+        return "()"
     return _relations_to_sexpr(relations)
