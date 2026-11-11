@@ -66,7 +66,9 @@ router=default
 ```
 
 This selects the default routing function. With `router=none`, the harness
-bypasses routing and uses the `routine` model directly.
+bypasses routing and will use only the first entry in the router catalog, if any.
+If no router catalog at all is found, Omega will build a router catalog with one entry
+if it can find values for provider and model.
 
 The router selects model roles; the router catalog supplies the provider and
 model settings for those roles. The default router uses the `routine` and
@@ -109,9 +111,7 @@ function.
 Automatic token hiding runs only through the Docker entry point:
 
 1. The container initially receives `OMEGA_ROUTER_CATALOG` as an environment
-   variable
-   (or `router_catalog` as a startup argument). EACH ROLE INCLUDES A `token`
-   FIELD HOLDING ITS CREDENTIAL.
+   variable. EACH ROLE INCLUDES A `token` FIELD HOLDING ITS CREDENTIAL.
 2. [`entrypoint.sh`](../../entrypoint.sh) reads and unsets
    `OMEGA_ROUTER_CATALOG` and then passes the secret credentials to the nginx
    proxy service through [`src/router_catalog.py`](../../src/router_catalog.py).
@@ -129,8 +129,7 @@ Standalone mode does not hide tokens from Omega:
    variables, separately from the catalog specified by `routerCatalogFile`.
    Their names must match each role's `api_token_var`, such as `OPENAI_API_KEY`
    and `ANTHROPIC_API_KEY`.
-2. The catalog passed through `routerCatalogFile` contains those variable names,
-   without `token` fields.
+2. The catalog passed through `routerCatalogFile` variables without `token` fields.
 3. With no `GATEWAY_URL` configured, providers read the tokens from Omega's
    environment and call their APIs directly.
 
@@ -138,12 +137,9 @@ Standalone mode does not hide tokens from Omega:
 
 In general, you can create your own router by copying the default router into
 a new subdirectory under `plugins` and adapting the design described above.
-Replace `default` with your router's name in the module filename, routing
-function, plugin state references, plugin registration, and `router` parameter.
-Update the registration's `location` to point to the new subdirectory, then
-modify the routing rules as needed.
+Typically, you just replace `default` (as above) with your router's name in the various
+locations as defined above.
 
 Importantly, you can devise new roles for your router to use. Each role must
-have a matching entry in the router catalog. Docker's catalog preparation
-currently accepts only `routine` and `premium`, so using new roles in Docker
-also requires updating `src/router_catalog.py`.
+have a matching entry in the router catalog. You are also able to create new skills as is
+allowed for any plugin.

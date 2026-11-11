@@ -9,5 +9,5 @@
 !(initLogger)
 
 ; Inspect the loaded definition without invoking the router.
-!(test (loadPlugin (metta "default" "./routers")) ())
+!(test (loadPlugin (metta "default" "./plugins/router")) ())
 !(test (collapse (match &plugin-default (= (default-LLM-ROUTER $prompt) $body) loaded)) (loaded))
