@@ -98,4 +98,3 @@
 !(test (contains-text (cfv2-prune-summary
                (cfv2-get-frame-prune-record FramePruneB))
                       "Frame B directive") True)
-
