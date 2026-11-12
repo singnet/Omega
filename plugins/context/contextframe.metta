@@ -796,7 +796,8 @@
          (history-summary (if (is-member Supersedes $classes) ()
             (if (== $events ())
                 (cfv2-compact-limited $history (cfv2HistorySummaryLimit))
-                (cfv2-compact-history $events)))))))
+                (cfv2-compact-frame-history $events
+                   (cfv2-prune-summary (cfv2-get-frame-prune-record $id)))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; SubFrame creation
