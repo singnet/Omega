@@ -92,6 +92,28 @@ def test_repeated_pruning_preserves_autonomous_frame_originating_directive():
     assert len(summary) <= 1200
 
 
+def test_summary_budget_keeps_newest_decision_and_outcome():
+    timestamp = "2026-11-08 14:00:00"
+    events = [
+        _event("F1", "StateChange", "HypothesisAdded", "Old decision A " + "x" * 220, timestamp),
+        _event("F1", "StateChange", "ConstraintAdded", "Old decision B " + "x" * 220, timestamp),
+        _event("F1", "StateChange", "MethodCertified", "NewestDecision", timestamp),
+        _event("F1", "Observation", "ResultAdded", "Old outcome A " + "y" * 220, timestamp),
+        _event("F1", "Execution", "CommandBatch", "Old outcome B " + "y" * 220, timestamp),
+        _event("F1", "Observation", "ExternalInput", "NewestOutcome", timestamp),
+    ]
+
+    summary = frame_helpers.cfv2_update_pruning_summary(
+        '""', f"({' '.join(events)})", json.dumps(timestamp), json.dumps(timestamp), 6, 500,
+    )
+
+    assert "MethodCertified: NewestDecision" in summary
+    assert "ExternalInput: NewestOutcome" in summary
+    assert "Old decision A" not in summary
+    assert "Old outcome A" not in summary
+    assert len(summary) <= 500
+
+
 def test_frame_history_summary_respects_limit_and_keeps_pruning_notice():
     recent = _event(
         "F1", "Observation", "ResultAdded", "A recent useful finding", "2026-11-08 11:00:00"

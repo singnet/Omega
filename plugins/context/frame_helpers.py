@@ -170,6 +170,27 @@ def _clip_summary(value, limit):
     return (excerpt or value[:limit - 3]) + "..."
 
 
+def _clip_recent_items(items, limit):
+    """Fit the newest whole entries first, then display them chronologically."""
+    selected = []
+    used = 0
+    for item in reversed(items):
+        separator_size = len(" | ") if selected else 0
+        remaining = limit - used - separator_size
+        if remaining <= 0:
+            break
+        if len(item) <= remaining:
+            selected.append(item)
+            used += len(item) + separator_size
+            continue
+        if not selected:
+            excerpt = _clip_summary(item, remaining)
+            if excerpt:
+                selected.append(excerpt)
+        break
+    return " | ".join(reversed(selected))
+
+
 def cfv2_pruned_event_timestamp(pruned_events_repr, position):
     """Return the first or last timestamp from the pruned events in source order."""
     events = _balanced_exprs(normalize_string(pruned_events_repr), "FrameEvent")
@@ -250,13 +271,13 @@ def cfv2_update_pruning_summary(
     budgets = [int(available * 0.40), int(available * 0.32), 0]
     budgets[2] = available - budgets[0] - budgets[1]
     directive_text = _clip_summary(directive, budgets[0]) if directive else "(not recorded)"
-    decision_text = " | ".join(decisions) or "(none recorded)"
-    outcome_text = " | ".join(outcomes) or "(none recorded)"
+    decision_text = _clip_recent_items(decisions, budgets[1]) or "(none recorded)"
+    outcome_text = _clip_recent_items(outcomes, budgets[2]) or "(none recorded)"
     rendered = "\n".join((
         notice,
         labels[0] + directive_text,
-        labels[1] + _clip_summary(decision_text, budgets[1]),
-        labels[2] + _clip_summary(outcome_text, budgets[2]),
+        labels[1] + decision_text,
+        labels[2] + outcome_text,
     ))
     if len(rendered) <= limit:
         return rendered
