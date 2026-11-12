@@ -23,6 +23,7 @@ This resolves the value through the Python configuration layer, using command-li
 | `reasoningMode` | `medium` | Reasoning-effort hint passed to the provider. |
 | `supportsReasoningEffort` | `false` | **OpenAIAPI only:** opt in to forwarding `reasoningMode` as `reasoning_effort` when the backend/model supports that parameter. An absent or false flag preserves the previous request shape. Other providers, including Anthropic and ASICloud, are unaffected. |
 | `wakeupInterval` | 600 (seconds) | How long idle before the next scheduled wake-up. |
+| `showStartupVersion` | `true` | Send the Omega version to the communication channel on startup. Set to `false` in `config.yaml` to suppress this message; standard logging and the `version` skill are unaffected. |
 
 For `OpenAIAPI`, enable `supportsReasoningEffort` only after confirming that the
 selected backend/model accepts `reasoning_effort` and the requested effort level.
