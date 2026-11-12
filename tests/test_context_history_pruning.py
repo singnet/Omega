@@ -1,11 +1,40 @@
 import json
+import re
 import sys
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "plugins" / "context"))
 
 import frame_helpers
 import helper
+
+
+@pytest.fixture
+def history_file(tmp_path, monkeypatch):
+    path = tmp_path / "repos" / "Omega" / "memory" / "history.metta"
+    path.parent.mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+    return path
+
+
+def _episode_pages(timestamp, radius, max_chars=50000):
+    pages = []
+    seen = set()
+    query = timestamp
+    while True:
+        assert query not in seen, "episodes must advance its continuation cursor"
+        seen.add(query)
+        page = helper.around_time(query, radius, max_chars)
+        assert page
+        assert len(page.partition("\nMORE HISTORY:")[0].splitlines()) <= 2 * radius + 1
+        assert len("SUCCESS, RETURN: " + str([page])) <= max_chars
+        pages.append(page)
+        continuation = re.search(r'^MORE HISTORY: \(episodes "([^"]+)"\)$', page, re.MULTILINE)
+        if not continuation:
+            return pages
+        query = continuation.group(1)
 
 
 def _event(frame_id, category, kind, payload, timestamp):
@@ -128,14 +157,11 @@ def test_frame_history_summary_respects_limit_and_keeps_pruning_notice():
     assert len(rendered) <= 2400
 
 
-def test_pruned_audit_entry_is_retrievable_by_episodes_timestamp(tmp_path, monkeypatch):
+def test_pruned_audit_entry_is_retrievable_by_episodes_timestamp(history_file):
     timestamp = "2026-11-08 12:34:56"
     event = _event("F1", "Observation", "ResultAdded", "Archived weather result", timestamp)
     audit_entry = frame_helpers.cfv2_pruned_audit_entry(event)
-    history = tmp_path / "repos" / "Omega" / "memory" / "history.metta"
-    history.parent.mkdir(parents=True)
-    history.write_text(audit_entry + "\n", encoding="utf-8")
-    monkeypatch.chdir(tmp_path)
+    history_file.write_text(audit_entry + "\n", encoding="utf-8")
 
     episodes = helper.around_time(timestamp, 20)
 
@@ -144,25 +170,52 @@ def test_pruned_audit_entry_is_retrievable_by_episodes_timestamp(tmp_path, monke
     assert timestamp in episodes
 
 
-def test_episodes_finds_pruned_event_when_an_earlier_entry_shares_timestamp(
-    tmp_path, monkeypatch
+@pytest.mark.parametrize("count,radius,max_chars,original", [
+    (1, 1, 50000, "Earlier ordinary entry"),
+    (100, 20, 50000, "Earlier ordinary entry"),
+    (1, 20, 1024, "original detail " * 800 + "ORIGINAL_AUDIT_TAIL_MARKER"),
+    (1, 20, 1024, "'\"\\\t☃\u2028" * 800 + "ORIGINAL_AUDIT_TAIL_MARKER"),
+])
+def test_episodes_retrieves_original_and_all_same_timestamp_archives_in_bounded_pages(
+    history_file, count, radius, max_chars, original,
 ):
     timestamp = "2026-11-08 12:34:56"
-    event = _event("F1", "Observation", "ResultAdded", "Collision archived detail", timestamp)
-    audit_entry = frame_helpers.cfv2_pruned_audit_entry(event)
-    history = tmp_path / "repos" / "Omega" / "memory" / "history.metta"
-    history.parent.mkdir(parents=True)
-    history.write_text(
-        f'({json.dumps(timestamp)}\nEarlier ordinary entry\n)\n'
-        + "".join(f"unrelated history line {index}\n" for index in range(5))
-        + audit_entry
+    entries = [
+        frame_helpers.cfv2_pruned_audit_entry(
+            _event(f"F{index}", "Observation", "ResultAdded", f"Archived-{index:03d} " + "x" * 840, timestamp)
+        )
+        for index in range(count)
+    ]
+    history_file.write_text(
+        f'({json.dumps(timestamp)}\n{original}\n)\n'
+        + "unrelated filler\n" * 50
+        + "\n".join(entries)
         + "\n",
         encoding="utf-8",
     )
-    monkeypatch.chdir(tmp_path)
 
-    episodes = helper.around_time(timestamp, 1)
+    pages = _episode_pages(timestamp, radius, max_chars)
+    recovered = "".join(page.partition("\nMORE HISTORY:")[0] for page in pages)
 
-    assert "Earlier ordinary entry" not in episodes
-    assert "PRUNED_FRAME_EVENT" in episodes
-    assert "Collision archived detail" in episodes
+    assert len(pages) > 1
+    assert original in recovered
+    assert re.findall(r"Archived-\d{3}", recovered) == [f"Archived-{index:03d}" for index in range(count)]
+
+
+def test_episodes_keeps_nearest_timestamp_neighborhood(history_file):
+    history_file.write_text(
+        '("2026-11-08 12:34:00"\nOlder ordinary detail\n)\n'
+        '("2026-11-08 12:34:50"\nNearest ordinary detail\n)\n',
+        encoding="utf-8",
+    )
+
+    assert helper.around_time('"2026-11-08 12:34:51"', 1) == (
+        '3:)\n4:("2026-11-08 12:34:50"\n5:Nearest ordinary detail\n'
+    )
+
+
+@pytest.mark.parametrize("history", ["", "History without a timestamp\n"])
+def test_episodes_returns_none_without_timestamped_history(history_file, history):
+    history_file.write_text(history, encoding="utf-8")
+
+    assert helper.around_time("2026-11-08 12:34:56", 20) is None
