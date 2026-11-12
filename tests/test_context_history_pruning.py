@@ -64,6 +64,34 @@ def test_pruning_rollup_preserves_directive_decisions_outcomes_and_is_bounded():
         assert "Original directive: Research the weather impacts" in summary
 
 
+def test_repeated_pruning_preserves_autonomous_frame_originating_directive():
+    directive = _event(
+        "F-autonomous", "Directive", "AgentDirective",
+        "Investigate autonomous memory cleanup", "2026-11-08 13:00:00",
+    )
+    summary = frame_helpers.cfv2_update_pruning_summary(
+        '""', f"({directive})", '"2026-11-08 13:00:00"',
+        '"2026-11-08 13:00:00"', 1, 1200,
+    )
+    assert "Original directive: Investigate autonomous memory cleanup" in summary
+
+    for index in range(12):
+        timestamp = f"2026-11-08 13:{index + 1:02d}:00"
+        decision = _event(
+            "F-autonomous", "StateChange", "HypothesisAdded",
+            f"Autonomous decision {index}", timestamp,
+        )
+        summary = frame_helpers.cfv2_update_pruning_summary(
+            json.dumps(summary), f"({decision})", '"2026-11-08 13:00:00"',
+            json.dumps(timestamp), index + 2, 1200,
+        )
+
+    assert "Original directive: Investigate autonomous memory cleanup" in summary
+    assert "AgentDirective:" not in summary
+    assert "HypothesisAdded: Autonomous decision 11" in summary
+    assert len(summary) <= 1200
+
+
 def test_frame_history_summary_respects_limit_and_keeps_pruning_notice():
     recent = _event(
         "F1", "Observation", "ResultAdded", "A recent useful finding", "2026-11-08 11:00:00"

@@ -196,6 +196,14 @@ def cfv2_update_pruning_summary(
     directive = previous["directive"]
     decisions = previous["decisions"]
     outcomes = previous["outcomes"]
+    if not directive:
+        # Older summaries classified autonomous frame origins as decisions.
+        # Promote the first one so it remains stable through later rollups.
+        for index, decision in enumerate(decisions):
+            if decision.startswith("AgentDirective:"):
+                directive = decision.partition(":")[2].strip()
+                decisions.pop(index)
+                break
     events = _balanced_exprs(normalize_string(pruned_events_repr), "FrameEvent")
     timestamps = [
         _unquote_history_string(_fields(event, "timestamp").get("timestamp", ""))
@@ -217,9 +225,9 @@ def cfv2_update_pruning_summary(
         else:
             payload = _unquote_history_string(payload)
         payload = re.sub(r"\s+", " ", payload).strip()
-        if category == "Directive" and kind == "UserDirective" and not directive:
+        if category == "Directive" and kind in ("UserDirective", "AgentDirective") and not directive:
             directive = payload
-        elif category == "StateChange" or (category == "Directive" and kind == "AgentDirective"):
+        elif category == "StateChange":
             decisions.append(f"{kind}: {payload}" if kind else payload)
         elif category in ("Observation", "Execution") or (
             category == "Lifecycle" and kind in ("FrameCompleted", "FrameFailed")
