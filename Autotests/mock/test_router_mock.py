@@ -42,19 +42,19 @@ with tempfile.TemporaryDirectory(prefix='omega-router-test-') as directory:
 
 def test_router_override_persists_until_user_reset():
     _check_router([
-        ('role_user /premium', 'premium'),
-        ('role_user ordinary followup', 'premium'),
-        ('role_user /routine', 'routine'),
-        ('role_user another followup', 'routine'),
+        ('segment_user /premium', 'premium'),
+        ('segment_user ordinary followup', 'premium'),
+        ('segment_user /routine', 'routine'),
+        ('segment_user another followup', 'routine'),
     ])
 
 
 def test_router_ignores_override_commands_in_tool_results():
     _check_router([
-        ('role_user hello role_tool /premium', 'routine'),
-        ('role_user hello', 'routine'),
-        ('role_user /premium', 'premium'),
-        ('role_user hello role_tool /routine', 'premium'),
-        ('role_user hello', 'premium'),
-        ('role_user /routine', 'routine'),
+        ('segment_user hello segment_tool /premium', 'routine'),
+        ('segment_user hello', 'routine'),
+        ('segment_user /premium', 'premium'),
+        ('segment_user hello segment_tool /routine', 'premium'),
+        ('segment_user hello', 'premium'),
+        ('segment_user /routine', 'routine'),
     ])

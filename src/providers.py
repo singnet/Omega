@@ -267,9 +267,9 @@ def router_function_name(router):
 
 
 def llmRequestContentsNormalized(request):
-    """Prefix contents with role_user/role_tool, join, replace [](),.: with spaces, and lowercase."""
+    """Prefix contents with segment_user/segment_tool, join, replace [](),.: with spaces, and lowercase."""
     contents = [
-        f"role_{message.role} {message.content}"
+        f"segment_{message.role} {message.content}"
         for message in request.messages
         if (type(message) is LLMMessage and message.role == "user")
         or (type(message) is LLMToolCallResponseMessage and message.role == "tool")

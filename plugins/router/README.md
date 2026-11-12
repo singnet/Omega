@@ -70,10 +70,6 @@ bypasses routing and will use only the first entry in the router catalog, if any
 If no router catalog at all is found, Omega will build a router catalog with one entry
 if it can find values for provider and model.
 
-The router selects model roles; the router catalog supplies the provider and
-model settings for those roles. The default router uses the `routine` and
-`premium` entries in the catalog.
-
 ### 3. The plugin configuration registers the default router
 
 The module is registered in [`config/plugins.yaml`](../../config/plugins.yaml):
@@ -102,7 +98,10 @@ LLM request routed through `llmProviderChat`.
 
 The router name `default` is concatenated with the fixed suffix `-LLM-ROUTER`
 to form `default-LLM-ROUTER`, the name of the default router's main routing
-function.
+function. The router inputs some components of the imminent, staged prompt:  tool results and
+new user messages. The router then outputs either premium or routine symbols. 
+Omega, upon receipt of the decision, then looks up the result in the router catalog, stored internally in a MeTTa 
+expression (not JSON), and calls the correct provider and model combination.
 
 ## HIDING TOKENS
 
@@ -137,9 +136,14 @@ Standalone mode does not hide tokens from Omega:
 
 In general, you can create your own router by copying the default router into
 a new subdirectory under `plugins` and adapting the design described above.
-Typically, you just replace `default` (as above) with your router's name in the various
-locations as defined above.
+Typically, you just replace `default` (as above) with your router's name in each step as defined above.
 
 Importantly, you can devise new roles for your router to use. Each role must
-have a matching entry in the router catalog. You are also able to create new skills as is
-allowed for any plugin.
+have a matching entry in the router catalog specifying the desired provider and model combination as the above example shows. 
+Your router must have an expression of this form to receive calls and then return the decided role identifier: 
+
+`(= (name-of-your-router-LLM-ROUTER $prompt)
+   ... decision logic... return decided role identifier)`
+
+You are also able to create new skills as is allowed for any plugin.
+

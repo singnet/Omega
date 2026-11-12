@@ -28,24 +28,24 @@
                            (empty))))
 
 ;create temporary atoms by segment type for fast lookup.
-(= (role-p $x) (or (== $x "role_user") (== $x "role_tool")))
-(= (flush $role $acc)
-   (if (== $role ()) () (add-atom &plugin-default ($role $acc))))
-(= (group $atoms $role $acc)
+(= (segment-p $x) (or (== $x "segment_user") (== $x "segment_tool")))
+(= (flush $segment $acc)
+   (if (== $segment ()) () (add-atom &plugin-default ($segment $acc))))
+(= (group $atoms $segment $acc)
    (if (== $atoms ())
-       (flush $role $acc)
+       (flush $segment $acc)
        (let* (($h (car-atom $atoms)) ($t (cdr-atom $atoms)))
-         (if (role-p $h)
-             (let $_ (flush $role $acc) (group $t $h ()))
-             (group $t $role (union-atom $acc ($h)))))))
+         (if (segment-p $h)
+             (let $_ (flush $segment $acc) (group $t $h ()))
+             (group $t $segment (union-atom $acc ($h)))))))
 (= (create_temp_atoms_list_by_segment_type $atoms) (group $atoms () ()))
 
 (= (delete_temp_atoms)
    (collapse
       (progn 
         (match &plugin-default (prompt_atom $x $seq) (remove-atom &plugin-default (prompt_atom $x $seq)))
-        (match &plugin-default ("role_user" $atoms) (remove-atom &plugin-default ("role_user" $atoms)))
-        (match &plugin-default ("role_tool" $atoms) (remove-atom &plugin-default ("role_tool" $atoms))))))
+        (match &plugin-default ("segment_user" $atoms) (remove-atom &plugin-default ("segment_user" $atoms)))
+        (match &plugin-default ("segment_tool" $atoms) (remove-atom &plugin-default ("segment_tool" $atoms))))))
 
 ; Look for a variety of common situations signaling the need for a premium model call.
 ; Return either routine or premium symbols.
@@ -65,12 +65,12 @@
                          ("alert_failed")))))
 
          ; Create list to check for more than one user message
-         ($role_user_occurances (collapse (match &plugin-default (prompt_atom "role_user" $seq) $seq)))
-         ($number_of_user_msgs (size-atom $role_user_occurances))
+         ($segment_user_occurances (collapse (match &plugin-default (prompt_atom "segment_user" $seq) $seq)))
+         ($number_of_user_msgs (size-atom $segment_user_occurances))
 
          ; Create list to count the total number of tool results and user messages
          ($issues (collapse (match &plugin-default (prompt_atom $atom $seq)
-                              (if (or (== $atom "role_user") (== $atom "role_tool"))
+                              (if (or (== $atom "segment_user") (== $atom "segment_tool"))
                                     $seq
                                     (empty)))))
          ($number_of_issues (size-atom $issues))
@@ -82,7 +82,7 @@
          ($_ (create_temp_atoms_list_by_segment_type $prompt_list))
          ($found_routine_in_current_prompt
             (collapse 
-               (match &plugin-default ("role_user" $atoms) 
+               (match &plugin-default ("segment_user" $atoms)
                   (let $atom (superpose $atoms)
                      (if (== $atom "/routine")
                         $atom
@@ -97,7 +97,7 @@
          ; This will work if more than one "/premium" is found in the prompt.
          ($found_premium_in_current_prompt
             (collapse 
-               (match &plugin-default ("role_user" $atoms) 
+               (match &plugin-default ("segment_user" $atoms)
                   (let $atom (superpose $atoms)
                      (if (== $atom "/premium")
                         $atom
