@@ -92,3 +92,27 @@ def test_pruned_audit_entry_is_retrievable_by_episodes_timestamp(tmp_path, monke
     assert "PRUNED_FRAME_EVENT" in episodes
     assert "Archived weather result" in episodes
     assert timestamp in episodes
+
+
+def test_episodes_finds_pruned_event_when_an_earlier_entry_shares_timestamp(
+    tmp_path, monkeypatch
+):
+    timestamp = "2026-11-08 12:34:56"
+    event = _event("F1", "Observation", "ResultAdded", "Collision archived detail", timestamp)
+    audit_entry = frame_helpers.cfv2_pruned_audit_entry(event)
+    history = tmp_path / "repos" / "Omega" / "memory" / "history.metta"
+    history.parent.mkdir(parents=True)
+    history.write_text(
+        f'({json.dumps(timestamp)}\nEarlier ordinary entry\n)\n'
+        + "".join(f"unrelated history line {index}\n" for index in range(5))
+        + audit_entry
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    episodes = helper.around_time(timestamp, 1)
+
+    assert "Earlier ordinary entry" not in episodes
+    assert "PRUNED_FRAME_EVENT" in episodes
+    assert "Collision archived detail" in episodes

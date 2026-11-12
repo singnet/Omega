@@ -81,12 +81,15 @@ def around_time(needle_time_str, k):
     best_diff = None
     buffer = []
     best_idx = None
+    exact_indices = []
     with open(filename, "r", encoding="utf-8", errors="replace") as f:
         for lineno, line in enumerate(f, 1):
             buffer.append((lineno, line))
             ts = extract_timestamp(line)
             if ts is None:
                 continue
+            if ts == target:
+                exact_indices.append(len(buffer) - 1)
             diff = abs((ts - target).total_seconds())
             if best_diff is None or diff < best_diff:
                 best_diff = diff
@@ -95,12 +98,31 @@ def around_time(needle_time_str, k):
                 best_idx = len(buffer) - 1
     if best_lineno is None:
         return
-    start = max(0, best_idx - k)
-    end = min(len(buffer), best_idx + k + 1)
-    ret = ""
-    for lineno, line in buffer[start:end]:
-        ret += f"{lineno}:{line}"
-    return ret
+
+    # Several history entries can share second-precision timestamps. Prefer
+    # every matching pruned archive block so an earlier ordinary entry cannot
+    # hide the archived event outside the context window.
+    archive_indices = [
+        index for index in exact_indices
+        if index + 1 < len(buffer) and "PRUNED_FRAME_EVENT:" in buffer[index + 1][1]
+    ]
+    selected_indices = set()
+    if archive_indices:
+        for index in archive_indices:
+            start = max(0, index - k)
+            # Include the complete three-line archive block, even when k < 2.
+            end = min(len(buffer), index + max(k + 1, 3))
+            selected_indices.update(range(start, end))
+    else:
+        center = exact_indices[0] if exact_indices else best_idx
+        start = max(0, center - k)
+        end = min(len(buffer), center + k + 1)
+        selected_indices.update(range(start, end))
+
+    return "".join(
+        f"{buffer[index][0]}:{buffer[index][1]}"
+        for index in sorted(selected_indices)
+    )
 
 def quote_arg(x):
     if x.startswith('"') and x.endswith('"') and "\n" not in x:
