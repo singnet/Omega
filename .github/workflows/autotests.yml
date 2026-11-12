@@ -13,8 +13,31 @@ on:
         required: false
         default: false
         type: boolean
+      checkout_ref:
+        description: 'Git ref to check out. Empty uses the triggering commit.'
+        required: false
+        default: ''
+        type: string
+      publish_docker:
+        description: 'Push each tested image so it can be assembled without a rebuild'
+        required: false
+        default: false
+        type: boolean
+      tag_name:
+        description: 'Image tag commit SHA used when publish_docker is true'
+        required: false
+        default: ''
+        type: string
+    outputs:
+      platforms:
+        description: 'Comma separated platforms that were tested'
+        value: ${{ jobs.prepare.outputs.platforms }}
     secrets:
       CICD_GITHUB_PAT:
+        required: false
+      DOCKERHUB_USERNAME:
+        required: false
+      DOCKERHUB_TOKEN:
         required: false
 
 jobs:
@@ -22,6 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.platforms.outputs.matrix }}
+      platforms: ${{ steps.platforms.outputs.platforms }}
     steps:
       - name: Select supported platforms
         id: platforms
@@ -44,6 +68,8 @@ jobs:
 
           echo "Selected autotest matrix: $matrix"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          selected=$(jq -r '[.include[].platform] | join(",")' <<< "$matrix")
+          echo "platforms=$selected" >> "$GITHUB_OUTPUT"
 
   autotests:
     needs: prepare
@@ -70,8 +96,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.checkout_ref }}
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Verify checkout matches image tag
+        if: inputs.checkout_ref != ''
+        env:
+          EXPECTED_SHA: ${{ inputs.tag_name }}
+        run: |
+          actual="$(git rev-parse HEAD)"
+          if [ "$actual" != "$EXPECTED_SHA" ]; then
+            echo "::error::Checked out $actual, expected image tag $EXPECTED_SHA"
+            exit 1
+          fi
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -87,6 +125,7 @@ jobs:
           load: true
           push: false
           tags: singularitynet/omega:${{ env.AUTOTESTS_OMEGA_TAG }}
+          provenance: false
           cache-from: type=gha
           cache-to: type=gha,mode=min
           no-cache: ${{ inputs.no_build_cache }}
@@ -147,3 +186,39 @@ jobs:
         env:
           OMEGA_CONTAINER: ${{ env.AUTOTESTS_OMEGA_CONTAINER }}
           OMEGA_GIT_TOKEN: ${{ secrets.CICD_GITHUB_PAT }}
+
+      # Push the image this job just tested. A later job assembles these
+      # platform tags and does not build the image again.
+      - name: Tag tested image for publication
+        if: inputs.publish_docker
+        run: |
+          if [ -z "$TAG_NAME" ]; then
+            echo "::error::tag_name is required to publish the tested image"
+            exit 1
+          fi
+          suffix="${PLATFORM//\//-}"
+          remote="singularitynet/omega:${TAG_NAME}-${suffix}"
+          docker tag "singularitynet/omega:${AUTOTESTS_OMEGA_TAG}" "$remote"
+          echo "REMOTE_TAG=$remote" >> "$GITHUB_ENV"
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          TAG_NAME: ${{ inputs.tag_name }}
+
+      - name: Login to Docker Hub
+        if: inputs.publish_docker
+        uses: docker/login-action@v4
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Docker Hub occasionally returns a transient 400 on the large layer's blob PUT; retry the push once.
+      - name: Push tested image
+        id: push
+        if: inputs.publish_docker
+        continue-on-error: true
+        run: docker push "$REMOTE_TAG"
+
+      - name: Push tested image (retry)
+        if: inputs.publish_docker && steps.push.outcome == 'failure'
+        run: docker push "$REMOTE_TAG"

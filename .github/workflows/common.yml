@@ -36,6 +36,11 @@ on:
         required: false
         default: true
         type: boolean
+      checkout_ref:
+        description: 'Git ref to check out. Empty uses the triggering commit.'
+        required: false
+        default: ''
+        type: string
     secrets:
       DOCKERHUB_USERNAME:
         required: false
@@ -51,6 +56,9 @@ jobs:
     with:
       platforms: ${{ inputs.platforms }}
       no_build_cache: ${{ inputs.no_build_cache }}
+      checkout_ref: ${{ inputs.checkout_ref }}
+      publish_docker: ${{ inputs.publish_docker }}
+      tag_name: ${{ inputs.tag_name }}
     secrets: inherit
 
   common:
@@ -58,14 +66,80 @@ jobs:
     if: always() && (needs.autotests.result == 'success' || needs.autotests.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
+      # Tests already built and, when publishing, pushed each platform image.
+      # Assemble those images into the published tag. Do not build again.
+      - name: Login to Docker Hub
+        if: inputs.publish_docker && needs.autotests.result == 'success'
+        uses: docker/login-action@v4
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        if: inputs.publish_docker && needs.autotests.result == 'success'
+        uses: docker/setup-buildx-action@v4
+
+      - name: Assemble tested images
+        if: inputs.publish_docker && needs.autotests.result == 'success'
+        env:
+          TAG_NAME: ${{ inputs.tag_name }}
+          PLATFORMS: ${{ needs.autotests.outputs.platforms }}
+          MOVE_LATEST: ${{ inputs.move_latest }}
+        run: |
+          if [ -z "$TAG_NAME" ]; then
+            echo "::error::tag_name is required to publish"
+            exit 1
+          fi
+          if [ -z "$PLATFORMS" ]; then
+            echo "::error::No tested platforms to publish"
+            exit 1
+          fi
+          sources=()
+          IFS=',' read -ra list <<< "$PLATFORMS"
+          for platform in "${list[@]}"; do
+            platform="${platform#"${platform%%[![:space:]]*}"}"
+            platform="${platform%"${platform##*[![:space:]]}"}"
+            [ -z "$platform" ] && continue
+            suffix="${platform//\//-}"
+            sources+=("singularitynet/omega:${TAG_NAME}-${suffix}")
+          done
+          if [ "${#sources[@]}" -eq 0 ]; then
+            echo "::error::No tested platforms to publish"
+            exit 1
+          fi
+          args=(-t "singularitynet/omega:${TAG_NAME}")
+          if [ "$MOVE_LATEST" = "true" ]; then
+            args+=(-t "singularitynet/omega:latest")
+          fi
+          docker buildx imagetools create "${args[@]}" "${sources[@]}"
+
+      - name: Skip second build
+        if: inputs.publish_docker == false && needs.autotests.result == 'success'
+        run: echo "Autotests already built the image. Skipping the second build."
+
+      # Tests were skipped, so there is no tested image to reuse.
       - name: Checkout
+        if: needs.autotests.result == 'skipped'
         uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.checkout_ref }}
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Verify checkout matches image tag
+        if: needs.autotests.result == 'skipped' && inputs.checkout_ref != ''
+        env:
+          EXPECTED_SHA: ${{ inputs.tag_name }}
+        run: |
+          actual="$(git rev-parse HEAD)"
+          if [ "$actual" != "$EXPECTED_SHA" ]; then
+            echo "::error::Checked out $actual, expected image tag $EXPECTED_SHA"
+            exit 1
+          fi
+
       - name: Login to Docker Hub
-        if: inputs.publish_docker
+        if: needs.autotests.result == 'skipped' && inputs.publish_docker
         uses: docker/login-action@v4
         with:
           registry: docker.io
@@ -73,14 +147,17 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Set up QEMU
+        if: needs.autotests.result == 'skipped'
         uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
+        if: needs.autotests.result == 'skipped'
         uses: docker/setup-buildx-action@v4
 
       - name: Build and push (release)
         id: push
-        continue-on-error: true
+        if: needs.autotests.result == 'skipped'
+        continue-on-error: ${{ inputs.publish_docker }}
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -96,7 +173,7 @@ jobs:
 
       # Docker Hub occasionally returns a transient 400 on the large layer's blob PUT; retry the push once.
       - name: Build and push (release, retry)
-        if: inputs.publish_docker && steps.push.outcome == 'failure'
+        if: needs.autotests.result == 'skipped' && inputs.publish_docker && steps.push.outcome == 'failure'
         uses: docker/build-push-action@v7
         with:
           context: .

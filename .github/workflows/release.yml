@@ -5,11 +5,29 @@ on:
     types: [published]
 
 jobs:
+  resolve-tag:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve release commit
+        id: sha
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: resolve-tag
     uses: ./.github/workflows/common.yml
     with:
       publish_docker: true
-      tag_name: ${{ github.sha }}
+      tag_name: ${{ needs.resolve-tag.outputs.sha }}
+      checkout_ref: ${{ github.event.release.tag_name }}
       move_latest: false
     secrets: inherit
 
@@ -36,7 +54,7 @@ jobs:
         run: echo "Admin approval received"
 
   update-tags:
-    needs: admin-approval
+    needs: [admin-approval, resolve-tag]
     runs-on: ubuntu-latest
 
     steps:
@@ -55,4 +73,4 @@ jobs:
           docker buildx imagetools create \
             -t singularitynet/omega:${{ github.event.release.tag_name }} \
             -t singularitynet/omega:latest \
-            singularitynet/omega:${{ github.sha }}
+            singularitynet/omega:${{ needs.resolve-tag.outputs.sha }}
