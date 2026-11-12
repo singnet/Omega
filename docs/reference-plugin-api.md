@@ -8,7 +8,7 @@ The `loadOmegaPlugin` function calls the Omega plugin API in order to
 implement new agent's features. The plugin API provides functions to:
 - add communication channel integrations
 - add LLM provider integrations
-- add new skills or remove added skills
+- add new tools or remove registered tools (MeTTa only)
 - extend LLM prompt by adding new information or removing it
 - etc
 
@@ -196,16 +196,22 @@ have an unique id which is used as the value of the `provider` configuration
 parameter in order to enable the provider.
 
 In order to implement a new LLM provider integration one should provide
-implementation of the single function `chat`. The function takes three
-parameters:
-- `prompt` - the string which is sent to LLM by agent as a prompt, required
-- `max_tokens` - the maximum number of tokens can be used by provider to answer the
-  prompt, default value is 6000
-- `reasoning_mode` - the reasoning mode of the LLM, default value is "medium"
+implementation of the single method `chat`. It takes an `LLMRequest` and
+returns an `LLMResponse`, both defined in
+[src/providers.py](/src/providers.py):
+- `request.messages` - the list of messages (system, user, assistant and tool
+  messages), each with `role` and `content`
+- `request.tools` - the list of `LLMTool` with `name`, `description` and
+  `parameters`; every parameter is a string and has a `name`
+- `request.max_tokens` and `request.reasoning_mode` - the output limit and the
+  reasoning mode of the LLM
 
-LLM provider integration should be implemented as a Python class. Inherit the
-class from `providers.LLMProvider` and implement at least one method of the
-ancestor.
+The method returns an `LLMResponse` which holds the tool calls of the LLM, one
+`LLMToolCall` with `id`, `name` and `arguments` (a dict of strings) per call,
+added with `add_tool_call`. A failure is reported with `with_error`. The agent
+checks every call against `request.tools`: a name that is not in the request,
+or a missing or non-string argument, makes that call fail with an error.
+A response without calls and without an error is an error too.
 
 ```python
 import providers
@@ -218,8 +224,12 @@ class ExampleLLMProvider(providers.LLMProvider):
     def stop(self) -> None:
         print("ExampleLLMProvider is stopped")
 
-    def chat(self, prompt: str, max_tokens: int = 6000, reasoning_mode: str = "medium") -> str:
-        return "LLM answer example" 
+    def chat(self, request: providers.LLMRequest) -> providers.LLMResponse:
+        call = (providers.LLMToolCall()
+                         .with_id("call-1")
+                         .with_name("send")
+                         .with_arguments({"content": "LLM answer example"}))
+        return providers.LLMResponse().add_tool_call(call)
 ```
 
 In order to be able to use this LLM provider integration the plugin code should
@@ -248,13 +258,27 @@ sh run.sh run.metta provider=Example
 
 ## Other agent related APIs
 
-A plugin can dynamically add new skills or modify the agent's prompt if it is
+A plugin can dynamically add new tools or modify the agent's prompt if it is
 required. This ability is provided by the following MeTTa functions:
-- `(add-skill $function $description $arguments)` - adds the skill
-- `(remove-skill $function)` - removes the skill by its function name
+- `(add-skill $function $description $arguments)` - adds a tool
+- `(remove-skill $function)` - removes a tool by its function name
 - `(add-prompt-extension $handle $text)` - adds text to the prompt
 - `(remove-prompt-extension $handle)` - removes text from the prompt by the
   handle
+
+`add-skill` stores the tool. Before each request the agent turns every stored
+tool into a tool schema: `$function` is the tool name, `$description` is its
+`description`, and each element of `$arguments` is a required string parameter
+named after the element. `$arguments` is a tuple of symbols, or `()` for a tool
+without arguments. The LLM can call the tool starting with the next request.
+The LLM passes every parameter as a separate string, so name each element after
+what the LLM has to pass, such as `research_name` in the workflow plugin.
+Calling `add-skill` with a name that is already registered replaces the
+earlier registration. `remove-skill` removes the tool from the following
+requests, a built-in tool as well as an added one. `$function` is the name of
+the MeTTa function that runs the tool, so the plugin defines it in its own
+file. The [OpenClaw plugin](/plugins/openclaw/openclaw.metta) shows a tool with
+one argument.
 
 One can look at [source code](/src/skills.metta) for a detailed description.
 Please also look at [workflow plugin](/plugins/workflow/workflow.metta) for
