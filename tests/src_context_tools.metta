@@ -147,6 +147,8 @@
      ($complete "done")
      (cfv2-record-command-batch-for-frame FrameA
         ((send "final three-day Docker plan") ($complete "done")) (SUCCESS))
+     (cfv2-set-frame-prune-record FrameA "preserved decision from pruned history"
+        "2026-11-12 00:00:00" "2026-11-12 00:00:00" 1)
      (test (cfv2-get-frame-events FrameB ()) ())
      (cfv2-load-frame FrameB)
      (change-state! &cfv2-current-results ("latest live result"))
@@ -160,6 +162,7 @@
      (change-state! &composition-completed-before (cfv2CompletedFrameSpace))
      (test (contains-text (repr (get-state &composition-completed-before)) "final three-day Docker plan") False)
      (test (contains-text (repr (cfv2-context-projection)) "final three-day Docker plan") True)
+     (test (contains-text (repr (cfv2-context-projection)) "preserved decision from pruned history") True)
      (test (contains-text (repr (cfv2-related-frames-for-prompt)) "(status Completed)") True)
      (test (contains-text (repr (cfv2-related-frame-content
         (cfv2-get-frame FrameA &cfv2-completed-framespace) (Supersedes))) "final three-day Docker plan") False)
