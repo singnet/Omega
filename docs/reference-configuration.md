@@ -21,7 +21,22 @@ This resolves the value through the Python configuration layer, using command-li
 | `provider` | `Anthropic` | LLM provider — `Anthropic`, `OpenAI`, `ASICloud`, or `ASIOne`. |
 | `maxOutputToken` | 6000 | Output cap passed to the provider. |
 | `reasoningMode` | `medium` | Reasoning-effort hint passed to the provider. |
+| `supportsReasoningEffort` | `false` | **OpenAIAPI only:** opt in to forwarding `reasoningMode` as `reasoning_effort` when the backend/model supports that parameter. An absent or false flag preserves the previous request shape. Other providers, including Anthropic and ASICloud, are unaffected. |
 | `wakeupInterval` | 600 (seconds) | How long idle before the next scheduled wake-up. |
+
+For `OpenAIAPI`, enable `supportsReasoningEffort` only after confirming that the
+selected backend/model accepts `reasoning_effort` and the requested effort level.
+With the flag enabled, `reasoningMode: low` sends `reasoning_effort: low`;
+`reasoningMode: "none"` sends the explicit `"none"` value rather than leaving the
+backend's default in effect. A null or empty `reasoningMode` omits the parameter.
+Whether a level reduces or disables thinking depends on the backend/model; the
+flag does not detect support or guarantee that an answer fits the output budget.
+
+Boolean YAML values and CLI/environment strings are supported. The strings
+`false`, `no`, `off`, `0`, and the empty string disable the flag, ignoring case and
+surrounding whitespace; `true` and `yes` enable it. For example,
+`supportsReasoningEffort=false` on the command line or
+`OMEGA_supportsReasoningEffort=false` in the environment disables forwarding.
 
 ## Memory (`src/memory.metta`, `initMemory`)
 
