@@ -72,12 +72,37 @@ def extract_timestamp(line):
         logger.error(f"Line does not carry a parsable timestamp: {e}")
         return None
 
-def around_time(needle_time_str, k):
+
+def _episode_page(
+    text: str, timestamp: str, offset: int, max_lines: int, max_chars: int,
+) -> str | None:
+    """Return bounded history text with a continuation into the same selection."""
+    if offset >= len(text):
+        return None
+    lines = text[offset:offset + max_chars].splitlines(keepends=True)
+    length = sum(map(len, lines[:max_lines]))
+    while length:
+        end = offset + length
+        page = text[offset:end]
+        if end < len(text):
+            page += f'\nMORE HISTORY: (episodes "{timestamp}#{end}")\n'
+        # The loop wraps this string in a list and adds "SUCCESS, RETURN: ".
+        # Account for escaping and leave 32 characters for that wrapper.
+        if len(repr(page)) + 32 <= max_chars:
+            return page
+        length //= 2
+    raise ValueError("maxFeedback is too small for an episodes page and continuation.")
+
+
+def around_time(needle_time_str: str, k: int, max_chars: int = 50000) -> str | None:
+    """Recall matching audit neighborhoods, following an optional ``#offset`` cursor."""
     needle_time_str = needle_time_str.replace(r'\"', '').replace('"', '').strip()
+    timestamp, separator, cursor = needle_time_str.partition("#")
+    offset = int(cursor) if separator else 0
+    if offset < 0:
+        raise ValueError("episodes cursor must be a non-negative character offset.")
     filename = "repos/Omega/memory/history.metta"
-    target = datetime.strptime(needle_time_str, "%Y-%m-%d %H:%M:%S")
-    best_lineno = None
-    best_line = None
+    target = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
     best_diff = None
     buffer = []
     best_idx = None
@@ -93,36 +118,25 @@ def around_time(needle_time_str, k):
             diff = abs((ts - target).total_seconds())
             if best_diff is None or diff < best_diff:
                 best_diff = diff
-                best_lineno = lineno
-                best_line = line
                 best_idx = len(buffer) - 1
-    if best_lineno is None:
-        return
+    if best_idx is None:
+        return None
 
-    # Several history entries can share second-precision timestamps. Prefer
-    # every matching pruned archive block so an earlier ordinary entry cannot
-    # hide the archived event outside the context window.
-    archive_indices = [
-        index for index in exact_indices
-        if index + 1 < len(buffer) and "PRUNED_FRAME_EVENT:" in buffer[index + 1][1]
-    ]
+    # Include original audit entries as well as archives sharing the timestamp.
+    radius = max(0, int(k))
     selected_indices = set()
-    if archive_indices:
-        for index in archive_indices:
-            start = max(0, index - k)
-            # Include the complete three-line archive block, even when k < 2.
-            end = min(len(buffer), index + max(k + 1, 3))
-            selected_indices.update(range(start, end))
-    else:
-        center = exact_indices[0] if exact_indices else best_idx
-        start = max(0, center - k)
-        end = min(len(buffer), center + k + 1)
+    for index in exact_indices or [best_idx]:
+        start = max(0, index - radius)
+        end = min(len(buffer), index + radius + 1)
+        if index + 1 < len(buffer) and "PRUNED_FRAME_EVENT:" in buffer[index + 1][1]:
+            end = min(len(buffer), max(end, index + 3))
         selected_indices.update(range(start, end))
-
-    return "".join(
+    text = "".join(
         f"{buffer[index][0]}:{buffer[index][1]}"
         for index in sorted(selected_indices)
     )
+    return _episode_page(text, timestamp, offset, 2 * radius + 1, int(max_chars))
+
 
 def quote_arg(x):
     if x.startswith('"') and x.endswith('"') and "\n" not in x:
