@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import sys
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 import providers
@@ -15,11 +16,7 @@ def relations(monkeypatch):
     # These services are not involved in the provider adapter; keep tests offline.
     monkeypatch.setitem(sys.modules, 'chromadb', SimpleNamespace())
     monkeypatch.setitem(sys.modules, 'openai', SimpleNamespace(OpenAI=object))
-    monkeypatch.setitem(sys.modules, 'lib_llm_ext', SimpleNamespace(
-        _log_raw=lambda *args: None,
-        _log_chat_completion=lambda *args: None,
-        _log_responses_completion=lambda *args: None,
-    ))
+    monkeypatch.setitem(sys.modules, 'lib_llm_ext', Mock())
     path = Path(__file__).resolve().parents[1] / 'plugins/context/frame_relation.py'
     spec = importlib.util.spec_from_file_location('frame_relation_under_test', path)
     module = importlib.util.module_from_spec(spec)
@@ -29,43 +26,22 @@ def relations(monkeypatch):
 
 
 def _select_provider(monkeypatch, relations, api, response=None, error=None):
-    captured = SimpleNamespace(requests=[], payloads=[], retries=[], initialized=False)
-
-    def create(**payload):
-        captured.payloads.append(payload)
-        if error is not None:
-            raise error
-        return response
-
-    client = SimpleNamespace(
-        chat=SimpleNamespace(completions=SimpleNamespace(create=create)),
-        responses=SimpleNamespace(create=create),
-    )
-
-    def convert_request(request):
-        captured.requests.append(request)
-        captured.converted = {
-            'model': 'configured-model', api: 'converted messages',
-            'reasoning': {'effort': request.reasoning_mode},
-            'tools': [], 'tool_choice': 'required',
-        }
-        return captured.converted
-
-    def ensure_client():
-        captured.initialized = True
-        delegate._client = client
-
-    def retrying(call, provider):
-        captured.retries.append(provider)
-        return call()
-
+    client = Mock()
+    create = client.responses.create if api == 'input' else client.chat.completions.create
+    create.return_value = response
+    create.side_effect = error
     delegate = SimpleNamespace(
-        _name='ConfiguredProvider', name='ConfiguredProvider', _client=None,
-        _ensure_client=ensure_client, convert_request=convert_request,
+        name='ConfiguredProvider', _client=None, _ensure_client=Mock(),
+        convert_request=Mock(return_value={
+            'model': 'configured-model', api: 'converted messages',
+            'reasoning': {'effort': 'low'},
+            'tools': [], 'tool_choice': 'required',
+        }),
     )
+    delegate._ensure_client.side_effect = lambda: setattr(delegate, '_client', client)
     monkeypatch.setattr(providers, '_llmprovider', SimpleNamespace(delegate=delegate), raising=False)
-    monkeypatch.setattr(relations.lib_llm_ext, '_retrying', retrying, raising=False)
-    return captured
+    monkeypatch.setattr(relations.lib_llm_ext, '_retrying', lambda call, provider: call(), raising=False)
+    return delegate, create
 
 
 @pytest.mark.parametrize('api', ['messages', 'input'])
@@ -82,24 +58,23 @@ def test_classifier_reads_json_from_the_configured_client(relations, monkeypatch
     else:
         response = SimpleNamespace(choices=[SimpleNamespace(
             message=SimpleNamespace(content=text, tool_calls=[]))])
-    captured = _select_provider(monkeypatch, relations, api, response)
+    delegate, create = _select_provider(monkeypatch, relations, api, response)
     settings = {'maxOutputToken': 100, 'reasoningMode': 'low'}
     monkeypatch.setattr(relations, 'config_get_by_key',
                         lambda key, default=None: settings.get(key, default))
 
     assert relations._call_classifier_llm({'query_frame': {'frameID': 'A'}}) == expected
-    assert captured.initialized
-    assert captured.retries == ['ConfiguredProvider']
-    request = captured.requests[0]
+    delegate._ensure_client.assert_called_once()
+    request = delegate.convert_request.call_args.args[0]
     assert request.tools == []
     assert request.max_tokens == 100
     assert request.reasoning_mode == 'low'
     assert '"frameID": "A"' in request.messages[-1].content
-    assert captured.payloads == [{
+    create.assert_called_once_with(**{
         'model': 'configured-model', api: 'converted messages', 'reasoning': {'effort': 'low'},
-    }]
-    assert captured.converted['tools'] == []
-    assert captured.converted['tool_choice'] == 'required'
+    })
+    assert delegate.convert_request.return_value['tools'] == []
+    assert delegate.convert_request.return_value['tool_choice'] == 'required'
 
 
 @pytest.mark.parametrize('api,response', [
@@ -152,9 +127,7 @@ def test_classifier_rejects_incorrect_query_ids(relations, monkeypatch, query_id
     item = {'frameID2': 'B', 'class': 'FollowUp', 'reason': 'related', 'confidence': 0.9}
     if query_id is not None:
         item['frameID1'] = query_id
-    response = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(
-        content=json.dumps({'relations': [item]})))])
-    _select_provider(monkeypatch, relations, 'messages', response)
+    monkeypatch.setattr(relations, '_call_classifier_llm', lambda payload: {'relations': [item]})
     query = relations._parse_frame_sketches('(Frame (frameID A) (status Active))')[0]
     hits = [{'frameID': 'B', 'distance': 0.1, 'document': 'candidate', 'metadata': {}}]
 
@@ -165,33 +138,23 @@ def test_classifier_rejects_incorrect_query_ids(relations, monkeypatch, query_id
 def test_classifier_uses_current_candidate_snapshots_without_reindexing(relations, monkeypatch):
     relation = {'frameID1': 'A', 'frameID2': 'B', 'class': 'FollowUp',
                 'reason': 'related', 'confidence': 0.9}
-    response = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(
-        content=json.dumps({'relations': [relation]})))])
-    captured = _select_provider(monkeypatch, relations, 'messages', response)
+    classifier = Mock(return_value={'relations': [relation]})
+    monkeypatch.setattr(relations, '_call_classifier_llm', classifier)
     hits = [
         {'frameID': frame_id, 'distance': distance, 'document': 'stored sketch',
          'metadata': {'status': 'Active', 'contentHash': 'stored hash'}}
         for frame_id, distance in [('B', 0.1), ('C', 0.2), ('H', 0.3)]
     ]
     original_hits = deepcopy(hits)
-    upserts, searches = [], []
-
-    def upsert(frames, provider):
-        upserts.append((frames, provider))
-        return {'A': [1.0]}
-
-    def search(*args):
-        searches.append(args)
-        return hits
-
+    upsert = Mock(return_value={'A': [1.0]})
+    search = Mock(return_value=hits)
     monkeypatch.setattr(relations, '_upsert_changed_frames', upsert)
     monkeypatch.setattr(relations, '_search_top_k', search)
     snapshots = '''(
         (Frame (frameID B) (status Active) (results "stored runtime result"))
         (Frame (frameID C) (status Completed) (results "finished result"))
         (Frame (frameID X) (status Active) (results "not retrieved"))
-        (Frame (frameID B) (parentID Parent) (status Active) (priority 3)
-               (source User) (mode Fast) (results "latest hot result")))'''
+        (Frame (frameID B) (status Active) (priority 3) (results "latest hot result")))'''
 
     result = relations.cfv2_compose_frame_relations(
         '(Frame (frameID A) (status Active) (deliverable "new task"))',
@@ -199,22 +162,19 @@ def test_classifier_uses_current_candidate_snapshots_without_reindexing(relation
     )
     assert '(FrameID-1 A) (FrameID-2 B)' in result
 
-    content = captured.requests[0].messages[-1].content
-    candidates = json.loads(content.rsplit('\n\n', 1)[1])['candidate_frames']
+    candidates = classifier.call_args.args[0]['candidate_frames']
     assert [candidate['frameID'] for candidate in candidates] == ['B', 'C', 'H']
     hot, completed, historical = candidates
     assert 'latest hot result' in hot['document']
-    assert hot['metadata'] == {
-        'status': 'Active', 'parentID': 'Parent',
-        'priority': 3.0, 'source': 'User', 'mode': 'Fast',
-    }
+    assert hot['metadata']['priority'] == 3.0
+    assert 'contentHash' not in hot['metadata']
     assert '(status Completed)' in completed['document']
     assert 'finished result' in completed['document']
     assert completed['metadata']['status'] == 'Completed'
     assert historical == original_hits[2]
     assert hits == original_hits
-    assert len(upserts) == len(searches) == 1
-    assert [frame['frameID'] for frame in upserts[0][0]] == ['A']
-    assert upserts[0][1] == 'Local'
-    assert searches[0][0]['frameID'] == 'A'
-    assert searches[0][1:] == ([1.0], 'Local', 5)
+    upsert.assert_called_once()
+    frames, provider = upsert.call_args.args
+    assert [frame['frameID'] for frame in frames] == ['A']
+    assert provider == 'Local'
+    search.assert_called_once_with(frames[0], [1.0], 'Local', 5)

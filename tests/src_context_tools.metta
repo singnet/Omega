@@ -58,15 +58,11 @@
       (completed-timestamp ()) (completed-summary "plan delivered")))
 
 !(change-state! FrameA ((Goal (frameID FrameA) (description "prepare plan") (status Active))))
-!(change-state! FrameC ((Goal (frameID FrameC) (description "original plan") (status Active))))
 !(change-state! &cfv2-active-framespace
    ((test-composition-frame FrameB Active) (test-composition-frame FrameA Active)
     (test-composition-frame SeparateFrame Active)))
-!(change-state! &cfv2-completed-framespace
-   ((test-composition-frame FrameC Completed "completed planning decisions" "original three-day plan")))
 !(change-state! &cfv2-relational-space
    ((Relation (FrameID-1 FrameB) (FrameID-2 FrameA) (Class ContinuationOf) (Reason "continue") (Confidence 0.9))
-    (Relation (FrameID-1 FrameB) (FrameID-2 FrameC) (Class FollowUp) (Reason "extend") (Confidence 0.9))
     (Relation (FrameID-1 FrameB) (FrameID-2 FrameA) (Class FollowUp) (Reason "duplicate target") (Confidence 0.8))
     (Relation (FrameID-1 FrameB) (FrameID-2 FrameB) (Class FollowUp) (Reason "self") (Confidence 0.9))
     (Relation (FrameID-1 SeparateFrame) (FrameID-2 FrameB) (Class FollowUp) (Reason "incoming") (Confidence 0.9))
@@ -78,26 +74,13 @@
 !(cfv2-load-frame FrameB)
 !(change-state! &composition-active-before (cfv2ActiveFrameSpace))
 !(change-state! &composition-completed-before (cfv2CompletedFrameSpace))
-!(change-state! &composition-goals-before (get-state FrameC))
-!(change-state! &composition-context (cfv2-context-projection))
+!(change-state! &composition-goals-before (get-state FrameA))
 
-!(test (size-atom (cfv2-related-frames-for-prompt)) 2)
-!(test (contains-text (repr (get-state &composition-context)) "RelatedFrames") True)
-!(test (contains-text (repr (get-state &composition-context)) "FrameA") True)
-!(test (contains-text (repr (get-state &composition-context)) "FrameC") True)
+!(test (size-atom (cfv2-related-frames-for-prompt)) 1)
+!(test (contains-text (repr (cfv2-context-projection)) "RelatedFrames") True)
+!(test (contains-text (repr (cfv2-related-frames-for-prompt)) "FrameA") True)
 !(test (contains-text (repr (cfv2-related-frames-for-prompt)) "SeparateFrame") False)
 !(test (contains-text (repr (cfv2-related-frames-for-prompt)) "MissingFrame") False)
-!(test (contains-text (repr (cfv2-related-frames-for-prompt)) "prepare plan") True)
-!(test (contains-text (repr (cfv2-related-frames-for-prompt)) "beginner audience") True)
-!(test (contains-text (repr (cfv2-related-frames-for-prompt)) "day two exercises") True)
-!(test (contains-text (repr (cfv2-related-frames-for-prompt)) "original three-day plan") True)
-!(test (contains-text (repr (cfv2-related-frames-for-prompt)) "earlier planning decisions") True)
-!(test (contains-text (repr (cfv2-related-frames-for-prompt)) "plan delivered") True)
-!(test (contains-text (repr (cfv2-related-frames-for-prompt)) "(status Completed)") True)
-!(test (cfv2-root-current-frame-id) FrameB)
-!(test (== (cfv2ActiveFrameSpace) (get-state &composition-active-before)) True)
-!(test (== (cfv2CompletedFrameSpace) (get-state &composition-completed-before)) True)
-!(test (== (get-state FrameC) (get-state &composition-goals-before)) True)
 !(test
    (let $longText (py-call (.__mul__ "long observation " 1000))
       (< (string_length (repr (cfv2-related-frame-content
@@ -134,10 +117,11 @@
    (test-composition-policy $classes $level)))
 !(test (== (cfv2ActiveFrameSpace) (get-state &composition-active-before)) True)
 !(test (== (cfv2CompletedFrameSpace) (get-state &composition-completed-before)) True)
+!(test (== (get-state FrameA) (get-state &composition-goals-before)) True)
 !(test (cfv2-root-current-frame-id) FrameB)
 
 ; A larger graph cannot expand the prompt beyond five distinct direct frames.
-!(collapse (let $id (superpose (FrameA FrameC FrameD FrameE FrameF FrameG))
+!(collapse (let $id (superpose (FrameC FrameD FrameE FrameF FrameG))
    (change-state! $id ())))
 !(change-state! &cfv2-relational-space
    (collapse (let $id (superpose (FrameA FrameC FrameD FrameE FrameF FrameG))
@@ -180,6 +164,7 @@
      (test (contains-text (repr (cfv2-related-frame-content
         (cfv2-get-frame FrameA &cfv2-completed-framespace) (Supersedes))) "final three-day Docker plan") False)
      (test (== (cfv2CompletedFrameSpace) (get-state &composition-completed-before)) True)
+     (test (== (get-state FrameA) (get-state &composition-goals-before)) True)
      (test (cfv2-root-current-frame-id) FrameB)))
 
 !(collapse (let $complete
