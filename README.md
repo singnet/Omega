@@ -49,20 +49,23 @@ git clone https://github.com/patham9/petta_lib_chromadb.git repos/petta_lib_chro
 cp repos/Omega/run.metta ./
 ```
 
-Setup Python virtual environment (or use your own):
+Setup Python virtual environment (or use your own), and upgrade its pip. An older
+pip cannot install the CPU build of torch below and falls back to the GPU one:
 ```
 python3 -m venv ./.venv
 source ./.venv/bin/activate
+python3 -m pip install --upgrade pip
 ```
 
 If you have CPU only machine or don't want calculate embeddings on GPU:
 ```
-python3 -m pip install --index-url https://download.pytorch.org/whl/cpu torch
+python3 -m pip install --index-url https://download.pytorch.org/whl/cpu \
+  "$(grep -E '^torch(\[|[=<>!~]|$)' ./repos/Omega/requirements.txt)"
 ```
 
-Install Python dependencies:
+Install Python dependencies — core's, and those of any plugin that declares its own:
 ```
-python3 -m pip install -r ./repos/Omega/requirements.txt
+./repos/Omega/scripts/install_dependencies.sh
 ```
 ---
 
@@ -86,13 +89,18 @@ To stop Omega using the launcher (with `TAG` set as above):
 curl -fsSL "https://github.com/singnet/Omega/raw/refs/tags/$TAG/scripts/omega" | bash -s -- stop
 ```
 
-To start Omega again, rerun the interactive launcher and select your settings again:
+To start Omega again after a stop, start the same container. It keeps the settings you entered:
+```bash
+docker start omega
+```
+
+To change the settings, rerun the interactive launcher:
 ```bash
 curl -fsSL "https://github.com/singnet/Omega/raw/refs/tags/$TAG/scripts/omega" | bash -s -- "singularitynet/omega:$TAG"
 ```
 
-The launcher recreates the container while preserving the `omega-memory` Docker volume.
-It does not reload the previous container's configuration. For a non-interactive
+The launcher replaces the container and asks for all settings again. It keeps
+the `omega-memory` Docker volume with the agent's memory. For a non-interactive
 launch from a checkout, use `scripts/omega start -d "singularitynet/omega:$TAG"`
 with your channel, provider, and other options; see `scripts/omega --help`.
 From a checkout, `scripts/omega stop` stops the container.
