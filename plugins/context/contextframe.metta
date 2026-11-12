@@ -728,8 +728,7 @@
 
 ;; To be used as a tool for the agent.
 (= (cfv2-get-relation $currentframeID)
-   (let $frameIDAtom (if (== (get-metatype $currentframeID) Grounded)
-                       (sread $currentframeID) $currentframeID)
+   (let $frameIDAtom (sread $currentframeID)
       (filter-atom (get-state &cfv2-relational-space) (Relation (FrameID-1 $a) (FrameID-2 $b) (Class $class) (Reason $reason) (Confidence $conf))
          (or (== $frameIDAtom $a) (== $frameIDAtom $b)))))
 
@@ -752,18 +751,17 @@
 (= (cfv2-related-frames-for-prompt)
    (if (== (cfv2-root-current-frame-id) ())
        ()
-       (let* (($relations (filter-atom (get-state &cfv2-relational-space)
-                  (Relation (FrameID-1 $a) (FrameID-2 $b) (Class $class) (Reason $reason) (Confidence $confidence))
-                  (and (== $a (cfv2-root-current-frame-id)) (not (== $a $b)))))
+       (let* (($currentID (cfv2-root-current-frame-id))
+              ($relations (cfv2-get-relation $currentID))
               ($ids (unique-atom (collapse
                   (let (Relation (FrameID-1 $a) (FrameID-2 $b) (Class $class) (Reason $reason) (Confidence $confidence))
-                       (superpose $relations) $b)))))
+                       (superpose $relations)
+                     (if (and (== $a $currentID) (not (== $a $b))) $b (empty)))))))
           (take 5 (collapse
              (let* (($id (superpose $ids))
                     ($classes (unique-atom (collapse
-                       (let (Relation (FrameID-1 $a) (FrameID-2 $b) (Class $class) (Reason $reason) (Confidence $confidence))
-                            (superpose $relations)
-                          (if (== $b $id) $class (empty))))))
+                       (let (Relation (FrameID-1 $a) (FrameID-2 $id) (Class $class) (Reason $reason) (Confidence $confidence))
+                            (superpose $relations) $class))))
                     ($frames (if (== (cfv2-composition-context-level $classes) Excluded)
                        ()
                        (filter-atom (append (cfv2ActiveFrameSpace) (cfv2CompletedFrameSpace))
