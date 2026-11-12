@@ -15,6 +15,8 @@
 
 !(register-context-frame-skills)
 
+; This test exercises tool recording without running frame initialization.
+(= (maxFrameHistoryEvents) 100)
 !(change-state! &cfv2-current-frame-id FrameToolTest)
 !(change-state! &cfv2-current-results ())
 !(change-state! &cfv2-current-history-summary "")

@@ -34,7 +34,7 @@
 (= (cfv2HistorySummaryLimit) 2400)
 (= (cfv2PrunedHistorySummaryLimit) 1200)
 (= (cfv2LastResultsLimit) 1200)
-(= (maxFrameHistoryEvents) 100)
+(= (maxFrameHistoryEvents) (empty))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Python helper wrappers
