@@ -49,20 +49,23 @@ git clone https://github.com/patham9/petta_lib_chromadb.git repos/petta_lib_chro
 cp repos/Omega/run.metta ./
 ```
 
-Setup Python virtual environment (or use your own):
+Setup Python virtual environment (or use your own), and upgrade its pip. An older
+pip cannot install the CPU build of torch below and falls back to the GPU one:
 ```
 python3 -m venv ./.venv
 source ./.venv/bin/activate
+python3 -m pip install --upgrade pip
 ```
 
 If you have CPU only machine or don't want calculate embeddings on GPU:
 ```
-python3 -m pip install --index-url https://download.pytorch.org/whl/cpu torch
+python3 -m pip install --index-url https://download.pytorch.org/whl/cpu \
+  "$(grep -E '^torch(\[|[=<>!~]|$)' ./repos/Omega/requirements.txt)"
 ```
 
-Install Python dependencies:
+Install Python dependencies — core's, and those of any plugin that declares its own:
 ```
-python3 -m pip install -r ./repos/Omega/requirements.txt
+./repos/Omega/scripts/install_dependencies.sh
 ```
 ---
 
@@ -70,32 +73,45 @@ python3 -m pip install -r ./repos/Omega/requirements.txt
 
 Ensure that you have [Docker installed](https://docs.docker.com/engine/install/)
 
-Run Omega using the next command:
-```
-curl -fsSL https://github.com/singnet/Omega/raw/refs/tags/v0.1.20/scripts/omega | bash -s -- singularitynet/omega:v0.1.20
-```
-
-To run a specific release, set the `TAG` environment variable to the desired release tag (e.g., v0.1.20) and run the following command:
-```
-export TAG=v0.1.20; curl -fsSL  https://github.com/singnet/Omega/raw/refs/tags/$TAG/scripts/omega | bash -s -- singularitynet/omega:$TAG
+Run Omega using the interactive launcher for release `v0.1.23`:
+```bash
+curl -fsSL https://github.com/singnet/Omega/raw/refs/tags/v0.1.23/scripts/omega | bash -s -- singularitynet/omega:v0.1.23
 ```
 
-To stop the Omega Docker container:
-```
-docker stop omega
+To run a specific release, set `TAG` to the desired [release tag](https://github.com/singnet/Omega/releases). Use the same tag for the launcher and Docker image:
+```bash
+export TAG=v0.1.23
+curl -fsSL "https://github.com/singnet/Omega/raw/refs/tags/$TAG/scripts/omega" | bash -s -- "singularitynet/omega:$TAG"
 ```
 
-To restart the Omega Docker container:
+To stop Omega using the launcher (with `TAG` set as above):
+```bash
+curl -fsSL "https://github.com/singnet/Omega/raw/refs/tags/$TAG/scripts/omega" | bash -s -- stop
 ```
+
+To start Omega again after a stop, start the same container. It keeps the settings you entered:
+```bash
 docker start omega
 ```
 
+To change the settings, rerun the interactive launcher:
+```bash
+curl -fsSL "https://github.com/singnet/Omega/raw/refs/tags/$TAG/scripts/omega" | bash -s -- "singularitynet/omega:$TAG"
+```
+
+The launcher replaces the container and asks for all settings again. It keeps
+the `omega-memory` Docker volume with the agent's memory. For a non-interactive
+launch from a checkout, use `scripts/omega start -d "singularitynet/omega:$TAG"`
+with your channel, provider, and other options; see `scripts/omega --help`.
+From a checkout, `scripts/omega stop` stops the container.
+
 The `scripts/omega` launcher and the Docker image must be the same version.
-`scripts/omega start` (and the interactive bootstrap) compare the host script
-version with the version baked into the image and abort when both are known
-and differ. A `curl | bash` install has no checkout, so that path warns and
-continues. Use the same release tag for the checkout and the image, for example
-`git checkout v0.1.20` with `singularitynet/omega:v0.1.20`.
+In `main`, `scripts/omega start` (and the interactive bootstrap) compare the host
+script version with the version baked into the image and abort when both are
+known and differ. A `curl | bash` install has no checkout, so that path warns and
+continues. This check is not present in every older release; always use the same
+release tag for the checkout and the image, for example `git checkout v0.1.23`
+with `singularitynet/omega:v0.1.23`.
 
 ### Memory portability
 

@@ -1,6 +1,6 @@
 # Reference — ONA (OpenNARS for Applications)
 
-ONA is a lightweight, real-time implementation of NARS created by Dr. Patrick Hammer. **ONA is not installed by default in Omega.** There are no ONA bindings in the repository, no `lib_ona.metta`, and no dedicated operator in the `(metta ...)` skill surface. The stock install ships two formal engines — symbolic NAL (`|-`) and probabilistic PLN (`|~`).
+ONA is a lightweight, real-time implementation of NARS created by Dr. Patrick Hammer. **ONA is not installed by default in Omega.** There are no ONA bindings in the repository, no `lib_ona.metta`, and no dedicated operator in the `(metta ...)` tool. The stock install ships two formal engines — symbolic NAL (`|-`) and probabilistic PLN (`|~`).
 
 This page exists because ONA is named in the project's architectural vision and has been an experimental target — see [Status](#status-partly-successful-self-building-experiment) below.
 
@@ -25,7 +25,7 @@ Today, with ONA absent, the current practical fallback for temporal questions is
 
 ## Invocation surface
 
-**There is no stock invocation surface for ONA in Omega.** `lib_omega.metta` does not load ONA bindings. The `(metta ...)` skill has no ONA operator.
+**There is no stock invocation surface for ONA in Omega.** `lib_omega.metta` does not load ONA bindings. The `(metta ...)` tool has no ONA operator.
 
 Any integration has to be built — either by calling an external ONA binary through `(shell ...)` and parsing its output, or by constructing MeTTa-side wrappers that emulate ONA's temporal operators. This is a non-trivial tools-authoring task and is the subject of the experiment described below.
 

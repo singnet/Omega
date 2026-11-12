@@ -164,7 +164,7 @@ Works via the NAL-2 analogy rule (cycle 2260). Same positional asymmetry as simi
 
 ## Invocation
 
-NAL is reached through the `(metta ...)` skill. Variables use `$1`, `$2`, …
+NAL is reached through the `(metta ...)` tool. Variables use `$1`, `$2`, …
 
 ### Deduction
 
