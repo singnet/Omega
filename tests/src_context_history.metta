@@ -4,9 +4,12 @@
 !(import! &self ../src/utils)
 !(import! &self ../plugins/context/contextframe)
 
+; This test exercises event recording without running frame initialization.
+(= (maxFrameHistoryEvents) 100)
 !(change-state! &cfv2-current-frame-id FrameHistoryTest)
 !(change-state! &cfv2-current-history-summary "")
 !(change-state! &cfv2-frame-event-space ())
+!(change-state! &cfv2-frame-prune-space ())
 
 !(test (== (HistoryEventType Directive UserDirective) (cfv2-history-event-type UserDirective)) True)
 !(test (== (HistoryEventType Directive UserDirective) (cfv2-history-event-type UserMessageForCurrentFrame)) True)

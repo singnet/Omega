@@ -32,6 +32,8 @@ maxRecallItems: 20
 maxEpisodeRecallLines: 20
 # Tail of `memory/history.metta` included in the prompt (chars)
 maxHistory: 30000
+# Maximum detailed history events retained in each context frame.
+maxFrameHistoryEvents: 100
 # ChromaDB persistence directory used for long-term memory portability.
 chromaDbPath: "./chroma_db"
 # `Local` (Python-side model) or the id of a provider serving OpenAI-compatible embeddings: `OpenAI`, `ASICloud`

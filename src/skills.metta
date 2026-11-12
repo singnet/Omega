@@ -134,7 +134,7 @@
 
 !(add-skill remember "Remember a particular string such as a skill or memory." (content))
 !(add-skill query "Query long-term embedding memory using a short phrase." (content))
-!(add-skill episodes  "Search history for episodes around a timestamp in %Y-%m-%d %H:%M:%S format." (timestamp))
+!(add-skill episodes "Search history around YYYY-MM-DD HH:MM:SS. Follow the episodes call in MORE HISTORY to retrieve the next page." (timestamp))
 !(add-skill pin "Pin a string as a short-term working-memory item to keep track of task state and relevant query results as query returns are only available once and gone next cycle." (message))
 !(add-skill shell "Execute a shell command." (cmd))
 !(add-skill read-file "Read a file." (filename))

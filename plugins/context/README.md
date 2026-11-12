@@ -39,6 +39,11 @@ prompt is built, renders the current projection on every request, records tool
 results against their originating frame, and handles Fast/Slow idle behavior.
 The frame prompt includes `LOOPS_REMAINING`, the active iterations available
 before going idle, including the current iteration.
+Detailed frame history is capped per frame by `maxFrameHistoryEvents` (default
+100 in `config/config.yaml`). Older events are archived in `memory/history.metta`
+before pruning; the frame summary retains a bounded directive/decision/outcome
+rollup and timestamp range. Use the `episodes` skill with a timestamp from the
+pruning notice to retrieve archived details.
 When disabled, it registers nothing and the default context provider remains
 active.
 
