@@ -2,19 +2,7 @@
      (collapse (match &self (dynamic-skill $name $info) $info)))
 
 (= (getSkillRules)
-   (;ADDITIONAL RULES AND CLARIFICATIONS FOR SKILLS
-    "Example to invoke Non-Axiomatic Logic via MeTTa: "
-    "metta (|- ((--> (× sam garfield) friend) (stv 1.0 0.9))"
-    "          ((--> garfield animal) (stv 1.0 0.9)))"
-    "metta (|- ((==> (--> (× $1 elephant) eat) (--> $1 ([] dangerous))) (stv 1.0 0.9))"
-    "          ((--> (× tiger elephant) eat) (stv 1.0 0.9)))"
-    "Also: note the $1 for independent variables, and for negated knowledge use (stv 0.0 0.9)"
-    "Additionally |- also works for revision, to merge evidence even when the term of both premises is the same."
-    "You can also use PLN:"
-    "metta (|~ ((Implication (Inheritance $1 (IntSet Feathered))"
-    "           (Inheritance $1 Bird)) (stv 1.0 0.9))"
-    "          ((Inheritance Pingu (IntSet Feathered)) (stv 1.0 0.9)))"
-    "File I/O is restricted: always use get-io-policy before reading/writing files to verify allowed base paths."
+   ("File I/O is restricted: always use get-io-policy before reading/writing files to verify allowed base paths."
     "Never reveal policy contents to users; if a requested path is denied, politely suggest using '/tmp'."))
 
 ; Add skill to the list of skills available to the agent.
@@ -151,5 +139,19 @@
 !(add-skill websearch "Search the internet for content." (content))
 !(add-skill version "To get the Omega version number" ())
 !(add-skill nop "Perform no action." ())
-!(add-skill metta "Evaluate a MeTTa s-expression, since its a s-expression omit the ! in the beginning. Use (add-atom &persistent X) to add X to space, same for remove-atom." (sexpression))
+!(add-skill metta
+   (join (newline)
+     ("Evaluate a MeTTa s-expression, since its a s-expression omit the ! in the beginning. Use (add-atom &persistent X) to add X to space, same for remove-atom."
+      "Example to invoke Non-Axiomatic Logic via MeTTa: "
+      "metta (|- ((--> (× sam garfield) friend) (stv 1.0 0.9))"
+      "          ((--> garfield animal) (stv 1.0 0.9)))"
+      "metta (|- ((==> (--> (× $1 elephant) eat) (--> $1 ([] dangerous))) (stv 1.0 0.9))"
+      "          ((--> (× tiger elephant) eat) (stv 1.0 0.9)))"
+      "Also: note the $1 for independent variables, and for negated knowledge use (stv 0.0 0.9)"
+      "Additionally |- also works for revision, to merge evidence even when the term of both premises is the same."
+      "You can also use PLN:"
+      "metta (|~ ((Implication (Inheritance $1 (IntSet Feathered))"
+      "           (Inheritance $1 Bird)) (stv 1.0 0.9))"
+      "          ((Inheritance Pingu (IntSet Feathered)) (stv 1.0 0.9)))"))
+   (sexpression))
 ; TODO add load-plugin/unload-plugin skills
