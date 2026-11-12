@@ -143,6 +143,42 @@ def test_summary_budget_keeps_newest_decision_and_outcome():
     assert len(summary) <= 500
 
 
+@pytest.mark.parametrize("result_count", [1, 3])
+def test_pruning_keeps_results_through_repeated_routine_command_batches(result_count):
+    timestamp = "2026-11-08 15:00:00"
+    events = [
+        _event("F1", "Observation", "ResultAdded", f"Result {index} confirmed", timestamp)
+        for index in range(result_count)
+    ]
+    summary = frame_helpers.cfv2_update_pruning_summary(
+        '""', f"({' '.join(events)})", json.dumps(timestamp), json.dumps(timestamp), result_count, 1200,
+    )
+    for index in range(4):
+        command = _event(
+            "F1", "Execution", "CommandBatch",
+            f"Inspection {index}: " + "routine state details " * 35, timestamp,
+        )
+        summary = frame_helpers.cfv2_update_pruning_summary(
+            json.dumps(summary), f"({command})",
+            json.dumps(timestamp), json.dumps(timestamp), result_count + index + 1, 1200,
+        )
+        outcomes = next(line for line in summary.splitlines() if line.startswith("Outcomes: "))
+        for result_index in range(result_count):
+            assert f"ResultAdded: Result {result_index} confirmed" in outcomes
+        assert len(summary) <= 1200
+
+
+def test_pruning_keeps_execution_context_when_no_task_outcome_is_recorded():
+    timestamp = "2026-11-08 16:00:00"
+    command = _event("F1", "Execution", "CommandBatch", "Search returned useful evidence", timestamp)
+    summary = frame_helpers.cfv2_update_pruning_summary(
+        '""', f"({command})", json.dumps(timestamp), json.dumps(timestamp), 1, 1200,
+    )
+
+    assert "Outcomes: CommandBatch: Search returned useful evidence" in summary
+    assert len(summary) <= 1200
+
+
 def test_frame_history_summary_respects_limit_and_keeps_pruning_notice():
     recent = _event(
         "F1", "Observation", "ResultAdded", "A recent useful finding", "2026-11-08 11:00:00"

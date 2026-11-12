@@ -258,7 +258,11 @@ def cfv2_update_pruning_summary(
     # Keep the original directive and the most recent distinct decisions and
     # outcomes. Their fields are clipped below, so this stays bounded over time.
     decisions = list(dict.fromkeys(item for item in decisions if item))[-3:]
-    outcomes = list(dict.fromkeys(item for item in outcomes if item))[-3:]
+    outcomes = list(dict.fromkeys(item for item in outcomes if item))
+    # Command records are fallback context. Put task results and lifecycle
+    # outcomes last so both the item cap and reverse clipping prefer them.
+    outcomes.sort(key=lambda item: not item.startswith("CommandBatch:"))
+    outcomes = outcomes[-3:]
     notice = (
         f"PRUNED HISTORY: {int(omitted_count)} events omitted from "
         f"{range_from} through {range_to}. "
