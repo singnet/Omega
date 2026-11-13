@@ -17,10 +17,13 @@
             (if (== $filename none)
                ; for backward compatibility, if no router catalog, if we find a provider= parameter
                ; assigned, use the provider= for the "routine" LLM call role.
-               (let $model (configGetByKey model none) 
+               (let $model_init (configGetByKey model none) 
                   (let $provider (provider) 
                      (let*
-                       (($api_token_var (lookup_api_token_var $provider))
+                       (($model (if (== $model_init none)
+                           (lookup_default_model $provider)
+                           $model_init))
+                        ($api_token_var (lookup_api_token_var $provider))
                         ($openaiurl (configGetByKey openaiapi_url http://localhost:11434/v1/)))
                         (add-atom &self (routerCatalog ((routine ((provider $provider) 
                                                                   (model $model) 

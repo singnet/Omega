@@ -106,6 +106,20 @@
      (let $path (py-call (helper.joinPath $parts)) ())
      (swrite $path)))
 
+; Look up the configured model for the provider.
+; Needed for backward compatibility -- if user is not going to use a router catalog.
+(= (lookup_default_model $provider)
+   (let $key (case $provider
+                ((OpenAI openai_model)
+                 (Anthropic anthropic_model)
+                 (ASICloud asicloud_model)
+                 (ASIOne asione_model)
+                 (OpenRouter openrouter_model)
+                 (OpenAIAPI openaiapi_model)
+                 ($_ none)))
+      (py-call (config.config_get_by_key $key none))))
+
+; Needed for backward compatibility -- if user is not going to use a router catalog.
 (= (lookup_api_token_var $provider)
    (case $provider
       ((OpenAI OPENAI_API_KEY)
@@ -115,11 +129,3 @@
        (OpenRouter OPENROUTER_API_KEY)
        (OpenAIAPI OPENAIAPI_API_KEY)
        ($_ ""))))
-
-(= (sread-nested $terms)
-   (if (== (get-metatype $terms) Expression)
-       (if (== $terms ())
-           ()
-           (cons-atom (sread-nested (car-atom $terms))
-                      (sread-nested (cdr-atom $terms))))
-       (sread $terms)))
