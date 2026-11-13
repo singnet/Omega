@@ -22,6 +22,7 @@ This resolves the value through the Python configuration layer, using command-li
 | `maxOutputToken` | 6000 | Output cap passed to the provider. |
 | `reasoningMode` | `medium` | Reasoning-effort hint passed to the provider. |
 | `wakeupInterval` | 600 (seconds) | How long idle before the next scheduled wake-up. |
+| `showStartupVersion` | `true` | Send the Omega version to the communication channel on startup. Set to `false` in `config.yaml` to suppress this message; standard logging and the `version` skill are unaffected. |
 
 ## Memory (`src/memory.metta`, `initMemory`)
 
@@ -29,13 +30,22 @@ This resolves the value through the Python configuration layer, using command-li
 |---|---|---|
 | `maxFeedback` | 50000 (chars) | Ceiling on a single tool call result text fed back into the prompt. |
 | `maxRecallItems` | 20 | Items returned by `query`. |
-| `maxEpisodeRecallLines` | 20 | Lines returned by `episodes`. |
+| `maxEpisodeRecallLines` | 20 | Lines `episodes` returns on each side of the closest timestamp, up to 41 lines in all. |
 | `maxHistory` | 30000 (chars) | Tail of `memory/history.metta` included in the prompt. |
 | `memoryDirectory` | `./repos/Omega/memory` | Directory containing persistent memory files such as `history.metta`. |
 | `chromaDbPath` | `./chroma_db` | ChromaDB persistence directory used for memory backup and restore. |
 | `embeddingprovider` | `Local` | `Local` (Python-side model), or the id of a provider that serves an OpenAI-compatible `/embeddings` endpoint — `OpenAI` and `ASICloud` are known to. The gateway supplies that provider's key. |
 | `embeddingModel` | empty | Model asked of a non-`Local` `embeddingprovider`. Empty means the provider default: `text-embedding-3-large` for `OpenAI`, `WhereIsAI/UAE-Large-V1` for `ASICloud`. |
 | `embeddingBatchSize` | `32` | Positive integer: maximum texts per cloud embedding request during runtime knowledge loading. Lower it for providers with smaller request limits. The default keeps valid OpenAI inputs below the 300,000-token request limit (32 × 8192 = 262,144 tokens). Larger values must fit the provider's input-count and total-token limits. This does not split or truncate individual texts that exceed the model's context limit. |
+
+### Startup knowledge indexing
+
+`knowledgeIndexingBackground` defaults to `false`, keeping synchronous startup.
+Set it to `true` to index `knowledge-priors/*.md` in a background thread while
+plugins and channels start. Completed files become available to `query`
+progressively in the runtime memory collection. Background errors are logged.
+
+Local model loading still happens before indexing and can delay cold startup.
 
 ## Context frames (`plugins/context/context.metta`)
 

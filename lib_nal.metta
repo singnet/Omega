@@ -9,7 +9,7 @@
                     (stv $f2 $c2))
    (stv (* $f1 $f2) (* (* $f1 $f2) (* $c1 $c2))))
 
-(= (Truth_Abduction (stv $f1 $c1)
+(= (Truth_Abduction (stv $f1 $c1) 
                     (stv $f2 $c2))
    (stv $f2 (Truth_w2c (* (* $f1 $c1) $c2))))
 
@@ -22,14 +22,14 @@
 
 (= (Truth_StructuralDeduction $T)
    (Truth_Deduction $T (stv 1.0 0.9)))
-
+  
 (= (Truth_Negation (stv $f $c))
    (stv (- 1 $f) $c))
 
 (= (Truth_StructuralDeductionNegated $T)
    (Truth_Negation (Truth_StructuralDeduction $T)))
 
-(= (Truth_Intersection (stv $f1 $c1)
+(= (Truth_Intersection (stv $f1 $c1) 
                        (stv $f2 $c2))
    (stv (* $f1 $f2) (* $c1 $c2)))
 
@@ -41,12 +41,12 @@
 
 (= (Truth_Comparison (stv $f1 $c1)
                      (stv $f2 $c2))
-   (let $f0 (Truth_or $f1 $f2)
+   (let $f0 (Truth_or $f1 $f2) 
         (stv (if (== $f0 0.0)
-                 0.0
+                 0.0 
                  (/ (* $f1 $f2) $f0))
              (Truth_w2c (* $f0 (* $c1 $c2))))))
-
+  
 (= (Truth_Analogy (stv $f1 $c1)
                   (stv $f2 $c2))
    (stv (* $f1 $f2) (* (* $c1 $c2) $f2)))

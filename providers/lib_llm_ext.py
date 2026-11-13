@@ -1,4 +1,5 @@
 import os, hashlib, time
+import threading
 from datetime import datetime
 import openai
 from providers import *
@@ -401,6 +402,7 @@ class AIProvider(AbstractAIProvider):
 
 
 _embedding_model = None
+_embedding_lock = threading.Lock()
 
 def initLocalEmbedding():
     model_name="intfloat/e5-large-v2"
@@ -413,11 +415,13 @@ def initLocalEmbedding():
 
 def useLocalEmbedding(atom):
     global _embedding_model
-    if _embedding_model is None:
-        raise RuntimeError("Call initLocalEmbedding() first.")
-    return _embedding_model.encode(
-        atom,
-        normalize_embeddings=True
-    ).tolist()
+    # The tokenizer mutates shared state during encode.
+    with _embedding_lock:
+        if _embedding_model is None:
+            raise RuntimeError("Call initLocalEmbedding() first.")
+        return _embedding_model.encode(
+            atom,
+            normalize_embeddings=True
+        ).tolist()
 
 

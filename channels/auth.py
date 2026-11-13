@@ -78,7 +78,7 @@ def _channel_auth_user_path():
 # Single-user (owner) authentication.
 
 def store_channel_authenticated_user_id(channel_identifier, user_id):
-    # For any single run of Omega, allow only a single save of a user-id or verification
+    # For any single run of Omega, allow only a single save of a user-id or verification    
     global _user_ID_processed
     if _user_ID_processed:
         logger.warning(f"[{channel_identifier}] Warning: a user already was validated, ignoring")

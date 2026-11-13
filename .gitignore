@@ -10,7 +10,7 @@ repos/
 .venv/
 venv/
 
-# logs 
+# logs
 *.log
 
 # secrets

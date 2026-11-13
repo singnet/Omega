@@ -16,6 +16,9 @@ maxOutputToken: 6000
 reasoningMode: medium
 # How long idle before the next scheduled wake-up (seconds)
 wakeupInterval: 600
+# Send the Omega version to the communication channel on startup.
+# Set to false to suppress this message without changing standard logging.
+showStartupVersion: true
 # Path to the logger configuration file
 # See https://docs.python.org/3/library/logging.config.html#configuration-file-format
 logConfigPath: ""
@@ -41,6 +44,8 @@ embeddingprovider: Local
 # Model asked of a non-`Local` embeddingprovider; empty means the provider default:
 # `text-embedding-3-large` for `OpenAI`, `WhereIsAI/UAE-Large-V1` for `ASICloud`
 embeddingModel: ""
+# Index knowledge-priors in the background during startup.
+knowledgeIndexingBackground: false
 # Maximum texts per cloud embedding request; tune to the provider's limits.
 embeddingBatchSize: 32
 # Enable authenticated operator-triggered /memory-export commands (disabled by default).

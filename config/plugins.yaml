@@ -37,7 +37,7 @@
   loader: python
   location: "{REPO}/providers"
 
-- name: openai
+- name: omega_openai
   loader: python
   location: "{REPO}/providers"
 

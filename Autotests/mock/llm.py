@@ -53,6 +53,7 @@ class LlmMockAgent:
         self._rpc = Rpc(IPCClient(address))
         self._rpc.on_request('set_answer', lambda args: self.on_set_answer(args))
         self._rpc.on_request('reset', lambda args: self.on_reset(args))
+        self._rpc.on_request('clear_answer', lambda args: self.on_clear_answer(args))
         self._rpc.on_request('ping', lambda args: self.on_ping(args))
         self._rpc.start()
 
@@ -228,6 +229,13 @@ class LlmMockAgent:
         print('[LlmMockAgent] Mock answers cleared')
         return True
 
+    def on_clear_answer(self, args):
+        with self._lock:
+            request = args['request']
+            print(f'[LlmMockAgent] Mock request cleared: "{request}"')
+            self._answers.pop(request, None)
+            return True
+
     def on_ping(self, args):
         print(f'[LlmMockAgent] Mock ping request processed')
         return True
@@ -253,6 +261,13 @@ class LlmMockController:
         result = self._rpc.request('reset', {})
         if result.get(timeout) != True:
             print(f'[LlmMockController] Cannot reset the mock, error: {result.error()}')
+            return False
+        return True
+
+    def clear_answer(self, request, timeout=10):
+        result = self._rpc.request('clear_answer', { 'request': request })
+        if result.get(timeout) != True:
+            print(f'[LlmMockController] Cannot clear answer in the mock, error: {result.error()}')
             return False
         return True
 
