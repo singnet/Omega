@@ -21,8 +21,36 @@ This resolves the value through the Python configuration layer, using command-li
 | `provider` | `Anthropic` | LLM provider — `Anthropic`, `OpenAI`, `ASICloud`, or `ASIOne`. |
 | `maxOutputToken` | 6000 | Output cap passed to the provider. |
 | `reasoningMode` | `medium` | Reasoning-effort hint passed to the provider. |
+| `supportsReasoningEffort` | `false` | **OpenAIAPI only:** opt in to forwarding `reasoningMode` as `reasoning_effort` when the backend/model supports that parameter. An absent or false flag preserves the previous request shape. Other providers, including Anthropic and ASICloud, are unaffected. |
 | `wakeupInterval` | 600 (seconds) | How long idle before the next scheduled wake-up. |
 | `showStartupVersion` | `true` | Send the Omega version to the communication channel on startup. Set to `false` in `config.yaml` to suppress this message; standard logging and the `version` skill are unaffected. |
+
+For `OpenAIAPI`, enable `supportsReasoningEffort` only after confirming that the
+selected backend/model accepts `reasoning_effort` and the requested effort level.
+With the flag enabled, `reasoningMode: low` sends `reasoning_effort: low`;
+`reasoningMode: "none"` sends the explicit `"none"` value rather than leaving the
+backend's default in effect. A null or empty `reasoningMode` omits the parameter.
+Whether a level reduces or disables thinking depends on the backend/model; the
+flag does not detect support or guarantee that an answer fits the output budget.
+
+The flag is enabled only when the resolved configuration value is boolean `true`
+or the string `"true"` (case-insensitive, so `"True"` and `"TRUE"` also enable it).
+All other values disable it, including the strings `"yes"`, `"on"`, `"1"`,
+`" true "` (whitespace is not trimmed), and typos such
+as `"flase"`, as well as the number `1`. Use `true`/`false` in YAML. The existing
+YAML loader also converts unquoted `yes` and `on` to boolean `true` before this
+check; quoted `"yes"` and `"on"` remain strings and do not enable the flag.
+
+When launching through `scripts/omega start`, configure this flag in
+`config/config.yaml` inside the Docker image/container used by Omega. The
+launcher does not mount the host's configuration file, accept this flag as a CLI
+argument, or forward `OMEGA_supportsReasoningEffort` into Docker. The container
+entrypoint also removes that environment variable before starting Omega.
+
+For direct runtime launches that bypass the launcher and container entrypoint,
+the Python configuration layer accepts `supportsReasoningEffort=true` as a
+command-line override or `OMEGA_supportsReasoningEffort=true` in the environment.
+Use `false` instead of `true` to disable forwarding explicitly.
 
 ## Memory (`src/memory.metta`, `initMemory`)
 

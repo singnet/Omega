@@ -26,19 +26,22 @@ def _exec(name, path, register):
     return module
 
 
+CONFIG_STUB = {}
+
+
 def _load_modules():
     openai_stub = types.ModuleType("openai")
     openai_stub.OpenAI = object
 
     config_stub = types.ModuleType("config")
-    config_stub.config_get_by_key = lambda key, default=None: default
+    config_stub.config_get_by_key = lambda key, default=None: CONFIG_STUB.get(key, default)
 
     stubs = {"openai": openai_stub, "config": config_stub}
     saved = {name: sys.modules.get(name) for name in list(stubs) + ["providers", "lib_llm_ext"]}
     sys.modules.update(stubs)
     try:
         loaded = {"providers": _exec("providers", os.path.join(_SRC_DIR, "providers.py"), True)}
-        for name in ("lib_llm_ext", "openrouter", "openai_provider", "asione"):
+        for name in ("lib_llm_ext", "openrouter", "openai_provider", "asione", "openaiapi"):
             file_name = "omega_openai.py" if name == "openai_provider" else f"{name}.py"
             loaded[name] = _exec(name, os.path.join(_PROVIDERS_DIR, file_name), name == "lib_llm_ext")
         return loaded
@@ -56,6 +59,7 @@ llm = _MODULES["lib_llm_ext"]
 openrouter = _MODULES["openrouter"]
 openai_provider = _MODULES["openai_provider"]
 asione = _MODULES["asione"]
+openaiapi = _MODULES["openaiapi"]
 
 SEND = (P.LLMTool().with_name("send").with_description("Send a message to the user")
         .add_parameter(P.LLMToolParameter().with_name("content")))
@@ -145,6 +149,16 @@ def make_asione(create):
     return provider
 
 
+def make_registered_provider(create, monkeypatch, name="OpenAIAPI"):
+    registry = {}
+    monkeypatch.setattr(P, "registerLLMProvider", lambda name, provider: registry.__setitem__(name, provider))
+    openaiapi.loadOmegaPlugin()
+    provider = registry[name]
+    provider.start()
+    provider.delegate._client = NS(chat=NS(completions=NS(create=create)))
+    return provider
+
+
 def calls_of(response):
     return [(call.name, call.arguments) for call in response.calls]
 
@@ -230,6 +244,93 @@ def test_openrouter_reasoning_body(effort, want):
                                       completion_tokens=40, reasoning_tokens=30))
     make_openrouter(create).chat(make_request(reasoning=effort))
     assert create.calls[0]["extra_body"]["reasoning"] == want
+
+
+@pytest.mark.parametrize("effort", ["low", "medium", "none"])
+def test_openaiapi_forwards_reasoning_effort(monkeypatch, effort):
+    monkeypatch.setitem(CONFIG_STUB, "supportsReasoningEffort", True)
+    create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls"))
+    provider = make_registered_provider(create, monkeypatch)
+    request = make_request(reasoning=effort)
+    expected = llm.AIProvider.convert_request(provider.delegate, request)
+    expected["extra_body"] = {"reasoning_effort": effort}
+
+    provider.chat(request)
+
+    assert create.calls == [expected]
+
+
+@pytest.mark.parametrize("flag, want_sent", [
+    (False, False), ("false", False), ("False", False), (" off ", False),
+    ("0", False), (0, False), ("no", False), ("", False),
+    (None, False), ("yes", False), ("on", False), ("1", False), (1, False),
+    ("flase", False), (" true ", False),
+    (True, True), ("true", True), ("True", True), ("TRUE", True), ("TrUe", True),
+])
+def test_openaiapi_requires_explicit_true_reasoning_flag(monkeypatch, flag, want_sent):
+    monkeypatch.setitem(CONFIG_STUB, "supportsReasoningEffort", flag)
+    create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls"))
+    provider = make_registered_provider(create, monkeypatch)
+    request = make_request()
+    expected = llm.AIProvider.convert_request(provider.delegate, request)
+    if want_sent:
+        expected["extra_body"] = {"reasoning_effort": "medium"}
+
+    provider.chat(request)
+
+    assert create.calls == [expected]
+
+
+def test_openaiapi_preserves_request_when_flag_is_unset(monkeypatch):
+    create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls"))
+    provider = make_registered_provider(create, monkeypatch)
+    request = make_request()
+
+    provider.chat(request)
+
+    assert create.calls == [llm.AIProvider.convert_request(provider.delegate, request)]
+    assert "extra_body" not in create.calls[0]
+
+
+@pytest.mark.parametrize("effort", [None, ""])
+def test_openaiapi_omits_unset_reasoning_even_when_flag_is_on(monkeypatch, effort):
+    monkeypatch.setitem(CONFIG_STUB, "supportsReasoningEffort", True)
+    create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls"))
+    provider = make_registered_provider(create, monkeypatch)
+    request = make_request(reasoning=effort)
+
+    provider.chat(request)
+
+    assert create.calls == [llm.AIProvider.convert_request(provider.delegate, request)]
+    assert "extra_body" not in create.calls[0]
+
+
+@pytest.mark.parametrize("name", ["base", "Anthropic", "ASICloud", "OpenRouter", "OpenAI", "ASIOne"])
+@pytest.mark.parametrize("effort", ["medium", "none"])
+def test_reasoning_effort_flag_does_not_change_other_providers(monkeypatch, name, effort):
+    raw = chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls")
+    if name == "OpenAI":
+        raw = responses_response([function_call("fc_1", "send", '{"content": "hi"}')], "completed")
+    create = FakeCreate(raw, raw, raw)
+    if name in ("Anthropic", "ASICloud"):
+        provider = make_registered_provider(create, monkeypatch, name)
+    else:
+        factory = {"base": make_anthropic, "OpenRouter": make_openrouter,
+                   "OpenAI": make_openai, "ASIOne": make_asione}[name]
+        provider = factory(create)
+    request = make_request(reasoning=effort)
+
+    provider.chat(request)
+    monkeypatch.setitem(CONFIG_STUB, "supportsReasoningEffort", True)
+    provider.chat(request)
+    monkeypatch.setitem(CONFIG_STUB, "supportsReasoningEffort", False)
+    provider.chat(request)
+
+    assert len(create.calls) == 3
+    assert create.calls[0] == create.calls[1] == create.calls[2]
+    assert "reasoning_effort" not in create.calls[1].get("extra_body", {})
+    if name in ("base", "Anthropic", "ASICloud"):
+        assert "extra_body" not in create.calls[1]
 
 
 def test_usage_is_logged_at_info(caplog):

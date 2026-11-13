@@ -2,8 +2,26 @@ import os
 import lib_llm_ext as llm
 import providers
 from config import config_get_by_key
+from typing import Any
+
+
+def _flag_is_on(value: Any) -> bool:
+    return value is True or (isinstance(value, str) and value.lower() == "true")
+
+
+class OpenAIAPIProviderImpl(llm.AIProvider):
+
+    def convert_request(self, request: providers.LLMRequest) -> dict[str, Any]:
+        result = super().convert_request(request)
+        reasoning = request.reasoning_mode
+        if reasoning and _flag_is_on(config_get_by_key("supportsReasoningEffort", False)):
+            result["extra_body"] = {"reasoning_effort": str(reasoning).lower()}
+        return result
+
 
 class OpenAIAPI(providers.LLMProvider):
+
+    _delegate_class = OpenAIAPIProviderImpl
 
     def __init__(self, name):
         super().__init__()
@@ -20,8 +38,8 @@ class OpenAIAPI(providers.LLMProvider):
         return config_get_by_key("openaiapi_url", "http://localhost:11434/v1/")
 
     def start(self) -> None:
-        self.delegate = llm.AIProvider(self._name, self.api_token_var(),
-                                       self.model(), self.base_url())
+        self.delegate = self._delegate_class(self._name, self.api_token_var(),
+                                             self.model(), self.base_url())
 
     def stop(self) -> None:
         self.delegate.stop()
@@ -31,6 +49,8 @@ class OpenAIAPI(providers.LLMProvider):
 
 
 class OpenAIAPIPreconfigured(OpenAIAPI):
+
+    _delegate_class = llm.AIProvider
 
     def __init__(self, name, api_token_var, default_model, base_url):
         super().__init__(name)
