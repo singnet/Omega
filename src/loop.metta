@@ -8,6 +8,7 @@
 (= (memoryDirectory) (empty))
 (= (router) (empty))
 (= (routerCatalogFile) (empty))
+(= (showStartupVersion) (empty))
 
 (= (initLoop)
    (progn (configure maxNewInputLoops 50) ;20
@@ -19,6 +20,7 @@
           (configure maxOutputToken 6000)
           (configure reasoningMode medium)
           (configure wakeupInterval 600) ;600=10 minutes
+          (configure showStartupVersion True)
           (configure memoryDirectory
                (joinPath ((py-call (helper.projectRootDirectory)) memory)))
           (change-state! &prevmsg "")
@@ -88,7 +90,9 @@
                                (initPlugins)
                                (initChannels)
                                (addTelegramPromptExtension)
-                               (commChannelSend (version))
+                               (if (showStartupVersion)
+                                   (commChannelSend (version))
+                                   ())
                                (llmProvidersInitialize))
                         (change-state! &loops (- (get-state &loops) 1)))
           (let $prompt (getContext)

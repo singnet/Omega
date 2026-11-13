@@ -22,6 +22,7 @@ This resolves the value through the Python configuration layer, using command-li
 | `maxOutputToken` | 6000 | Output cap passed to the provider. |
 | `reasoningMode` | `medium` | Reasoning-effort hint passed to the provider. |
 | `wakeupInterval` | 600 (seconds) | How long idle before the next scheduled wake-up. |
+| `showStartupVersion` | `true` | Send the Omega version to the communication channel on startup. Set to `false` in `config.yaml` to suppress this message; standard logging and the `version` skill are unaffected. |
 
 ## Memory (`src/memory.metta`, `initMemory`)
 
