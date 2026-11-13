@@ -99,6 +99,18 @@ class TestLlmMock:
     def test_clear_unknown_answer(self, agent, controller):
         assert controller.clear_answer("never set")
 
+    def test_cleared_idle_answer_is_reported(self, agent, controller, capsys):
+        from test_idle_nop_mock import IDLE_MESSAGE, NO_ANSWER
+
+        assert controller.set_answer(IDLE_MESSAGE, [("nop", {})])
+        request = _llm_request(IDLE_MESSAGE)
+        assert [call.name for call in agent.chat(request).calls] == ["nop"]
+        assert controller.clear_answer(IDLE_MESSAGE)
+        capsys.readouterr()
+
+        assert agent.chat(request) == LLMResponse()
+        assert f"{NO_ANSWER}: {IDLE_MESSAGE}" in capsys.readouterr().out
+
     def test_context_manager(self, agent):
         with llm_mock_controller(address=TEST_ADDRESS) as controller:
             assert controller.set_answer("hello", _llm_response_json("world"))

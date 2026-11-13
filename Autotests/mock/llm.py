@@ -73,7 +73,12 @@ class LlmMockAgent:
         if not users:
             return LLMResponse()
         body = _STEP_PREFIX.sub("", users[-1].content, count=1)
-        return self._make_llm_response(self._message_answer(body))
+        answer = self._message_answer(body)
+        if answer:
+            print(f"[LlmMockAgent] Mock answers: {answer}")
+        else:
+            print(f"[LlmMockAgent] Mock doesn't have answer for: {body}")
+        return self._make_llm_response(answer)
 
     def _legacy_chat(self, content):
         user = content.rsplit(":-:-:-:", 1)
