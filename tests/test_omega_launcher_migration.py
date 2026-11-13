@@ -262,6 +262,28 @@ def _container_state(root, name):
     return (root / "containers" / name).read_text()
 
 
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_migration_recovery_links_use_release_tag(docker_root, interrupted):
+    if interrupted:
+        _interrupted_migration(docker_root, image_files=True)
+    else:
+        _install_omegaclaw(docker_root)
+
+    result = _launcher(docker_root, "start", "-d", IMAGE)
+
+    assert result.returncode == 0, result.stderr
+    links = [
+        line.removeprefix("Recovery instructions: ")
+        for line in result.stderr.splitlines()
+        if line.startswith("Recovery instructions: ")
+    ]
+    expected = (
+        "https://github.com/singnet/Omega/blob/v0.1.22/"
+        "docs/reference-memory-migration.md#recovering-an-interrupted-memory-migration"
+    )
+    assert links == [expected] * (2 if interrupted else 1)
+
+
 def test_first_start_copies_old_memory_except_prompts(docker_root):
     _install_omegaclaw(docker_root)
 
