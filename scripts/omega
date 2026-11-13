@@ -656,6 +656,8 @@ help() {
     echo -e "\t-p <provider> set LLM API provider (default is ASICloud)."
     echo -e "\t              Pass API token via environment variable."
     echo -e "\t-m <model> set LLM model to use with provider (default depends on provider)."
+    echo -e "\t-e <embedding provider> set embedding provider: Local|OpenAI|ASICloud (default depends on provider)."
+    echo -e "\t              Can also be set via EMBEDDING_PROVIDER environment variable."
     echo -e "\t-u <LLM API url> set LLM API URL for the OpenAIAPI provider"
     echo -e "\t-g <OpenClaw Gateway url> enable the openclaw plugin against this Gateway"
     echo -e "\t              Pass the Gateway token via OMEGA_OPENCLAW_TOKEN"
@@ -698,6 +700,7 @@ options() {
     OMEGA_OPENCLAW_TOKEN="${OMEGA_OPENCLAW_TOKEN:-}"
     commchannel=irc
     log_config_path=""
+    embedding_override="${EMBEDDING_PROVIDER:-}"
     memory_transfer_volume_name="omega-memory-transfer"
     memory_archive_arguments=()
     memory_import_file=""
@@ -725,7 +728,8 @@ options() {
             -d?*) image=${1:2}; shift; continue;;
             -l?*) log_config_path=${1:2}; shift; continue;;
             -m?*) model=${1:2}; shift; continue;;
-            -s|-t|-p|-u|-g|-c|-d|-l|-m|--memory-transfer-volume|--memory-import|--memory-mode)
+            -e?*) embedding_override=${1:2}; shift; continue;;
+            -s|-t|-p|-u|-g|-c|-d|-l|-m|-e|--memory-transfer-volume|--memory-import|--memory-mode)
                 require_option_value "${1}" "${2:-}" || return 1
                 ;;
         esac
@@ -739,6 +743,7 @@ options() {
             -d) image=${2}; shift 2;;
             -l) log_config_path=${2}; shift 2;;
             -m) model=${2}; shift 2;;
+            -e) embedding_override=${2}; shift 2;;
             --memory-transfer-volume)
                 memory_transfer_volume_name="${2}"
                 shift 2
@@ -841,6 +846,14 @@ options() {
            return 1
            ;;
     esac
+    if [ -n "${embedding_override}" ]; then
+        case "${embedding_override}" in
+            Local|OpenAI|ASICloud) embeddingprovider="${embedding_override}" ;;
+            *) echo "Unsupported embedding provider: ${embedding_override}, use Local, OpenAI or ASICloud" >&2
+               return 1
+               ;;
+        esac
+    fi
     if [[ -n "${!api_token_var:-}" ]]; then
         api_token="${!api_token_var}"
     else
@@ -871,24 +884,71 @@ options() {
     fi
 }
 
+remove_partly_copied_memory() {
+    local volume="$1"
+    local container="$2"
+    local label="$3"
+    local leftover
+    local holder
+    local holders=""
+
+    if ! docker volume inspect "${volume}" >/dev/null 2>&1; then
+        return 0
+    fi
+    for leftover in $(docker ps -aq --filter "label=${label}" --filter "volume=${volume}" 2>/dev/null); do
+        docker rm -f "${leftover}" >/dev/null 2>&1 || true
+    done
+    for holder in $(docker ps -a --filter "volume=${volume}" --format '{{.Names}}' 2>/dev/null); do
+        if [ "${holder}" != "${container}" ]; then
+            holders="${holders:+${holders} }${holder}"
+        fi
+    done
+    if [ -n "${holders}" ]; then
+        echo "Could not remove the partly copied volume ${volume}, it is used by containers: ${holders}. Remove them with 'docker rm -f ${holders}' and start again" >&2
+        return 1
+    fi
+    if docker container inspect "${container}" >/dev/null 2>&1 \
+        && docker rm -f "${container}" >/dev/null; then
+        echo "Removed container ${container}, it used the partly copied volume ${volume}"
+    fi
+    if ! docker volume rm "${volume}" >/dev/null; then
+        echo "Could not remove the partly copied volume ${volume}" >&2
+        return 1
+    fi
+}
+
 migrate_omegaclaw_memory() {
     local old_container="omegaclaw"
     local old_volume="omegaclaw-memory"
     local new_volume="omega-memory"
+    local new_container="omega"
+    local migration_label="omega.memory-migration"
     local memory_path="/PeTTa/repos/Omega/memory"
     local marker=".migrated-to-omega"
     local started_marker=".migration-started"
     local stopped_old_container=0
     local old_state
+    local new_state
 
-    if [ -n "${memory_import_file}" ] \
-        || ! docker volume inspect "${old_volume}" >/dev/null 2>&1; then
+    if ! docker volume inspect "${old_volume}" >/dev/null 2>&1; then
         return 0
     fi
-    if ! old_state=$(docker run --rm --entrypoint sh --volume "${old_volume}:/from:ro" "${image}" \
+    if ! old_state=$(docker run --rm --label "${migration_label}" --entrypoint sh --volume "${old_volume}:/from:ro" "${image}" \
         -c "if [ -e /from/${marker} ]; then echo migrated; elif [ -e /from/${started_marker} ]; then echo interrupted; fi"); then
         echo "Could not read the migration markers in ${old_volume}" >&2
         return 1
+    fi
+    if [ -n "${memory_import_file}" ]; then
+        if [ "${old_state}" = "interrupted" ]; then
+            echo "The last copy from ${old_volume} did not finish, the memory import replaces it"
+            remove_partly_copied_memory "${new_volume}" "${new_container}" "${migration_label}" || return 1
+            if ! docker run --rm --label "${migration_label}" --entrypoint sh --volume "${old_volume}:/from" "${image}" \
+                -c "rm -f /from/${started_marker}"; then
+                echo "Could not clear the migration marker in ${old_volume}" >&2
+                return 1
+            fi
+        fi
+        return 0
     fi
     case "${old_state}" in
         migrated)
@@ -897,12 +957,22 @@ migrate_omegaclaw_memory() {
         interrupted)
             echo "WARNING: Retrying the migration can replace omega-memory. If you imported memory or used the agent after the interruption, preserve it before retrying." >&2
             echo "Recovery instructions: https://github.com/singnet/Omega/blob/v0.1.22/docs/reference-memory-migration.md#recovering-an-interrupted-memory-migration" >&2
-            echo "The last copy from ${old_volume} did not finish, copying again"
-            if docker volume inspect "${new_volume}" >/dev/null 2>&1 \
-                && ! docker volume rm "${new_volume}" >/dev/null; then
-                echo "Could not remove the partly copied volume ${new_volume}" >&2
-                return 1
+            if docker volume inspect "${new_volume}" >/dev/null 2>&1; then
+                if ! new_state=$(docker run --rm --label "${migration_label}" --entrypoint sh \
+                    --volume "${old_volume}:/from:ro" --volume "${new_volume}:/to:ro" "${image}" \
+                    -c 'if [ -e /to/history.metta ]; then n=$(wc -c < /to/history.metta); if [ ! -e /from/history.metta ] || [ "$n" -gt "$(wc -c < /from/history.metta)" ] || ! head -c "$n" /from/history.metta | cmp -s - /to/history.metta; then echo kept; fi; fi'); then
+                    echo "Could not compare ${new_volume} with ${old_volume}" >&2
+                    return 1
+                fi
+                if [ "${new_state}" = "kept" ]; then
+                    echo "${new_volume} holds memory that is not a partial copy of ${old_volume}, for example an imported archive, so it was left as it was" >&2
+                    echo "To keep it, clear the marker: docker run --rm --entrypoint rm --volume ${old_volume}:/from ${image} /from/${started_marker}" >&2
+                    echo "To copy ${old_volume} again instead, remove it: docker rm -f ${new_container}; docker volume rm ${new_volume}" >&2
+                    return 1
+                fi
             fi
+            echo "The last copy from ${old_volume} did not finish, copying again"
+            remove_partly_copied_memory "${new_volume}" "${new_container}" "${migration_label}" || return 1
             ;;
         *)
             if docker volume inspect "${new_volume}" >/dev/null 2>&1; then
@@ -923,15 +993,15 @@ migrate_omegaclaw_memory() {
         echo "Stopped container ${old_container}"
     fi
 
-    if docker run --rm --entrypoint sh --volume "${old_volume}:/from" "${image}" \
+    if docker run --rm --label "${migration_label}" --entrypoint sh --volume "${old_volume}:/from" "${image}" \
             -c "date -u > /from/${started_marker}" \
         && docker volume create "${new_volume}" >/dev/null \
-        && docker run --rm --entrypoint sh --volume "${new_volume}:${memory_path}" "${image}" \
+        && docker run --rm --label "${migration_label}" --entrypoint sh --volume "${new_volume}:${memory_path}" "${image}" \
             -c "test -f ${memory_path}/prompt.txt" \
-        && docker run --rm --entrypoint sh \
+        && docker run --rm --label "${migration_label}" --entrypoint sh \
             --volume "${old_volume}:/from:ro" --volume "${new_volume}:/to" "${image}" \
             -c 'list=$(mktemp) && cd /from && find . -mindepth 1 -maxdepth 1 ! -name "prompt*.txt" ! -name tg_prompt.txt ! -name .migration-started > "$list" && while IFS= read -r entry; do rm -rf "/to/$entry" && cp -a "$entry" /to/ || exit 1; done < "$list"' \
-        && docker run --rm --entrypoint sh --volume "${old_volume}:/from" "${image}" \
+        && docker run --rm --label "${migration_label}" --entrypoint sh --volume "${old_volume}:/from" "${image}" \
             -c "date -u > /from/${marker}"; then
         echo "Memory copied. Carrying memory over is experimental, so keep the volume ${old_volume} until you have checked that the agent remembers what it knew. Then remove the old installation with 'docker rm ${old_container}' and 'docker volume rm ${old_volume}'"
         return 0
@@ -940,7 +1010,7 @@ migrate_omegaclaw_memory() {
     echo "Could not copy memory from ${old_volume}, the old installation is left as it was" >&2
     if docker volume rm "${new_volume}" >/dev/null 2>&1 \
         || ! docker volume inspect "${new_volume}" >/dev/null 2>&1; then
-        docker run --rm --entrypoint sh --volume "${old_volume}:/from" "${image}" \
+        docker run --rm --label "${migration_label}" --entrypoint sh --volume "${old_volume}:/from" "${image}" \
             -c "rm -f /from/${started_marker}" >/dev/null 2>&1 || true
     else
         echo "Could not remove ${new_volume}, the next start will copy the memory again" >&2
@@ -1095,6 +1165,21 @@ start() {
     memory_transfer_volume=()
     memory_import_env=()
     memory_export_option=()
+    embedding_token_env=()
+
+    case "${embeddingprovider}" in
+        OpenAI) emb_token_var="OPENAI_API_KEY" ;;
+        ASICloud) emb_token_var="ASI_API_KEY" ;;
+        *) emb_token_var="" ;;
+    esac
+
+    if [[ -n "${emb_token_var}" && "${emb_token_var}" != "${api_token_var}" ]]; then
+        if [[ -z "${!emb_token_var:-}" ]]; then
+            echo "${emb_token_var} is not set (required by embedding provider ${embeddingprovider})" >&2
+            return 1
+        fi
+        embedding_token_env=(-e "${emb_token_var}=${!emb_token_var}")
+    fi
 
     if [ -n "${log_config_path}" ]; then
         if [ ! -f "${log_config_path}" ]; then
@@ -1168,6 +1253,7 @@ if sys.argv[1]:
             ${log_config_volume[@]+"${log_config_volume[@]}"}
             ${memory_transfer_volume[@]+"${memory_transfer_volume[@]}"}
             -e "${api_token_var}"="${api_token}"
+            ${embedding_token_env[@]+"${embedding_token_env[@]}"}
             -e "TG_BOT_TOKEN=${TG_BOT_TOKEN:-}"
             -e "SL_BOT_TOKEN=${SL_BOT_TOKEN:-}"
             -e "OMEGA_OPENCLAW_TOKEN=${OMEGA_OPENCLAW_TOKEN:-}"

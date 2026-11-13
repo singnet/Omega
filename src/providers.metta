@@ -4,6 +4,9 @@
 (= (llmProviderChat $request)
      (py-call (providers.llmProviderChat $request)))
 
+;Notice text for the user if the provider reply is the output limit marker, otherwise ""
+(= (llmLimitNotice $response)
+   (py-call (lib_llm_ext.llmLimitNotice $response)))
 (= (llmRequestMessage role $role content $content)
    (py-call (providers.llmRequestMessage $role $content)))
 

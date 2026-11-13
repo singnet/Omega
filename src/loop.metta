@@ -110,6 +110,8 @@
                                        ($_ (log INFO "loop" (REQUEST: (py-str ($request)))))
                                        ($response (llmProviderChat $request))
                                        ($_ (log INFO "loop" (RESPONSE: (py-str ($response)))))
+                                       ($notice (llmLimitNotice $response))
+                                       ($_ (if (> (string_length $notice) 0) (notify $notice) _))
                                        ($respstr (py-call (providers.llmResponseToSExpr $response)))
                                        ($resp (catch (sread $respstr)))
                                        ($_ (log INFO "loop" (RESPONSE: $resp)))
