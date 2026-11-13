@@ -34,8 +34,9 @@ Whether a level reduces or disables thinking depends on the backend/model; the
 flag does not detect support or guarantee that an answer fits the output budget.
 
 The flag is enabled only when the resolved configuration value is boolean `true`
-or the exact, case-sensitive string `"true"`. All other values disable it,
-including the strings `"yes"`, `"on"`, `"1"`, `"True"`, `" true "`, and typos such
+or the string `"true"` (case-insensitive, so `"True"` and `"TRUE"` also enable it).
+All other values disable it, including the strings `"yes"`, `"on"`, `"1"`,
+`" true "` (whitespace is not trimmed), and typos such
 as `"flase"`, as well as the number `1`. Use `true`/`false` in YAML. The existing
 YAML loader also converts unquoted `yes` and `on` to boolean `true` before this
 check; quoted `"yes"` and `"on"` remain strings and do not enable the flag.

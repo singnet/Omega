@@ -264,8 +264,8 @@ def test_openaiapi_forwards_reasoning_effort(monkeypatch, effort):
     (False, False), ("false", False), ("False", False), (" off ", False),
     ("0", False), (0, False), ("no", False), ("", False),
     (None, False), ("yes", False), ("on", False), ("1", False), (1, False),
-    ("flase", False), ("True", False), ("TRUE", False), (" true ", False),
-    (True, True), ("true", True),
+    ("flase", False), (" true ", False),
+    (True, True), ("true", True), ("True", True), ("TRUE", True), ("TrUe", True),
 ])
 def test_openaiapi_requires_explicit_true_reasoning_flag(monkeypatch, flag, want_sent):
     monkeypatch.setitem(CONFIG_STUB, "supportsReasoningEffort", flag)
