@@ -58,4 +58,4 @@
    (py-call (lib_chromadb.query (embed $str) (maxRecallItems))))
 
 (= (episodes $time)
-   (py-call (helper.around_time $time (maxEpisodeRecallLines))))
+   (py-call (helper.around_time $time (maxEpisodeRecallLines) (maxFeedback))))

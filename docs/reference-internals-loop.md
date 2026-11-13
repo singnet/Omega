@@ -15,6 +15,9 @@ Outer `run.metta` simply calls `(omega)`.
 Initializes state:
 
 - `(initLoop)` — configures all loop parameters (see [reference-configuration.md](./reference-configuration.md)).
+- `(initContext)` — provided by [`src/context_provider.metta`](../src/context_provider.metta)
+  and called by `initLoop`, selects the default message/history provider before
+  plugins load. An enabled context plugin can replace it at startup.
 - `(initMemory)` — configures memory parameters and loads the embedding model.
 - `(initPlugins)` — loads the plugins listed in `config/plugins.yaml`. Their `loadOmegaPlugin` functions register channels and LLM providers and add plugin tools with `add-skill`.
 - `(initChannels)` — opens the active communication channel.
@@ -31,11 +34,11 @@ Also creates shared state slots:
 ## Every turn
 
 1. **Decrement `&loops`** (turns > 1 only).
-2. **Build the system message** — `getContext` assembles `PROMPT + SKILLS + prompt extensions + SAVE_PERMANENT_FILES_DIR + HISTORY + TIME`. The `SKILLS:` part holds only the extra rules from `getSkillRules`. The tools themselves are not in the text.
-3. **Receive** — `(receive)` via the active channel.
-4. **Detect new input** — compare against `&prevmsg`. If different and non-empty, reset `&loops` to `maxNewInputLoops`.
+2. **Receive** — `(receive)` via the active channel.
+3. **Admit input** — detect new input, pass it to `(context-event (Input $msg $msgnew))`, and reset `&loops` to `maxNewInputLoops` on later turns with new input.
+4. **Build the system message** — `getContext` assembles `PROMPT + selected context + SKILLS + prompt extensions + SAVE_PERMANENT_FILES_DIR + LAST_SKILL_USE_RESULTS + TIME`. The `SKILLS:` part holds only the extra rules from `getSkillRules`; tool schemas are supplied separately.
 5. **Set next wake** — `&nextWakeAt := now + wakeupInterval`.
-6. **Add the user message** — the new human message, or a fixed line that tells the model to continue autonomous work, goes into `&messages_all` with role `user`.
+6. **Add the input signal** — the selected context provider's input signal goes into `&messages_all` with role `user`. The default provider supplies the human message or an autonomous-work instruction; frame mode supplies a signal after admitting the message into frame state.
 7. **Call the LLM** — `llmRequest` combines the system message, `&messages_all`, and the tool schemas from `collectTools`. `(llmProviderChat $request)` sends it to the provider started on turn 1 and checks the response. Providers are plugins registered with `registerLLMProvider` (see [reference-plugin-api.md](./reference-plugin-api.md#llm-provider-integration)).
 8. **Convert** — `providers.llmResponseToSExpr` turns the calls of the response into an s-expression, and `sread` parses it. `&error` and `&messages_all` are reset at this point.
 9. **Dispatch tool calls** — one `assistant` message with the calls is added to `&messages_all`. Then `(superpose $resp)` runs each tool call, capturing errors via `HandleError`.
@@ -44,11 +47,20 @@ Also creates shared state slots:
 12. **Sleep** — `(sleep (sleepInterval))`.
 13. **Recurse** — `(omega (+ 1 $k))`.
 
+The default context provider supplies conversation history; the enabled context
+plugin supplies the current frame projection. Before each LLM call, the provider
+supplies a token that is passed back with the completed tool batch. The core
+does not read frame state. See the
+[context provider API](./reference-plugin-api.md#context-providers).
+
 See [reference-internals-tool-dispatch.md](./reference-internals-tool-dispatch.md) for the schema, the response checks, and the dispatch steps.
 
 ## Idle behavior
 
 When `&loops` hits zero and no new message has arrived, the loop skips the LLM call. When `now > &nextWakeAt`, it grants `maxWakeLoops + 1` extra turns so the agent can do self-initiated work (cleanup, summarization, etc.).
+
+When no wake-up is due, the loop calls `(context-event Idle)` for
+context-specific idle maintenance.
 
 ## Error handling
 

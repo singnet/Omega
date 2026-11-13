@@ -47,6 +47,18 @@ progressively in the runtime memory collection. Background errors are logged.
 
 Local model loading still happens before indexing and can delay cold startup.
 
+## Context frames (`plugins/context/context.metta`)
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `contextFrame` | `disabled` | Select `enabled` for frame-based working context and frame tools, or `disabled` for ordinary messages and conversation history. Selection takes effect at startup. |
+
+The interactive launcher asks for this selection. With `scripts/omega start`,
+use `--context-frame enabled` or `--context-frame disabled`. Without that option,
+the launcher preserves the usual environment/YAML configuration precedence.
+Restart Omega to change the selection. See the
+[context-frame plugin](../plugins/context/README.md) for details.
+
 ## Channels (`src/channels.metta`, `initChannels`)
 
 | Parameter | Default | Meaning |

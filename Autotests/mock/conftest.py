@@ -67,6 +67,14 @@ def comm():
         server.stop(5)
 
 
+# Answers and the frames they were served for do not outlive the test that
+# registered them, so a frame left unfinished by one test cannot answer for
+# the next one.
+@pytest.fixture(autouse=True)
+def reset_llm(request):
+    yield
+    if "llm" in request.fixturenames:
+        request.getfixturevalue("llm").reset(5)
 @pytest.fixture(scope="session")
 def openclaw_gateway():
     token = os.environ.get("OMEGA_OPENCLAW_TOKEN", "")

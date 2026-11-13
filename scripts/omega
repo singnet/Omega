@@ -283,6 +283,24 @@ def _choose_import_kb():
         print("Please enter y or n.")
 
 
+def _choose_context_frame():
+    while True:
+        c = input(
+            "Enable Context Frames for structured goal and task management? [y/N]: "
+        ).strip().lower()
+
+        if c in ("y", "yes"):
+            return "enabled"
+
+        if c in ("", "n", "no"):
+            return "disabled"
+
+        if c == "q":
+            sys.exit(1)
+
+        print("Please enter y or n.")
+
+
 def _choose_memory_export():
     while True:
         answer = input("Enable memory export for this instance? [y/N]: ").strip().lower()
@@ -326,6 +344,7 @@ def config_run_omega(
     channel_config = _choose_channel()
     provider, embeddingprovider, api_token_var, model, openaiapi_url, token = _choose_provider()
     import_kb_on_start = _choose_import_kb()
+    context_frame_enabled = _choose_context_frame()
     print(f"Using memory transfer volume: {configured_memory_transfer_volume}")
     memory_export_enabled = (
         "1" if configured_memory_export_enabled == "1" else _choose_memory_export()
@@ -340,6 +359,7 @@ def config_run_omega(
         _write_kv(f, "model", model)
         _write_kv(f, "openaiapi_url", openaiapi_url)
         _write_kv(f, "IMPORT_KB_ON_START", import_kb_on_start)
+        _write_kv(f, "contextFrame", context_frame_enabled)
         _write_kv(f, "memory_transfer_volume_name", configured_memory_transfer_volume)
         _write_kv(f, "memory_export_enabled", memory_export_enabled)
         for key, value in channel_config.items():
@@ -656,6 +676,7 @@ help() {
     echo -e "\t-p <provider> set LLM API provider (default is ASICloud)."
     echo -e "\t              Pass API token via environment variable."
     echo -e "\t-m <model> set LLM model to use with provider (default depends on provider)."
+    echo -e "\t--context-frame <enabled|disabled> select context frames at startup (default from configuration)"
     echo -e "\t-u <LLM API url> set LLM API URL for the OpenAIAPI provider"
     echo -e "\t-g <OpenClaw Gateway url> enable the openclaw plugin against this Gateway"
     echo -e "\t              Pass the Gateway token via OMEGA_OPENCLAW_TOKEN"
@@ -698,6 +719,7 @@ options() {
     OMEGA_OPENCLAW_TOKEN="${OMEGA_OPENCLAW_TOKEN:-}"
     commchannel=irc
     log_config_path=""
+    contextFrame=""
     memory_transfer_volume_name="omega-memory-transfer"
     memory_archive_arguments=()
     memory_import_file=""
@@ -725,7 +747,7 @@ options() {
             -d?*) image=${1:2}; shift; continue;;
             -l?*) log_config_path=${1:2}; shift; continue;;
             -m?*) model=${1:2}; shift; continue;;
-            -s|-t|-p|-u|-g|-c|-d|-l|-m|--memory-transfer-volume|--memory-import|--memory-mode)
+            -s|-t|-p|-u|-g|-c|-d|-l|-m|--context-frame|--memory-transfer-volume|--memory-import|--memory-mode)
                 require_option_value "${1}" "${2:-}" || return 1
                 ;;
         esac
@@ -739,6 +761,10 @@ options() {
             -d) image=${2}; shift 2;;
             -l) log_config_path=${2}; shift 2;;
             -m) model=${2}; shift 2;;
+            --context-frame)
+                contextFrame="${2}"
+                shift 2
+                ;;
             --memory-transfer-volume)
                 memory_transfer_volume_name="${2}"
                 shift 2
@@ -782,6 +808,14 @@ options() {
                 ;;
         esac
     done
+
+    case "${contextFrame}" in
+        ""|enabled|disabled) ;;
+        *)
+            echo "--context-frame must be enabled or disabled" >&2
+            return 1
+            ;;
+    esac
 
     if [[ ! "${memory_transfer_volume_name}" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
         echo "--memory-transfer-volume must be a Docker volume name, not a host path" >&2
@@ -1095,6 +1129,14 @@ start() {
     memory_transfer_volume=()
     memory_import_env=()
     memory_export_option=()
+    context_frame_option=()
+    context_frame_env=()
+    if [[ -n "${contextFrame}" ]]; then
+        context_frame_option=("contextFrame=${contextFrame}")
+    fi
+    if [[ -n "${OMEGA_contextFrame:-}" ]]; then
+        context_frame_env=(-e "OMEGA_contextFrame=${OMEGA_contextFrame}")
+    fi
 
     if [ -n "${log_config_path}" ]; then
         if [ ! -f "${log_config_path}" ]; then
@@ -1174,10 +1216,12 @@ if sys.argv[1]:
             -e OMEGA_AUTH_SECRET="$OMEGA_AUTH_SECRET"
             -e IMPORT_KB_ON_START="${IMPORT_KB_ON_START:-0}"
             ${memory_import_env[@]+"${memory_import_env[@]}"}
+            ${context_frame_env[@]+"${context_frame_env[@]}"}
             "$image"
             "commchannel=${commchannel}"
             "provider=${provider}"
             "embeddingprovider=${embeddingprovider}"
+            ${context_frame_option[@]+"${context_frame_option[@]}"}
             "securityPolicyPath=/PeTTa/repos/Omega/profile/policy.yaml"
             ${memory_export_option[@]+"${memory_export_option[@]}"}
     )

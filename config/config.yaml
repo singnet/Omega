@@ -35,6 +35,8 @@ maxRecallItems: 20
 maxEpisodeRecallLines: 20
 # Tail of `memory/history.metta` included in the prompt (chars)
 maxHistory: 30000
+# Maximum detailed history events retained in each context frame.
+maxFrameHistoryEvents: 100
 # ChromaDB persistence directory used for long-term memory portability.
 chromaDbPath: "./chroma_db"
 # `Local` (Python-side model) or the id of a provider serving OpenAI-compatible embeddings: `OpenAI`, `ASICloud`
@@ -158,6 +160,10 @@ asione_model: "asi1-ultra"
 # Skills
 
 # Plugins
+
+# Context frames are selected at startup. Use enabled for frame-based context,
+# or disabled for the ordinary message/history loop. Restart after changing it.
+contextFrame: disabled
 
 # Workflow
 # Path to the directory which contains available workflows. Default value is

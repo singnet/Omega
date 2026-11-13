@@ -454,11 +454,14 @@ def test_the_openrouter_client_carries_the_same_limits(openrouter, llm, monkeypa
 
 
 
-# --- the tag the reset depends on must stay the tag the loop writes ----------
+# --- the tag the reset depends on must match both context providers ----------
 
-def test_the_marker_matches_the_tag_the_loop_writes(llm):
-    """_start_of_turn keys off this tag. If the loop ever renames it, the reset
-    would quietly stop working, so the two are checked against each other."""
-    with open(os.path.join(_REPO_ROOT, "src", "loop.metta"), encoding="utf-8") as f:
-        loop = f.read()
-    assert llm.NO_HUMAN_MESSAGE_MARKER in loop
+@pytest.mark.parametrize("path", [
+    "src/context_provider.metta",
+    "plugins/context/context.metta",
+])
+def test_the_marker_matches_the_tag_context_providers_write(llm, path):
+    """Both providers must preserve the no-input tag used by _start_of_turn."""
+    with open(os.path.join(_REPO_ROOT, path), encoding="utf-8") as f:
+        provider = f.read()
+    assert llm.NO_HUMAN_MESSAGE_MARKER in provider

@@ -6,6 +6,13 @@ chroma_db/
 # pulled in repos
 repos/
 
+# virtual environments
+.venv/
+venv/
+
+# logs
+*.log
+
 # secrets
 .env
 memory/.channel/

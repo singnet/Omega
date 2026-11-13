@@ -24,6 +24,7 @@
 !(import! &self (library Omega ./src/skills))
 !(import! &self (library Omega ./src/websearch.py))
 !(import! &self (library Omega ./src/memory))
+!(import! &self (library Omega ./src/context_provider))
 !(import! &self (library Omega ./src/loop))
 !(import! &self (library Omega ./src/rag.py))
 !(git-import! "https://github.com/patham9/petta_lib_chromadb.git")
