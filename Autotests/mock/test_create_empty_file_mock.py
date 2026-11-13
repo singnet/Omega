@@ -36,9 +36,10 @@ def test_create_empty_file_mock(llm, comm):
             "(create the directory if needed). The file can be empty.",
         )
         llm.set_answer(
-            prompt,
-            f'(shell "mkdir -p {TARGET_DIR}") '
-            f'(write-file "{TARGET_FILE}" "")',
+            prompt, [
+                ("shell", { "cmd": f"mkdir -p {TARGET_DIR}" }),
+                ("write-file", { "filename": f"{TARGET_FILE}", "content": "" })
+            ]
         )
         if not comm.send_message(prompt):
             c.fail("comm", "could not deliver prompt within 60s")

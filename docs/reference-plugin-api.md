@@ -8,7 +8,7 @@ The `loadOmegaPlugin` function calls the Omega plugin API in order to
 implement new agent's features. The plugin API provides functions to:
 - add communication channel integrations
 - add LLM provider integrations
-- add new skills or remove added skills
+- add new tools or remove registered tools (MeTTa only)
 - extend LLM prompt by adding new information or removing it
 - etc
 
@@ -32,6 +32,86 @@ module. The plugin record has the following fields:
     or MeTTa module. In such case it provides the path to the directory where
     `name` module is located. Can include `{REPO}` placeholder to designate the
     root folder of the Omega source repository.
+
+### Python module identity and names
+
+Python plugins are registered in `sys.modules` under their configured `name`,
+including when loaded from a `location`. After loading, `import <name>` returns
+the same module object used by Omega, sharing its initialized state and queues.
+The module is registered before its code executes, so imports made during
+initialization can find it. As with ordinary Python imports, code must not use
+attributes that have not been initialized yet.
+
+If the same file was already imported under that name, Omega reuses the module
+and calls `loadOmegaPlugin`. Loading an already registered plugin again does
+not execute its code or call its entry point again. This is not a hot-reload API.
+For location-based loading, a name occupied by a different module, or by a
+module without a file path, causes an error instead of replacing that module.
+Choose plugin names that do not conflict with dependencies or standard-library
+modules, even if those modules have not been imported yet. The loader checks
+the existing import path before adding the plugin directory and rejects a
+name that resolves to another module or namespace package. A name that
+resolves to the same plugin file is allowed.
+
+If module execution fails, its newly added `sys.modules` entry is removed and
+the original exception is propagated. A missing or failing `loadOmegaPlugin`
+does not leave a successful entry in Omega's plugin registry. Once module
+execution succeeds, the module stays imported even if its entry point fails;
+callbacks or other side effects already performed by that entry point are not
+automatically undone.
+
+The built-in OpenAI plugin file is now `providers/omega_openai.py`. If you keep
+a custom `plugins.yaml`, change its Python plugin entry from `name: openai` to
+`name: omega_openai`, retaining `location: "{REPO}/providers"`. The provider
+identifier remains `OpenAI`, so `provider=OpenAI` and API key configuration do
+not change. `import openai` continues to refer to the OpenAI SDK.
+
+## Plugin dependencies
+
+A plugin that imports a third-party package declares it in a `requirements.txt`
+in the plugin's own directory. `scripts/install_dependencies.sh` installs those
+alongside Omega's own, and both the image build and the source install in
+[README.md](/README.md#installation) call it. A plugin that imports nothing
+outside the standard library and Omega ships no such file and needs no entry
+anywhere.
+
+Everything is installed by a single pip invocation, so Omega's own pins win. They
+are exact, and a plugin asking for a different version of a package Omega pins
+fails the install with a conflict rather than replacing it. Declare ranges wide
+enough to include Omega's pin — `openai>=1.0.0` rather than `openai==2.1.0` —
+and list only what the plugin actually imports.
+
+The file holds requirements and nothing else. pip reads an option written inside
+a requirements file — `--index-url` and `--extra-index-url` above all — as an
+instruction for the whole invocation rather than for the file carrying it, which
+would let one plugin choose where Omega's own packages are fetched from. Sharing
+one invocation is what makes Omega's pins win, so there is nowhere to scope such
+an option to. A plugin file that carries one, at the start of a line or after a
+requirement (`foo==1.0 --hash=...`), stops the install with the line quoted. The
+check reads the file with pip's own code, so an option counts wherever pip would
+find one, including behind a `# -*- coding: -*-` line or an unusual line break.
+
+Some limits are worth knowing:
+  - Only the exact versions in Omega's own `requirements.txt` are protected. A
+    package Omega installs without pinning, because something it pins pulls it
+    in, can be moved by a plugin with no error, since nothing is violated: a
+    plugin asking for `tqdm==4.67.1` replaces the newer one Omega would get.
+    List only what the plugin imports, with ranges, to keep this rare.
+  - Only `plugins/<name>/requirements.txt` is read. Every directory under
+    `plugins/` is installed whether or not `config/plugins.yaml` enables it, and
+    a plugin loaded from anywhere else gets nothing installed.
+  - A relative path in the file, such as a wheel shipped inside the plugin, is
+    resolved from the directory the install runs in, not the plugin's, and the
+    image build copies only `requirements.txt` from each plugin. Install such a
+    package from an index or a URL instead.
+  - After installing, `pip check` checks the whole environment. In a source
+    install into an environment that already holds a broken package, the
+    install succeeds and the script then fails naming that package.
+  - A plugin mounted into an already built image gets no installation at all,
+    since the packages are baked in at build time. That route needs an image
+    built with the plugin present.
+  - A plugin whose packages are missing does not fail on its own: the import
+    error stops the agent at startup with `ModuleNotFoundError`.
 
 As an example of a MeTTa plugin one can look at the code of the [workflow
 plugin](/plugins/workflow/workflow.metta). As an example of a Python plugin
@@ -116,16 +196,22 @@ have an unique id which is used as the value of the `provider` configuration
 parameter in order to enable the provider.
 
 In order to implement a new LLM provider integration one should provide
-implementation of the single function `chat`. The function takes three
-parameters:
-- `prompt` - the string which is sent to LLM by agent as a prompt, required
-- `max_tokens` - the maximum number of tokens can be used by provider to answer the
-  prompt, default value is 6000
-- `reasoning_mode` - the reasoning mode of the LLM, default value is "medium"
+implementation of the single method `chat`. It takes an `LLMRequest` and
+returns an `LLMResponse`, both defined in
+[src/providers.py](/src/providers.py):
+- `request.messages` - the list of messages (system, user, assistant and tool
+  messages), each with `role` and `content`
+- `request.tools` - the list of `LLMTool` with `name`, `description` and
+  `parameters`; every parameter is a string and has a `name`
+- `request.max_tokens` and `request.reasoning_mode` - the output limit and the
+  reasoning mode of the LLM
 
-LLM provider integration should be implemented as a Python class. Inherit the
-class from `providers.LLMProvider` and implement at least one method of the
-ancestor.
+The method returns an `LLMResponse` which holds the tool calls of the LLM, one
+`LLMToolCall` with `id`, `name` and `arguments` (a dict of strings) per call,
+added with `add_tool_call`. A failure is reported with `with_error`. The agent
+checks every call against `request.tools`: a name that is not in the request,
+or a missing or non-string argument, makes that call fail with an error.
+A response without calls and without an error is an error too.
 
 ```python
 import providers
@@ -138,8 +224,12 @@ class ExampleLLMProvider(providers.LLMProvider):
     def stop(self) -> None:
         print("ExampleLLMProvider is stopped")
 
-    def chat(self, prompt: str, max_tokens: int = 6000, reasoning_mode: str = "medium") -> str:
-        return "LLM answer example" 
+    def chat(self, request: providers.LLMRequest) -> providers.LLMResponse:
+        call = (providers.LLMToolCall()
+                         .with_id("call-1")
+                         .with_name("send")
+                         .with_arguments({"content": "LLM answer example"}))
+        return providers.LLMResponse().add_tool_call(call)
 ```
 
 In order to be able to use this LLM provider integration the plugin code should
@@ -168,13 +258,27 @@ sh run.sh run.metta provider=Example
 
 ## Other agent related APIs
 
-A plugin can dynamically add new skills or modify the agent's prompt if it is
+A plugin can dynamically add new tools or modify the agent's prompt if it is
 required. This ability is provided by the following MeTTa functions:
-- `(add-skill $function $description $arguments)` - adds the skill
-- `(remove-skill $function)` - removes the skill by its function name
+- `(add-skill $function $description $arguments)` - adds a tool
+- `(remove-skill $function)` - removes a tool by its function name
 - `(add-prompt-extension $handle $text)` - adds text to the prompt
 - `(remove-prompt-extension $handle)` - removes text from the prompt by the
   handle
+
+`add-skill` stores the tool. Before each request the agent turns every stored
+tool into a tool schema: `$function` is the tool name, `$description` is its
+`description`, and each element of `$arguments` is a required string parameter
+named after the element. `$arguments` is a tuple of symbols, or `()` for a tool
+without arguments. The LLM can call the tool starting with the next request.
+The LLM passes every parameter as a separate string, so name each element after
+what the LLM has to pass, such as `research_name` in the workflow plugin.
+Calling `add-skill` with a name that is already registered replaces the
+earlier registration. `remove-skill` removes the tool from the following
+requests, a built-in tool as well as an added one. `$function` is the name of
+the MeTTa function that runs the tool, so the plugin defines it in its own
+file. The [OpenClaw plugin](/plugins/openclaw/openclaw.metta) shows a tool with
+one argument.
 
 One can look at [source code](/src/skills.metta) for a detailed description.
 Please also look at [workflow plugin](/plugins/workflow/workflow.metta) for
