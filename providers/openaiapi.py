@@ -6,9 +6,7 @@ from typing import Any
 
 
 def _flag_is_on(value: Any) -> bool:
-    if isinstance(value, str):
-        return value.strip().lower() not in ("false", "no", "off", "0", "")
-    return bool(value)
+    return value is True or (isinstance(value, str) and value == "true")
 
 
 class OpenAIAPIProviderImpl(llm.AIProvider):

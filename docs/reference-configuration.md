@@ -33,11 +33,23 @@ backend's default in effect. A null or empty `reasoningMode` omits the parameter
 Whether a level reduces or disables thinking depends on the backend/model; the
 flag does not detect support or guarantee that an answer fits the output budget.
 
-Boolean YAML values and CLI/environment strings are supported. The strings
-`false`, `no`, `off`, `0`, and the empty string disable the flag, ignoring case and
-surrounding whitespace; `true` and `yes` enable it. For example,
-`supportsReasoningEffort=false` on the command line or
-`OMEGA_supportsReasoningEffort=false` in the environment disables forwarding.
+The flag is enabled only when the resolved configuration value is boolean `true`
+or the exact, case-sensitive string `"true"`. All other values disable it,
+including the strings `"yes"`, `"on"`, `"1"`, `"True"`, `" true "`, and typos such
+as `"flase"`, as well as the number `1`. Use `true`/`false` in YAML. The existing
+YAML loader also converts unquoted `yes` and `on` to boolean `true` before this
+check; quoted `"yes"` and `"on"` remain strings and do not enable the flag.
+
+When launching through `scripts/omega start`, configure this flag in
+`config/config.yaml` inside the Docker image/container used by Omega. The
+launcher does not mount the host's configuration file, accept this flag as a CLI
+argument, or forward `OMEGA_supportsReasoningEffort` into Docker. The container
+entrypoint also removes that environment variable before starting Omega.
+
+For direct runtime launches that bypass the launcher and container entrypoint,
+the Python configuration layer accepts `supportsReasoningEffort=true` as a
+command-line override or `OMEGA_supportsReasoningEffort=true` in the environment.
+Use `false` instead of `true` to disable forwarding explicitly.
 
 ## Memory (`src/memory.metta`, `initMemory`)
 

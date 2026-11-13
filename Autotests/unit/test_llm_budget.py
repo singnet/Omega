@@ -263,9 +263,11 @@ def test_openaiapi_forwards_reasoning_effort(monkeypatch, effort):
 @pytest.mark.parametrize("flag, want_sent", [
     (False, False), ("false", False), ("False", False), (" off ", False),
     ("0", False), (0, False), ("no", False), ("", False),
-    (True, True), ("true", True), ("yes", True),
+    (None, False), ("yes", False), ("on", False), ("1", False), (1, False),
+    ("flase", False), ("True", False), ("TRUE", False), (" true ", False),
+    (True, True), ("true", True),
 ])
-def test_openaiapi_reads_reasoning_flag_as_boolean(monkeypatch, flag, want_sent):
+def test_openaiapi_requires_explicit_true_reasoning_flag(monkeypatch, flag, want_sent):
     monkeypatch.setitem(CONFIG_STUB, "supportsReasoningEffort", flag)
     create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls"))
     provider = make_registered_provider(create, monkeypatch)
