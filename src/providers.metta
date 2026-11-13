@@ -13,6 +13,15 @@
 (= (llmToolCallMessage role $role calls $calls content $content)
    (py-call (providers.llmToolCallMessage $role $calls $content)))
 
+(= (llmToolCallMessage role $role calls $calls content $content native_items $native_items)
+   (py-call (providers.llmToolCallMessage $role $calls $content $native_items)))
+
+(= (llmResponseNativeItems $response)
+   (py-call (providers.llmResponseNativeItems $response)))
+
+(= (llmResponseIsTerminalError $response)
+   (py-call (providers.llmResponseIsTerminalError $response)))
+
 (= (llmRequest $prompt $episodes $max_tokens $reasoning_mode $tools)
    (py-call (providers.llmRequest $prompt $episodes $max_tokens $reasoning_mode $tools)))
 

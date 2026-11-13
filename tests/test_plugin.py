@@ -277,3 +277,150 @@ def test_telegram_import_uses_registered_channels_outbox(plugin_file, monkeypatc
 
     assert [item["text"] for item in sent] == ["from helper", "from registered channel"]
     assert all(item["chat_id"] == "101" for item in sent)
+
+
+def test_openai_response_preserves_all_native_output_items(monkeypatch):
+    import json
+
+    import providers
+
+    sdk = types.ModuleType("openai")
+    sdk.OpenAI = type("OpenAI", (), {})
+    monkeypatch.setitem(sys.modules, "openai", sdk)
+    monkeypatch.syspath_prepend(str(REPO_ROOT))
+
+    for name in ("lib_llm_ext", "omega_openai"):
+        sys.modules.pop(name, None)
+
+    monkeypatch.setattr(providers, "_llmProviderRegistry", {})
+    plugin.loadPythonPlugin("omega_openai", str(REPO_ROOT / "providers"))
+    adapter = importlib.import_module("omega_openai")
+
+    native_reasoning = {
+        "type": "reasoning",
+        "id": "rs_123",
+        "summary": [{"type": "summary_text", "text": "Planning"}],
+    }
+    native_call = {
+        "type": "function_call",
+        "id": "fc_123",
+        "call_id": "call_123",
+        "name": "probe",
+        "arguments": json.dumps({"value": "hello"}),
+    }
+
+    class Item:
+        def __init__(self, data):
+            self.__dict__.update(data)
+
+        def model_dump(self, exclude_none=True):
+            return dict(self.__dict__)
+
+    class RawResponse:
+        output = [Item(native_reasoning), Item(native_call)]
+        incomplete_details = None
+
+    provider = adapter.OpenAIProviderImpl(
+        name="OpenAI",
+        var_name="OPENAI_API_KEY",
+        model_name="test-model",
+        base_url="https://example.invalid",
+    )
+    response = provider.convert_response(RawResponse())
+
+    assert response.native_items == [native_reasoning, native_call]
+    assert len(response.calls) == 1
+    assert response.calls[0].name == "probe"
+
+    # A later Responses API request must replay the complete native output,
+    # including reasoning items and the original function-call identifiers.
+    from providers import LLMRequest, llmRequestMessage, llmToolCallMessage
+
+    request = LLMRequest().with_messages([
+        llmRequestMessage("system", "system prompt"),
+        llmRequestMessage("user", "first question"),
+        llmToolCallMessage(
+            "assistant",
+            response.calls,
+            "[TOOL CALL]",
+            native_items=response.native_items,
+        ),
+    ])
+
+    replayed = provider.convert_request(request)["input"]
+    assert replayed == [
+        {"role": "system", "content": "system prompt"},
+        {"role": "user", "content": "first question"},
+        native_reasoning,
+        native_call,
+    ]
+
+    # Simulate three turns and ensure the first native call survives
+    # conversion of the third request.
+    from providers import (
+        appendAndTrimMessageHistory,
+        llmToolCallResponseMessage,
+    )
+
+    first_call = {
+        "type": "function_call",
+        "id": "fc_probe_1",
+        "call_id": "call_probe_1",
+        "name": "nop",
+        "arguments": "{}",
+    }
+    second_call = {
+        "type": "function_call",
+        "id": "fc_probe_2",
+        "call_id": "call_probe_2",
+        "name": "nop",
+        "arguments": "{}",
+    }
+
+    history = []
+    history = appendAndTrimMessageHistory(
+        history, llmRequestMessage("user", "first question")
+    )
+    history = appendAndTrimMessageHistory(
+        history,
+        llmToolCallMessage(
+            "assistant", [], "[TOOL CALL]", native_items=[first_call]
+        ),
+    )
+    history = appendAndTrimMessageHistory(
+        history,
+        llmToolCallResponseMessage(
+            "tool", "call_probe_1", "SUCCESS, RETURN: None"
+        ),
+    )
+    history = appendAndTrimMessageHistory(
+        history, llmRequestMessage("user", "second question")
+    )
+    history = appendAndTrimMessageHistory(
+        history,
+        llmToolCallMessage(
+            "assistant", [], "[TOOL CALL]", native_items=[second_call]
+        ),
+    )
+    history = appendAndTrimMessageHistory(
+        history,
+        llmToolCallResponseMessage(
+            "tool", "call_probe_2", "SUCCESS, RETURN: None"
+        ),
+    )
+    history = appendAndTrimMessageHistory(
+        history, llmRequestMessage("user", "third question")
+    )
+
+    third_request = LLMRequest().with_messages([
+        llmRequestMessage("system", "system prompt"),
+        *history,
+    ])
+    third_input = provider.convert_request(third_request)["input"]
+
+    assert first_call in third_input
+    assert any(
+        item.get("call_id") == "call_probe_1"
+        for item in third_input
+        if item.get("type") == "function_call"
+    )
