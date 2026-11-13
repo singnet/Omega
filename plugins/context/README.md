@@ -4,6 +4,30 @@ This plugin supplies frame-based working context, frame management tools, and
 frame result recording. It owns the frame state, Python helpers, relation
 backend, and runtime prompt in this directory.
 
+Relationship classification requests JSON text through the selected provider's
+configured connection, without defining a tool. The plugin parses the response;
+classification failures are logged and leave the new frame without relations.
+Query IDs must match the submitted frame. Retrieved candidates use current-session
+status and results when available; retrieval still uses the stored embeddings.
+
+The prompt includes compact content from up to five distinct frames linked from
+the current frame. Working context covers `ContinuationOf`, `FollowUp`,
+`DuplicateOf`, `SubgoalOf` and `ParentOf`. Dependency context (`DependsOn`,
+`Blocks`) supplies task descriptions, status, results and summaries without
+adopting goals or constraints. Reference context (`SameProject`,
+`SameFailureCluster`, `Supersedes`) omits goals, constraints and deliverables;
+`Supersedes` also omits history to avoid carrying earlier directives forward.
+`RelatedButSeparate`, `Unrelated` and unknown classes are excluded. For conflicting
+labels on one pair, exclusion takes precedence, followed by `Supersedes`, then
+Working, Dependency and Reference context.
+
+Related content retains its source frame, status and relation direction.
+Composition does not merge goals, change focus or complete related frames. It uses
+the current session's active and completed frame spaces; links to older Chroma
+sketches without a full frame in those spaces do not contribute content.
+Related history includes recorded tool batches, including the batch that completed
+the frame.
+
 The [entry point](context.metta) handles plugin startup and configuration.
 [contextframe.metta](contextframe.metta) owns frame state and operations;
 [contextframeskill.metta](contextframeskill.metta) registers the frame tools

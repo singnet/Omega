@@ -254,12 +254,11 @@
                 $createdAt $updatedAt $completedTimestamp))))
 
 
-;; TODO: wrong implementation
-;; Update: The function now returns a ContextProjection object with the root frame only.
 (= (cfv2-context-projection)
    (ContextProjection
       (RootFrame (cfv2-root-frame))
       (CurrentFrame (frame-for-prompt))
+      (RelatedFrames (cfv2-related-frames-for-prompt))
    ))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -701,6 +700,20 @@
                 ParentOf DependsOn Blocks Supersedes SameProject
                 SameFailureCluster RelatedButSeparate Unrelated))
 
+(= (cfv2-classification-sketch
+      (Frame $id $parent $source $priority $goals $status $mode $hypotheses $method
+         $history $modules $budget $constraints $deliverables $subframes $results
+         $createdAt $updatedAt $completedAt $summary))
+   (Frame $id $parent $source $priority $status $mode $deliverables $results))
+
+;; The hot cache comes last so its current values override the saved snapshot.
+(= (cfv2-classification-frames)
+   (let $frames
+      (append (append (cfv2ActiveFrameSpace) (cfv2CompletedFrameSpace))
+         (if (== (cfv2-root-current-frame-id) ()) () ((cfv2-current-frame))))
+      (collapse (let $frame (superpose $frames)
+         (cfv2-classification-sketch $frame)))))
+
 ;; TODO: Add a hyperparameter config since K is set to 5 by default.
 (= (cfv2-compose-relations $queryFrameID $compFrame)
    (sread
@@ -710,12 +723,82 @@
             (repr $queryFrameID)
             (repr (cfv2-relation-types))
             (repr (embeddingprovider))
-            5))))
+            5
+            (repr (cfv2-classification-frames))))))
 
 ;; To be used as a tool for the agent.
 (= (cfv2-get-relation $currentframeID)
-   (filter-atom (get-state &cfv2-relational-space) (Relation (FrameID-1 $a) (FrameID-2 $b) (Class $class) (Reason $reason) (Confidence $conf))
-        (or (== $currentframeID $a) (== $currentframeID $b))))
+   (let $frameIDAtom (sread $currentframeID)
+      (filter-atom (get-state &cfv2-relational-space) (Relation (FrameID-1 $a) (FrameID-2 $b) (Class $class) (Reason $reason) (Confidence $conf))
+         (or (== $frameIDAtom $a) (== $frameIDAtom $b)))))
+
+(= (cfv2-relation-context-level $class)
+   (case $class (
+      (ContinuationOf Working) (FollowUp Working) (DuplicateOf Working)
+      (SubgoalOf Working) (ParentOf Working)
+      (DependsOn Dependency) (Blocks Dependency)
+      (SameProject Reference) (SameFailureCluster Reference) (Supersedes Reference)
+      ($_ Excluded))))
+
+(= (cfv2-composition-context-level $classes)
+   (let $levels (unique-atom (collapse (let $class (superpose $classes) (cfv2-relation-context-level $class))))
+      (if (or (== $levels ()) (is-member Excluded $levels)) Excluded
+         (if (is-member Supersedes $classes) Reference
+            (if (is-member Working $levels) Working
+               (if (is-member Dependency $levels) Dependency Reference))))))
+
+;; Relations point from the current frame to the candidate; never walk the graph.
+(= (cfv2-related-frames-for-prompt)
+   (if (== (cfv2-root-current-frame-id) ())
+       ()
+       (let* (($currentID (cfv2-root-current-frame-id))
+              ($relations (cfv2-get-relation $currentID))
+              ($ids (unique-atom (collapse
+                  (let (Relation (FrameID-1 $a) (FrameID-2 $b) (Class $class) (Reason $reason) (Confidence $confidence))
+                       (superpose $relations)
+                     (if (and (== $a $currentID) (not (== $a $b))) $b (empty)))))))
+          (take 5 (collapse
+             (let* (($id (superpose $ids))
+                    ($classes (unique-atom (collapse
+                       (let (Relation (FrameID-1 $a) (FrameID-2 $id) (Class $class) (Reason $reason) (Confidence $confidence))
+                            (superpose $relations) $class))))
+                    ($frames (if (== (cfv2-composition-context-level $classes) Excluded)
+                       ()
+                       (filter-atom (append (cfv2ActiveFrameSpace) (cfv2CompletedFrameSpace))
+                          $frame (cfv2-check-frame-id $frame $id)))))
+                (if (== $frames ())
+                    (empty)
+                    (RelatedFrame
+                       (relations $classes)
+                       (cfv2-related-frame-content (car-atom $frames) $classes)))))))))
+
+(= (cfv2-related-frame-content
+      (Frame (frameID $id) $parentID (source $source) $priority
+         (goal-namespace $goalSpace) (status $status) $mode $hypotheses $method
+         (history-summary $history) $modules $budget (constraints $constraints)
+         (deliverables $deliverables) $subFrameSpace (results $results)
+         $createdAt $updatedAt $completedAt (completed-summary $summary)) $classes)
+   (let* (($level (cfv2-composition-context-level $classes))
+          ($events (cfv2-get-frame-events $id ())))
+      (Frame
+         (frameID $id)
+         (source $source)
+         (status $status)
+         (context-level $level)
+         (goals (if (== $level Working)
+            (cfv2-compact-limited (get-state $goalSpace) (cfv2PayloadLimit)) ()))
+         (constraints (if (== $level Working)
+            (cfv2-compact-limited $constraints (cfv2PayloadLimit)) ()))
+         (deliverables (if (== $level Reference) ()
+            (cfv2-compact-limited $deliverables (cfv2PayloadLimit))))
+         (results (cfv2-compact-plain $results))
+         (completed-summary (cfv2-compact-limited $summary (cfv2PayloadLimit)))
+         (history-summary (if (is-member Supersedes $classes) ()
+            (if (== $events ())
+                (cfv2-compact-limited $history (cfv2HistorySummaryLimit))
+                (cfv2-compact-frame-history $events
+                   (cfv2-prune-summary (cfv2-get-frame-prune-record $id)))))))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; SubFrame creation
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
