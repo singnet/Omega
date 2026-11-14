@@ -54,6 +54,7 @@ import sys
 settings = dict(arg.split("=", 1) for arg in sys.argv[1:])
 provider = settings.get("provider", "ASICloud")
 token_vars = {
+    "Test": "",
     "Anthropic": "ANTHROPIC_API_KEY",
     "OpenAI": "OPENAI_API_KEY",
     "ASICloud": "ASI_API_KEY",
@@ -65,7 +66,7 @@ if provider not in token_vars:
     raise SystemExit("Unsupported legacy LLM provider")
 token_var = token_vars[provider]
 token = os.environ.get(token_var, "")
-if not token:
+if provider != "Test" and not token:
     raise SystemExit(f"{token_var} is required for legacy LLM configuration")
 print(json.dumps({"routine": {
     "provider": provider,

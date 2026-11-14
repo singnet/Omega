@@ -52,17 +52,18 @@ def prepare(raw, routes_path, catalog_path, embeddings="Local"):
         if not isinstance(record, dict):
             raise ValueError("Catalog entries must be records")
         provider = record.get("provider")
-        if provider not in (*PROVIDER_URLS, "OpenAIAPI"):
+        if provider not in (*PROVIDER_URLS, "OpenAIAPI", "Test"):
             raise ValueError("Unsupported catalog provider")
         fields = ("api_token_var", "model", "openaiapi_url", "token")
         if any(not isinstance(record.get(field), str) for field in fields):
             raise ValueError("Catalog fields must be strings")
-        if not record["token"]:
-            raise ValueError("Catalog token must not be empty")
-        base = record["openaiapi_url"] if provider == "OpenAIAPI" else PROVIDER_URLS[provider]
-        routes.append(route(f"catalog/{role}", base, record["token"]))
-        if provider == "OpenAI" and openai_selection is None:
-            openai_selection = (base, record["token"])
+        if provider != "Test":
+            if not record["token"]:
+                raise ValueError("Catalog token must not be empty")
+            base = record["openaiapi_url"] if provider == "OpenAIAPI" else PROVIDER_URLS[provider]
+            routes.append(route(f"catalog/{role}", base, record["token"]))
+            if provider == "OpenAI" and openai_selection is None:
+                openai_selection = (base, record["token"])
         # Only known, credential-free fields enter the agent's catalog.
         records[role] = {
             field: record[field]
