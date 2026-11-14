@@ -267,11 +267,14 @@ def router_function_name(router):
 
 
 def llmRequestContentsNormalized(request):
-    """Prefix contents with segment_user/segment_tool, join, replace [](),.: with spaces, and lowercase."""
+    """Prefix user/assistant/tool contents with segment_<role>, join, replace [](),.: with spaces, and lowercase."""
+    # System messages are intentionally omitted from normalized contents.
+    # If role "system" becomes relevant it can be included, type = LLMMessage
     contents = [
         f"segment_{message.role} {message.content}"
         for message in request.messages
         if (type(message) is LLMMessage and message.role == "user")
+        or (type(message) is LLMToolCallMessage and message.role == "assistant")
         or (type(message) is LLMToolCallResponseMessage and message.role == "tool")
     ]
     return " ".join(contents).translate(str.maketrans({char: " " for char in "[](),.:"})).lower()

@@ -28,7 +28,9 @@
                            (empty))))
 
 ;create temporary atoms by segment type for fast lookup.
-(= (segment-p $x) (or (== $x "segment_user") (== $x "segment_tool")))
+(= (segment-p $x) (or (== $x "segment_user") 
+                    (or (== $x "segment_assistant") 
+                       (== $x "segment_tool"))))
 (= (flush $segment $acc)
    (if (== $segment ()) () (add-atom &plugin-default ($segment $acc))))
 (= (group $atoms $segment $acc)
@@ -41,16 +43,21 @@
 (= (create_temp_atoms_list_by_segment_type $atoms) (group $atoms () ()))
 
 (= (delete_temp_atoms)
-   (collapse
-      (progn 
-        (match &plugin-default (prompt_atom $x $seq) (remove-atom &plugin-default (prompt_atom $x $seq)))
-        (match &plugin-default ("segment_user" $atoms) (remove-atom &plugin-default ("segment_user" $atoms)))
-        (match &plugin-default ("segment_tool" $atoms) (remove-atom &plugin-default ("segment_tool" $atoms))))))
+   (progn
+      ; Collapse each match independently so missing segments do not stop cleanup.
+      (collapse (match &plugin-default 
+         (prompt_atom $x $seq) (remove-atom &plugin-default (prompt_atom $x $seq))))
+      (collapse (match &plugin-default 
+         ("segment_user" $atoms) (remove-atom &plugin-default ("segment_user" $atoms))))
+      (collapse (match &plugin-default 
+         ("segment_assistant" $atoms) (remove-atom &plugin-default ("segment_assistant" $atoms))))
+      (collapse (match &plugin-default 
+         ("segment_tool" $atoms) (remove-atom &plugin-default ("segment_tool" $atoms))))))
 
 ; Look for a variety of common situations signaling the need for a premium model call.
 ; Return either routine or premium symbols.
 ; Note:  The $prompt variable represents a subset of the prompt -- the tool call results and
-;     user messages.
+;     user messages are used here. See providers.py which normalizes the prompt.
 (= (default-LLM-ROUTER $prompt)
    (let* (
          ; Create a list of terms, type string, using native Prolog from the single prompt string.

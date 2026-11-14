@@ -15,8 +15,8 @@
       (routerCatalogFile
          (let $filename (configGetByKey routerCatalogFile $default)
             (if (== $filename none)
-               ; for backward compatibility, if no router catalog, if we find a provider= parameter
-               ; assigned, use the provider= for the "routine" LLM call role.
+               ; for backward compatibility, if no router catalog, 
+               ; create a single record in the router catalog to be used for all LLM calls.
                (let $model_init (configGetByKey model none) 
                   (let $provider (provider) 
                      (let*
