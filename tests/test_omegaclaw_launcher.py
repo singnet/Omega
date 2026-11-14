@@ -1,3 +1,5 @@
+import io
+import json
 import os
 import re
 import shlex
@@ -158,24 +160,65 @@ def pending_upload(tmp_path):
 
 
 @pytest.mark.parametrize("enabled", ["0", "1"])
-def test_installer_preserves_volume_and_explicit_export_setting(tmp_path, monkeypatch, enabled):
+@pytest.mark.parametrize("dual_model", [False, True], ids=["single-model", "budget-premium"])
+def test_installer_preserves_volume_and_explicit_export_setting(monkeypatch, enabled, dual_model):
     installer = _load_installer_namespace()
     monkeypatch.setitem(installer, "require_license_acceptance", lambda: None)
     monkeypatch.setitem(installer, "_choose_channel", lambda: {"commchannel": "test"})
-    monkeypatch.setitem(
-        installer, "_choose_provider", lambda: ("Test", "Local", "TEST_SERVER_IP", "", "", "localhost")
-    )
+    selections = {
+        "routine": {
+            "provider": "OpenAIAPI",
+            "api_token_var": "OPENAIAPI_API_KEY",
+            "model": "budget-model",
+            "openaiapi_url": "http://localhost:11434/v1",
+            "token": "routine-test-token",
+        },
+        "premium": {
+            "provider": "OpenAI",
+            "api_token_var": "OPENAI_API_KEY",
+            "model": "premium-model",
+            "openaiapi_url": "",
+            "token": "premium-test-token",
+        },
+    }
+    provider_calls = []
+
+    def choose_provider(role=None):
+        provider_calls.append(role)
+        return selections[role or "routine"].copy()
+
+    monkeypatch.setitem(installer, "_choose_provider", choose_provider)
     monkeypatch.setitem(installer, "_choose_import_kb", lambda: "0")
-    monkeypatch.setattr(
-        "builtins.input", lambda _: "n" if enabled == "0" else pytest.fail("unexpected prompt")
-    )
-    output = tmp_path / "config"
+    answers = ["y" if dual_model else "n"]
+    if enabled == "0":
+        answers.append("n")
 
-    installer["config_run_omega"](str(output), "test-archives", enabled)
+    def answer_prompt(prompt):
+        if not answers:
+            pytest.fail(f"unexpected prompt: {prompt}")
+        return answers.pop(0)
 
-    config = output.read_text(encoding="utf-8")
-    assert "memory_transfer_volume_name=test-archives\n" in config
-    assert f"memory_export_enabled={enabled}\n" in config
+    monkeypatch.setattr("builtins.input", answer_prompt)
+    output = io.StringIO()
+
+    installer["config_run_omega"](output, "test-archives", enabled)
+
+    config = dict(shlex.split(line)[0].split("=", 1) for line in output.getvalue().splitlines())
+    assert not answers
+    assert provider_calls == (["routine", "premium"] if dual_model else [None])
+    assert config["memory_transfer_volume_name"] == "test-archives"
+    assert config["memory_export_enabled"] == enabled
+    expected_catalog = selections if dual_model else {"routine": selections["routine"]}
+    assert json.loads(config["router_catalog"]) == expected_catalog
+    assert config["LLM_router_switch"] == ("default" if dual_model else "none")
+    assert config["embeddingprovider"] == ("OpenAI" if dual_model else "Local")
+    for key, value in selections["routine"].items():
+        config_key = "api_token" if key == "token" else key
+        assert config[config_key] == value
+    for role, selection in expected_catalog.items():
+        for key, value in selection.items():
+            config_key = "api_token" if key == "token" else key
+            assert config[f"{role}_{config_key}"] == value
 
 
 @pytest.mark.parametrize("export_enabled", [False, True])

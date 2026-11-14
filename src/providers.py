@@ -2,6 +2,7 @@ import config
 import logging
 from typing import List
 import json
+import copy
 
 logger = logging.getLogger(__name__)
 
@@ -230,23 +231,59 @@ def registerLLMProvider(id: str, provider: LLMProvider) -> None:
     logger.info(f"registerLLMProvider: registering LLM provider {id}")
     _llmProviderRegistry[id] = provider
 
-_llmprovider: LLMProvider = None
+_llmproviders = {}
 
-def llmProviderStart(provider):
-    """Select and start one of the LLM providers registered by plugins"""
-    global _llmprovider
-    _llmprovider = _llmProviderRegistry.get(provider, None)
-    if _llmprovider is None:
-        error = f"llmProviderStart: LLM provider plugin {provider} is not registered"
-        logger.error(error)
-        raise RuntimeError(error)
-    _llmprovider.start()
+def llmProvidersInitDict():
+    """Create a fresh role lookup table for startup."""
+    global _llmproviders
+    _llmproviders = {}
 
-def llmProviderChat(request):
-    """Chat via selected LLM provider"""
-    global _llmprovider
+
+def llmProviderStart(role, provider, model, api_token_var, openaiapi_url):
+    """Create an independent, configured provider instance for a catalog role."""
+    if role in _llmproviders:
+        raise ValueError(f"Duplicate provider role: {role}")
+    prototype = _llmProviderRegistry.get(provider)
+    if prototype is None:
+        raise RuntimeError(f"LLM provider plugin {provider} is not registered")
+    instance = copy.deepcopy(prototype)
+    instance.start()
+    delegate = getattr(instance, "delegate", None)
+    if delegate is not None:
+        if model not in ("", "none", None):
+            delegate._model_name = model
+        if api_token_var not in ("", "none", None):
+            delegate._var_name = api_token_var
+        if provider == "OpenAIAPI" and openaiapi_url not in ("", "none", None):
+            delegate._base_url = openaiapi_url
+        delegate._gateway_route = f"catalog/{role}"
+    _llmproviders[role] = instance
+    logger.info("Started LLM provider role=%s provider=%s model=%s",
+                role, provider, getattr(delegate, "_model_name", model))
+
+def router_function_name(router):
+    """Return the MeTTa function name for a configured router."""
+    return f"{router}-LLM-ROUTER"
+
+
+def llmRequestContentsNormalized(request):
+    """Prefix user/assistant/tool contents with segment_<role>, join, replace [](),.: with spaces, and lowercase."""
+    # System messages are intentionally omitted from normalized contents.
+    # If role "system" becomes relevant it can be included, type = LLMMessage
+    contents = [
+        f"segment_{message.role} {message.content}"
+        for message in request.messages
+        if (type(message) is LLMMessage and message.role == "user")
+        or (type(message) is LLMToolCallMessage and message.role == "assistant")
+        or (type(message) is LLMToolCallResponseMessage and message.role == "tool")
+    ]
+    return " ".join(contents).translate(str.maketrans({char: " " for char in "[](),.:"})).lower()
+
+
+def llmProviderChat(request, role):
+    """Chat via the routine role while catalog startup is being tested."""
     try:
-        response = _llmprovider.chat(request)
+        response = _llmproviders[role].chat(request)
         return _validate_response(request, response)
     except Exception:
         logger.exception("Exception while getting LLM response")

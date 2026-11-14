@@ -6,13 +6,17 @@
 (= (reasoningMode) (empty))
 (= (wakeupInterval) (empty))
 (= (memoryDirectory) (empty))
+(= (router) (empty))
+(= (routerCatalogFile) (empty))
 (= (showStartupVersion) (empty))
 
 (= (initLoop)
    (progn (configure maxNewInputLoops 50) ;20
           (configure maxWakeLoops 1)
           (configure sleepInterval 1) ;10
-          (configure provider Anthropic)
+          (configure router none)  
+          (configure provider none)   
+          (configure routerCatalogFile none) 
           (configure maxOutputToken 6000)
           (configure reasoningMode medium)
           (configure wakeupInterval 600) ;600=10 minutes
@@ -89,7 +93,7 @@
                                (if (showStartupVersion)
                                    (commChannelSend (version))
                                    ())
-                               (llmProviderStart (provider)))
+                               (llmProvidersInitialize))
                         (change-state! &loops (- (get-state &loops) 1)))
           (let $prompt (getContext)
                (progn (log INFO "loop" (---------iteration $k))
@@ -108,7 +112,7 @@
                                        ($_ (messagesAppend (llmRequestMessage role "user" content $lastmessage)))
                                        ($request (llmRequest $system (messagesGet) (maxOutputToken) (reasoningMode) (collectTools)))
                                        ($_ (log INFO "loop" (REQUEST: (py-str ($request)))))
-                                       ($response (llmProviderChat $request))
+                                       ($response (llmProviderChat $request (router)))
                                        ($_ (log INFO "loop" (RESPONSE: (py-str ($response)))))
                                        ($respstr (py-call (providers.llmResponseToSExpr $response)))
                                        ($resp (catch (sread $respstr)))

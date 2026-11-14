@@ -12,19 +12,25 @@ cd /PeTTa
 
 EMBEDDING_PROVIDER="${EMBEDDING_PROVIDER:-Local}"
 EMBEDDING_MODEL="${EMBEDDING_MODEL:-}"
-OPENAIAPI_URL="http://localhost:8080/" # dummy value
 MM_URL="http://localhost:8080/" # dummy value
 OPENCLAW_URL="http://localhost:8080/" # dummy value
+router_catalog="${OMEGA_ROUTER_CATALOG:-}"
+unset OMEGA_ROUTER_CATALOG
+legacy_llm_args=()
+agent_args=()
 for arg in "$@"; do
+  case "$arg" in
+    router_catalog=*) router_catalog="${arg#*=}"; continue ;;
+    openaiapi_url=*) legacy_llm_args+=("$arg"); continue ;;
+    provider=*|model=*) legacy_llm_args+=("$arg") ;;
+    routerCatalogFile=*) continue ;;
+  esac
+  agent_args+=("$arg")
   if [[ "$arg" == embeddingprovider=* ]]; then
     EMBEDDING_PROVIDER="${arg#*=}"
   fi
   if [[ "$arg" == embeddingModel=* ]]; then
     EMBEDDING_MODEL="${arg#*=}"
-  fi
-  # URL to redirect OpenAIAPI provider requests
-  if [[ "$arg" == openaiapi_url=* ]]; then
-    OPENAIAPI_URL=$(nginx_url "${arg#*=}")
   fi
   # URL to redirect Mattermost communication channel requests
   if [[ "$arg" == MM_URL=* ]]; then
@@ -35,7 +41,49 @@ for arg in "$@"; do
     OPENCLAW_URL=$(nginx_url "${arg#*=}")
   fi
 done
-export EMBEDDING_PROVIDER EMBEDDING_MODEL OPENAIAPI_URL MM_URL OPENCLAW_URL
+export EMBEDDING_PROVIDER EMBEDDING_MODEL MM_URL OPENCLAW_URL
+
+if [[ -z "$router_catalog" ]]; then
+  # Adapt legacy provider/model arguments and API-key environment variables to
+  # the same single-record catalog used by non-routing launches.
+  router_catalog="$(python3 - "${legacy_llm_args[@]}" <<'PY'
+import json
+import os
+import sys
+
+settings = dict(arg.split("=", 1) for arg in sys.argv[1:])
+provider = settings.get("provider", "ASICloud")
+token_vars = {
+    "Test": "",
+    "Anthropic": "ANTHROPIC_API_KEY",
+    "OpenAI": "OPENAI_API_KEY",
+    "ASICloud": "ASI_API_KEY",
+    "ASIOne": "ASIONE_API_KEY",
+    "OpenRouter": "OPENROUTER_API_KEY",
+    "OpenAIAPI": "OPENAIAPI_API_KEY",
+}
+if provider not in token_vars:
+    raise SystemExit("Unsupported legacy LLM provider")
+token_var = token_vars[provider]
+token = os.environ.get(token_var, "")
+if provider != "Test" and not token:
+    raise SystemExit(f"{token_var} is required for legacy LLM configuration")
+print(json.dumps({"routine": {
+    "provider": provider,
+    "api_token_var": token_var,
+    "model": settings.get("model", ""),
+    "openaiapi_url": settings.get("openaiapi_url", "http://localhost:8080/"),
+    "token": token,
+}}))
+PY
+)"
+fi
+catalog_file=/tmp/omega-router-catalog.json
+printf '%s' "$router_catalog" | python3 "${OMEGA_DIR}/src/router_catalog.py" \
+  /opt/nginx/router.conf "$catalog_file" "$EMBEDDING_PROVIDER"
+chown www-data:www-data /opt/nginx/router.conf
+set -- "${agent_args[@]}" "routerCatalogFile=$catalog_file"
+unset router_catalog legacy_llm_args agent_args arg
 
 agent_su=(su --group nogroup nobody)
 
@@ -91,12 +139,15 @@ SAFE_VARS="HOME USER PATH HOSTNAME TERM LANG LC_ALL \
   HF_HOME SENTENCE_TRANSFORMERS_HOME HF_HUB_OFFLINE TRANSFORMERS_OFFLINE \
   CHROMA_DB_PATH EMBEDDING_PROVIDER OMEGA_DIR MEMORY_DIR TEST_SERVER_IP"
 
-env_args=""
+env_args=()
 for var in $SAFE_VARS; do
   eval val=\${$var:-}
   if [ -n "$val" ]; then
-    env_args="$env_args $var=$val"
+    env_args+=("$var=$val")
   fi
 done
 
-exec env -i $env_args "${agent_su[@]}" -s /bin/sh -c "sh run.sh run.metta GATEWAY_URL=\"http://localhost:8080\" $*"
+printf 'Sanitized JSON catalog:\n'
+cat -- "$catalog_file"
+
+exec env -i "${env_args[@]}" "${agent_su[@]}" -s /bin/sh -c 'exec sh run.sh run.metta GATEWAY_URL=http://localhost:8080 "$@"' sh "$@"
