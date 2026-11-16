@@ -6,6 +6,7 @@
 (= (reasoningMode) (empty))
 (= (wakeupInterval) (empty))
 (= (memoryDirectory) (empty))
+(= (showStartupVersion) (empty))
 
 (= (initLoop)
    (progn (configure maxNewInputLoops 50) ;20
@@ -15,6 +16,7 @@
           (configure maxOutputToken 6000)
           (configure reasoningMode medium)
           (configure wakeupInterval 600) ;600=10 minutes
+          (configure showStartupVersion True)
           (configure memoryDirectory
                (joinPath ((py-call (helper.projectRootDirectory)) memory)))
           (change-state! &prevmsg "")
@@ -84,7 +86,9 @@
                                (initPlugins)
                                (initChannels)
                                (addTelegramPromptExtension)
-                               (commChannelSend (version))
+                               (if (showStartupVersion)
+                                   (commChannelSend (version))
+                                   ())
                                (llmProviderStart (provider)))
                         (change-state! &loops (- (get-state &loops) 1)))
           (let $prompt (getContext)
@@ -115,9 +119,11 @@
                                        ($_ (messagesClear))
                                        ($sexpr (if (HandleError (quote $resp) $error)
                                                  $error
-                                                 (progn (messagesAppend (llmToolCallMessage role "assistant"
-                                                                                           calls (llmResponseCalls $response)
-                                                                                           content "[TOOL CALL]"))
+                                                 (progn (if (llmResponseIsEmpty $response)
+                                                      ()
+                                                      (messagesAppend (llmToolCallMessage role "assistant"
+                                                                                          calls (llmResponseCalls $response)
+                                                                                          content "[TOOL CALL]")))
                                                    (collapse
                                                          (let ($callid $s) (superpose $resp)
                                                            (let $result

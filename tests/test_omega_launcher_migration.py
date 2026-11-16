@@ -262,6 +262,28 @@ def _container_state(root, name):
     return (root / "containers" / name).read_text()
 
 
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_migration_recovery_links_use_release_tag(docker_root, interrupted):
+    if interrupted:
+        _interrupted_migration(docker_root, image_files=True)
+    else:
+        _install_omegaclaw(docker_root)
+
+    result = _launcher(docker_root, "start", "-d", IMAGE)
+
+    assert result.returncode == 0, result.stderr
+    links = [
+        line.removeprefix("Recovery instructions: ")
+        for line in result.stderr.splitlines()
+        if line.startswith("Recovery instructions: ")
+    ]
+    expected = (
+        "https://github.com/singnet/Omega/blob/v0.1.22/"
+        "docs/reference-memory-migration.md#recovering-an-interrupted-memory-migration"
+    )
+    assert links == [expected] * (2 if interrupted else 1)
+
+
 def test_first_start_copies_old_memory_except_prompts(docker_root):
     _install_omegaclaw(docker_root)
 
@@ -649,6 +671,31 @@ def test_memory_import_replaces_an_interrupted_copy(docker_root, tmp_path):
 
     assert again.returncode == 0, again.stderr
     assert _read(new / "history.metta") == "(imported and used)\n"
+
+
+@pytest.mark.parametrize(("flag", "preserved_file", "import_env"), [
+    ("--only-history", "chroma_db/chroma.sqlite3", "MEMORY_IMPORT_NO_VECTOR=1"),
+    ("--only-vector", "history.metta", "MEMORY_IMPORT_NO_HISTORY=1"),
+])
+def test_partial_import_after_interruption_keeps_unselected_memory(
+    docker_root, tmp_path, flag, preserved_file, import_env
+):
+    old, new = _interrupted_migration(docker_root, image_files=True)
+    preserved = new / preserved_file
+    contents = b"current memory on the new volume\n"
+    preserved.write_bytes(contents)
+
+    result = _launcher(docker_root, *_memory_import_arguments(docker_root, tmp_path), flag)
+
+    assert result.returncode == 0, result.stderr
+    assert preserved.is_file() and preserved.read_bytes() == contents
+    assert not (old / ".migration-started").exists()
+    assert any(call.startswith("run -d") and import_env in call.split() for call in _calls(docker_root))
+
+    again = _launcher(docker_root, "start", "-d", IMAGE)
+
+    assert again.returncode == 0, again.stderr
+    assert preserved.read_bytes() == contents
 
 
 def test_memory_import_keeps_the_interrupted_state_when_the_volume_cannot_be_removed(docker_root, tmp_path):

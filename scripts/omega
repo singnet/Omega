@@ -941,8 +941,12 @@ migrate_omegaclaw_memory() {
     fi
     if [ -n "${memory_import_file}" ]; then
         if [ "${old_state}" = "interrupted" ]; then
-            echo "The last copy from ${old_volume} did not finish, the memory import replaces it"
-            remove_partly_copied_memory "${new_volume}" "${new_container}" "${migration_label}" || return 1
+            if [[ "${memory_import_only_history}" == "1" || "${memory_import_only_vector}" == "1" ]]; then
+                echo "The last copy from ${old_volume} did not finish, keeping ${new_volume} for the partial memory import"
+            else
+                echo "The last copy from ${old_volume} did not finish, the memory import replaces it"
+                remove_partly_copied_memory "${new_volume}" "${new_container}" "${migration_label}" || return 1
+            fi
             if ! docker run --rm --label "${migration_label}" --entrypoint sh --volume "${old_volume}:/from" "${image}" \
                 -c "rm -f /from/${started_marker}"; then
                 echo "Could not clear the migration marker in ${old_volume}" >&2
@@ -957,7 +961,7 @@ migrate_omegaclaw_memory() {
             ;;
         interrupted)
             echo "WARNING: Retrying the migration can replace omega-memory. If you imported memory or used the agent after the interruption, preserve it before retrying." >&2
-            echo "Recovery instructions: https://github.com/singnet/Omega/blob/patch-to-v0.1.20/docs/reference-memory-migration.md#recovering-an-interrupted-memory-migration" >&2
+            echo "Recovery instructions: https://github.com/singnet/Omega/blob/v0.1.22/docs/reference-memory-migration.md#recovering-an-interrupted-memory-migration" >&2
             if docker volume inspect "${new_volume}" >/dev/null 2>&1; then
                 if ! new_state=$(docker run --rm --label "${migration_label}" --entrypoint sh \
                     --volume "${old_volume}:/from:ro" --volume "${new_volume}:/to:ro" "${image}" \
@@ -984,7 +988,7 @@ migrate_omegaclaw_memory() {
 
     echo "Copying memory from volume ${old_volume} to ${new_volume}"
     echo "WARNING: Keep this terminal open and do not interrupt the launcher or Docker until 'Memory copied' appears. Keep ${old_volume} until you have checked the migrated memory." >&2
-    echo "Recovery instructions: https://github.com/singnet/Omega/blob/patch-to-v0.1.20/docs/reference-memory-migration.md#recovering-an-interrupted-memory-migration" >&2
+    echo "Recovery instructions: https://github.com/singnet/Omega/blob/v0.1.22/docs/reference-memory-migration.md#recovering-an-interrupted-memory-migration" >&2
     if [ "$(docker inspect -f '{{.State.Running}}' "${old_container}" 2>/dev/null)" = "true" ]; then
         if ! docker stop "${old_container}" >/dev/null; then
             echo "Could not stop container ${old_container}, memory was not copied" >&2
