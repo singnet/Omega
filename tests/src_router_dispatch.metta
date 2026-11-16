@@ -1,0 +1,47 @@
+!(import! &self ./tests/res/router_setup)
+!(import! &self ../src/utils.py)
+!(import! &self ../src/providers.py)
+!(import! &self ./src/providers)
+!(import! &self ./res/router_recorder.py)
+
+(= (listOf $a) (py-call (utils.listAppend (py-call (utils.listNew)) $a)))
+(= (pingRequest $text)
+   (llmRequest (llmRequestMessage role "system" content "system prompt")
+               (listOf (llmRequestMessage role "user" content $text))
+               100 medium (py-call (router_recorder.tools))))
+(= (toolFailureRequest)
+   (llmRequest (llmRequestMessage role "system" content "system prompt")
+               (py-call (utils.listAppend
+                  (listOf (llmRequestMessage role "user" content "check the disk"))
+                  (llmToolCallResponseMessage role "tool" callid "call#0" content "ALERT_FAILED(Error (python_error RuntimeError boom))")))
+               100 medium (py-call (router_recorder.tools))))
+(= (latched) (collapse (match &plugin-default (role $x) $x)))
+
+(= (startBothRoles)
+   (let* (($_ (py-call (router_recorder.register "Recorder")))
+          ($_ (py-call (providers.llmProvidersInitDict))))
+     (llmProvidersStartEntries
+        ((routine ((provider Recorder) (model "routine-model") (api_token_var ROUTINE_KEY) (openaiapi_url none)))
+         (premium ((provider Recorder) (model "premium-model") (api_token_var PREMIUM_KEY) (openaiapi_url none)))))))
+
+(= (serve $router $request)
+   (let* (($_ (py-call (router_recorder.reset)))
+          ($response (llmProviderChat $request $router)))
+     (py-call (router_recorder.served))))
+
+!(startBothRoles)
+
+!(test (serve none (pingRequest "hello")) catalog/routine@routine-model@ROUTINE_KEY)
+!(test (serve none (pingRequest "/premium")) catalog/routine@routine-model@ROUTINE_KEY)
+!(test (serve none (pingRequest "alert_failed")) catalog/routine@routine-model@ROUTINE_KEY)
+!(test (serve none (toolFailureRequest)) catalog/routine@routine-model@ROUTINE_KEY)
+!(test (latched) ())
+
+!(test (serve default (pingRequest "hello")) catalog/routine@routine-model@ROUTINE_KEY)
+!(test (serve default (toolFailureRequest)) catalog/premium@premium-model@PREMIUM_KEY)
+!(test (serve default (pingRequest "hello")) catalog/routine@routine-model@ROUTINE_KEY)
+!(test (serve default (pingRequest "/premium")) catalog/premium@premium-model@PREMIUM_KEY)
+!(test (serve default (pingRequest "hello")) catalog/premium@premium-model@PREMIUM_KEY)
+!(test (serve default (pingRequest "/routine")) catalog/routine@routine-model@ROUTINE_KEY)
+!(test (serve default (pingRequest "hello")) catalog/routine@routine-model@ROUTINE_KEY)
+!(test (latched) ())

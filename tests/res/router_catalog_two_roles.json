@@ -1,0 +1,14 @@
+{
+  "routine": {
+    "provider": "OpenAIAPI",
+    "api_token_var": "ROUTINE_TOKEN",
+    "model": "routine-model",
+    "openaiapi_url": "http://routine.invalid/v1/"
+  },
+  "premium": {
+    "provider": "Anthropic",
+    "api_token_var": "ANTHROPIC_API_KEY",
+    "model": "premium-model",
+    "openaiapi_url": "none"
+  }
+}
