@@ -125,7 +125,9 @@ def _sections_from_headings(text, filename, matches):
     carry_bc = ""
     for s in sections:
         combined = (carry + "\n\n" + s["text"]).strip() if carry else s["text"]
-        bc = carry_bc or s["breadcrumb"]
+        # Only the preamble is breadcrumbed by filename alone, and it has no
+        # heading to contribute, so the section it merges into keeps its own.
+        bc = s["breadcrumb"] if carry_bc == filename else (carry_bc or s["breadcrumb"])
         if len(combined) < MIN_CHUNK_CHARS and s is not sections[-1]:
             carry = combined
             carry_bc = bc

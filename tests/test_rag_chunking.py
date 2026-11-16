@@ -82,13 +82,14 @@ def test_text_with_no_whitespace_is_cut_mid_token(rag):
 
 
 def test_cuts_prefer_whitespace_boundaries(rag):
-    chunks = rag._chunk_markdown("word " * 30000, "words.md")
+    # Token length must not divide MAX_CHUNK_CHARS, else a blind cut at the cap
+    # lands between words on its own and the test passes without the search.
+    token = "wordss"
+    chunks = rag._chunk_markdown((token + " ") * 20000, "words.md")
 
     assert largest(chunks) <= rag.MAX_CHUNK_CHARS
     for chunk in chunks:
-        assert "wor d" not in chunk["text"]
-        assert chunk["text"].startswith("word")
-        assert chunk["text"].endswith("word")
+        assert set(chunk["text"].split()) == {token}
 
 
 def test_headingless_chunks_keep_the_filename_breadcrumb(rag):
@@ -132,6 +133,15 @@ def test_text_before_the_first_heading_is_kept(rag):
     chunks = rag._chunk_markdown(doc, "t.md")
 
     assert "Text before the first heading." in " ".join(c["text"] for c in chunks)
+
+
+def test_short_preamble_keeps_the_heading_breadcrumb(rag):
+    # Under MIN_CHUNK_CHARS the preamble merges into the first section, which
+    # must keep its own breadcrumb rather than take the filename.
+    chunks = rag._chunk_markdown("Short line.\n\n# Heading\n\n" + "b" * 500, "t.md")
+
+    assert [c["breadcrumb"] for c in chunks] == ["t.md > Heading"]
+    assert "Short line." in chunks[0]["text"]
 
 
 def test_long_preamble_becomes_its_own_section(rag):
