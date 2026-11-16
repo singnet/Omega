@@ -22,6 +22,7 @@ mock/test_openclaw_delegate_mock.py
 mock/test_pin_invisible_within_iteration_mock.py
 mock/test_policy_resolve_mock.py
 mock/test_prompt_missing_files_mock.py
+mock/test_router_mock.py
 mock/test_rpc.py
 mock/test_run_error_script_mock.py
 mock/test_run_repeated_mock.py
