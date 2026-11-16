@@ -940,8 +940,12 @@ migrate_omegaclaw_memory() {
     fi
     if [ -n "${memory_import_file}" ]; then
         if [ "${old_state}" = "interrupted" ]; then
-            echo "The last copy from ${old_volume} did not finish, the memory import replaces it"
-            remove_partly_copied_memory "${new_volume}" "${new_container}" "${migration_label}" || return 1
+            if [[ "${memory_import_only_history}" == "1" || "${memory_import_only_vector}" == "1" ]]; then
+                echo "The last copy from ${old_volume} did not finish, keeping ${new_volume} for the partial memory import"
+            else
+                echo "The last copy from ${old_volume} did not finish, the memory import replaces it"
+                remove_partly_copied_memory "${new_volume}" "${new_container}" "${migration_label}" || return 1
+            fi
             if ! docker run --rm --label "${migration_label}" --entrypoint sh --volume "${old_volume}:/from" "${image}" \
                 -c "rm -f /from/${started_marker}"; then
                 echo "Could not clear the migration marker in ${old_volume}" >&2
