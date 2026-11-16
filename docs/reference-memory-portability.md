@@ -2,7 +2,7 @@
 
 Memory portability lets an operator export persistent user memory from one
 deployment and restore it before another agent starts. It is an operator
-workflow, not an LLM skill.
+workflow, not a tool the LLM calls.
 
 ## Setup
 

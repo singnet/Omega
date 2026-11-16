@@ -6,7 +6,7 @@ import time
 import textwrap
 import auth
 from src.logger import get_logger
-from delivery_queue import PendingMessages
+from delivery_queue import PartialDeliveryError, PendingMessages
 import channels
 from config import config_get_by_key
 
@@ -22,12 +22,23 @@ _connected = False
 _auth_lock = threading.Lock()
 _authenticated_nick = None
 _outbox = PendingMessages()
+_nick = None
+_sender_prefix = None
+IRC_MAX_LINE_BYTES = 512
+# Reserve a long username (including a possible '~') and a full DNS hostname
+# until the server supplies our actual nick!user@host in our JOIN echo.
+IRC_FALLBACK_NICK_BYTES = 30
+IRC_FALLBACK_USER_BYTES = 33
+IRC_FALLBACK_HOST_BYTES = 255
 
 def _send(cmd):
+    wire = (cmd + "\r\n").encode("utf-8")
+    if len(wire) > IRC_MAX_LINE_BYTES:
+        raise ValueError(f"IRC line exceeds {IRC_MAX_LINE_BYTES} bytes ({len(wire)} bytes)")
     with _sock_lock:
         if _sock is None:
             raise RuntimeError("IRC channel is not connected")
-        _sock.sendall((cmd + "\r\n").encode())
+        _sock.sendall(wire)
     time.sleep(1)
 
 def _set_last(msg):
@@ -83,8 +94,72 @@ def _ready_to_send():
     return _connected and bool(_channel)
 
 
+def _sender_prefix_bytes():
+    sender_prefix = _sender_prefix
+    if sender_prefix is not None:
+        return len(f":{sender_prefix} ".encode("utf-8"))
+    nick_bytes = max(IRC_FALLBACK_NICK_BYTES, len((_nick or "").encode("utf-8")))
+    # ':', '!', '@', and the space separating the prefix from the command.
+    return nick_bytes + IRC_FALLBACK_USER_BYTES + IRC_FALLBACK_HOST_BYTES + 4
+
+
+def _update_sender_identity(parts):
+    global _nick, _sender_prefix
+    if len(parts) < 3:
+        return
+    command = parts[1]
+    if command == "001":
+        _nick = parts[2]
+        return
+    if not _nick:
+        return
+    if command == "396" and len(parts) > 3 and parts[2] == _nick:
+        # A server can change our visible host after registration.
+        if _sender_prefix is not None:
+            _sender_prefix = _sender_prefix.rsplit("@", 1)[0] + "@" + parts[3]
+        return
+    source = parts[0].removeprefix(":")
+    sender, separator, userhost = source.partition("!")
+    if sender != _nick or not separator or "@" not in userhost:
+        return
+    if command == "JOIN":
+        _sender_prefix = source
+    elif command == "NICK":
+        _nick = parts[2].removeprefix(":")
+        _sender_prefix = f"{_nick}!{userhost}"
+    elif command == "CHGHOST" and len(parts) > 3:
+        _sender_prefix = f"{_nick}!{parts[2]}@{parts[3].removeprefix(':')}"
+
+
+def _take_utf8_chunk(text, max_bytes):
+    """Return the first part that fits the byte budget without splitting a character."""
+    size = 0
+    for index, character in enumerate(text):
+        char_bytes = len(character.encode("utf-8"))
+        if char_bytes > max_bytes:
+            raise ValueError("IRC target leaves insufficient room for a UTF-8 character")
+        if size + char_bytes > max_bytes:
+            return text[:index]
+        size += char_bytes
+    return text
+
+
 def _deliver_outbound(chunk):
-    _send(f"PRIVMSG {_channel} :{chunk}")
+    sent_characters = 0
+    try:
+        while sent_characters < len(chunk):
+            # The receiver can update our identity while _send throttles writes.
+            # Re-split only the unsent text using the latest prefix each time.
+            prefix = f"PRIVMSG {_channel} :"
+            budget = IRC_MAX_LINE_BYTES - len((prefix + "\r\n").encode("utf-8"))
+            budget -= _sender_prefix_bytes()
+            part = _take_utf8_chunk(chunk[sent_characters:], budget)
+            _send(prefix + part)
+            sent_characters += len(part)
+    except Exception as exc:
+        if sent_characters:
+            raise PartialDeliveryError(chunk[sent_characters:]) from exc
+        raise
 
 
 def _flush_outbox():
@@ -95,7 +170,10 @@ def _flush_outbox():
 
 
 def _irc_session(channel, server, port, nick):
-    global _running, _sock, _connected
+    global _running, _sock, _connected, _nick, _sender_prefix
+    _connected = False
+    _nick = nick
+    _sender_prefix = None
     logger.info(f"Connecting to {server}:{port} as {nick} for channel {channel}")
     sock = None
     try:
@@ -109,6 +187,10 @@ def _irc_session(channel, server, port, nick):
         _sock = sock
 
     try:
+        # Request the single capability we need directly (IRCv3 CAP REQ).
+        # NICK/USER still allow registration on servers without CAP support.
+        cap_pending = True
+        _send("CAP REQ :chghost")
         _send(f"NICK {nick}")
         _send(f"USER {nick} 0 * :{nick}")
         read_buffer = ""
@@ -129,7 +211,16 @@ def _irc_session(channel, server, port, nick):
                 if line.startswith("PING"):
                     _send(f"PONG {line.split()[1]}")
                 parts = line.split()
-                if len(parts) > 1 and parts[1] == "001":
+                _update_sender_identity(parts)
+                if (cap_pending and len(parts) > 3 and parts[1] == "CAP"
+                        and parts[3] in {"ACK", "NAK"}):
+                    _send("CAP END")
+                    cap_pending = False
+                elif (len(parts) > 3 and parts[1] == "421"
+                      and parts[3] == "CAP"):
+                    cap_pending = False
+                elif len(parts) > 1 and parts[1] == "001":
+                    cap_pending = False
                     logger.info(f"Registered. Joining {_channel}")
                     _send(f"JOIN {_channel}")
                 elif (
@@ -162,6 +253,7 @@ def _irc_session(channel, server, port, nick):
                         logger.exception(f"Exception caught {repr(e)}")
     finally:
         _connected = False
+        _sender_prefix = None
         with _sock_lock:
             if _sock is sock:
                 _sock = None

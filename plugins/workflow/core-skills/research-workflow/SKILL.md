@@ -9,8 +9,8 @@ and creating a detailed execution plan. Once the user approves the plan,
 it replaces these instructions and you follow it step by step.
 ## Project Structure
 All projects live under `(let $d (researchDir) (strings-concat ($d "/<research-name>/")))`.
-(researchDir) - is a skill (function) which returns directory the research folders and files should be located
-The `research-start` skill creates the base folders.
+(researchDir) is a tool that returns the directory where the research folders and files should be located
+The `research-start` tool creates the base folders.
 (researchDir)/<research-name>/
   topic.txt            # created by research-start
   00_problem.md        # research question, scope, metrics

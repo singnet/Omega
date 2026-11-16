@@ -1,8 +1,8 @@
-# Reference — Memory Skills
+# Reference — Memory Tools
 
-Defined in `src/memory.metta` and catalogued in `src/skills.metta`.
+`remember`, `query`, and `episodes` are defined in `src/memory.metta`, `pin` in `src/skills.metta`. All four are registered with `add-skill` in `src/skills.metta`.
 
-All four skills accept quoted string arguments. Variables are not permitted in LLM-generated calls.
+Each of the four tools takes one string parameter, which the model sets as a separate field of the tool call: `content` for `remember` and `query`, `timestamp` for `episodes`, `message` for `pin`.
 
 ---
 
@@ -10,17 +10,17 @@ All four skills accept quoted string arguments. Variables are not permitted in L
 
 ### Signature
 ```metta
-(remember "string")
+(remember "content")
 ```
 
 ### Purpose
 Store a string in long-term embedding memory as the triplet `(timestamp, atom, embedding)`.
 
 ### Parameters
-- `string` — the text to remember. Use short, self-contained phrases for best recall.
+- `content` — the text to remember. Use short, self-contained phrases for best recall.
 
 ### Returns
-The result of the ChromaDB write (internally). The agent treats a successful call as an effectful step.
+The symbol `REMEMBER-SUCCESS`, returned after the ChromaDB write.
 
 ### Examples
 ```metta
@@ -39,14 +39,14 @@ The result of the ChromaDB write (internally). The agent treats a successful cal
 
 ### Signature
 ```metta
-(query "string")
+(query "content")
 ```
 
 ### Purpose
-Return up to `maxRecallItems` memory entries whose embeddings are closest to the embedding of `string`.
+Return up to `maxRecallItems` memory entries whose embeddings are closest to the embedding of `content`.
 
 ### Parameters
-- `string` — a short descriptive phrase. Over-long queries dilute similarity scores.
+- `content` — a short descriptive phrase. Over-long queries dilute similarity scores.
 
 ### Returns
 A list-shaped result containing the nearest memory items.
@@ -71,7 +71,7 @@ A list-shaped result containing the nearest memory items.
 ```
 
 ### Purpose
-Return `maxEpisodeRecallLines` lines of the episodic trace centered on the given timestamp.
+Return the line of the episodic trace whose timestamp is closest to the given one, with up to `maxEpisodeRecallLines` lines before and after it (at most 41 lines with the default of 20).
 
 ### Parameters
 - `timestamp` — must match the format produced by `get_time_as_string`.
@@ -94,17 +94,17 @@ A block of lines from `memory/history.metta`.
 
 ### Signature
 ```metta
-(pin "string")
+(pin "message")
 ```
 
 ### Purpose
-Append a working-memory note to the episodic trace so the next turn can see it in `HISTORY`.
+Make a working-memory note visible to the next turn in `HISTORY`.
 
 ### Parameters
-- `string` — the note. Typical uses: intermediate results, plans for the next turn, checklists.
+- `message` — the note. Typical uses: intermediate results, plans for the next turn, checklists.
 
 ### Returns
-Success / failure of the append.
+The symbol `PIN-SUCCESS`. `pin` stores nothing itself. The note reaches `HISTORY` because `addToHistory` appends the whole reply, the `pin` call included, to `memory/history.metta`.
 
 ### Examples
 ```metta
