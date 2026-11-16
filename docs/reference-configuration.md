@@ -22,6 +22,7 @@ This resolves the value through the Python configuration layer, using command-li
 | `maxOutputToken` | 6000 | Output cap passed to the provider. |
 | `reasoningMode` | `medium` | Reasoning-effort hint passed to the provider. |
 | `wakeupInterval` | 600 (seconds) | How long idle before the next scheduled wake-up. |
+| `showStartupVersion` | `true` | Send the Omega version to the communication channel on startup. Set to `false` in `config.yaml` to suppress this message; standard logging and the `version` skill are unaffected. |
 
 ## Memory (`src/memory.metta`, `initMemory`)
 
@@ -29,7 +30,7 @@ This resolves the value through the Python configuration layer, using command-li
 |---|---|---|
 | `maxFeedback` | 50000 (chars) | Ceiling on a single tool call result text fed back into the prompt. |
 | `maxRecallItems` | 20 | Items returned by `query`. |
-| `maxEpisodeRecallLines` | 20 | Lines returned by `episodes`. |
+| `maxEpisodeRecallLines` | 20 | Lines `episodes` returns on each side of the closest timestamp, up to 41 lines in all. |
 | `maxHistory` | 30000 (chars) | Tail of `memory/history.metta` included in the prompt. |
 | `memoryDirectory` | `./repos/Omega/memory` | Directory containing persistent memory files such as `history.metta`. |
 | `chromaDbPath` | `./chroma_db` | ChromaDB persistence directory used for memory backup and restore. |

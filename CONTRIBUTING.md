@@ -29,7 +29,7 @@ There are many ways to contribute to Omega:
 
 - **Bug fixes**: Fix issues reported by the community in the [issue tracker](https://github.com/singnet/Omega/issues) or found during your own testing.  
 - **New features**: Propose and implement new capabilities for the agent framework.  
-- **New skills:** Add new MeTTa skills following the skill dispatch architecture (see [tutorial-03](docs/tutorial-03-writing-a-custom-skill.md)).  
+- **New tools:** Add new MeTTa tools following the tool dispatch architecture (see [tutorial-03](docs/tutorial-03-writing-a-custom-tool.md)).  
 - **New channels:** Build communication channel adapters (see [tutorial-04](docs/tutorial-04-adding-a-channel.md)).  
 - **New plugins**: Develop new plugins, or extensions that enhance Omega's functionality.  
 - **Documentation**: Improve or expand documentation, tutorials, or inline code comments.  
@@ -119,7 +119,7 @@ git push origin fix/your-bug-fix
 5. **Commit** with clear, conventional commit messages:
 
 ```shell
-git commit -m "feat(skills): add web-search skill with result caching"
+git commit -m "feat(tools): add web-search tool with result caching"
 git commit -m "fix(loop): handle empty LLM response in main loop"
 git commit -m "docs(channels): update Telegram adapter setup guide"
 ```
@@ -158,8 +158,8 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/) prefixes:
 
 ### MeTTa Code
 
-- Follow the existing skill dispatch pattern documented in [reference-internals-skill-dispatch.md](docs/reference-internals-skill-dispatch.md).  
-- New skills must conform to the **Signature → Purpose → Parameters → Returns → Examples → Notes/Limits** template (see existing reference docs for examples).  
+- Follow the existing tool dispatch pattern documented in [reference-internals-tool-dispatch.md](docs/reference-internals-tool-dispatch.md).  
+- New tools must conform to the **Signature → Purpose → Parameters → Returns → Examples → Notes/Limits** template (see existing reference docs for examples).  
 - Keep the MeTTa core (`src/*.metta`) minimal — the design goal is simplicity and transparency.  
 - Add inline comments explaining non-obvious symbolic reasoning patterns.
 
@@ -189,8 +189,8 @@ Omega uses flat Markdown files in the [`docs/`](docs/) directory. Documentation 
 | Prefix | Type | Example |
 | :---- | :---- | :---- |
 | `intro-*` | Conceptual introduction | `introduction.md` |
-| `tutorial-NN-*` | Numbered, task-oriented walkthrough | `tutorial-03-writing-a-custom-skill.md` |
-| `reference-*` | API, engines, internals | `reference-skills-memory.md` |
+| `tutorial-NN-*` | Numbered, task-oriented walkthrough | `tutorial-03-writing-a-custom-tool.md` |
+| `reference-*` | API, engines, internals | `reference-tools-memory.md` |
 
 ### Guidelines
 
@@ -198,7 +198,7 @@ Omega uses flat Markdown files in the [`docs/`](docs/) directory. Documentation 
 - Reference pages must follow the standard template: Signature → Purpose → Parameters → Returns → Examples → Notes/Limits.  
 - Use relative links for intra-repo references.  
 - Include runnable code examples wherever possible.  
-- If adding a new skill or channel, you must add or update the corresponding reference documentation.
+- If adding a new tool or channel, you must add or update the corresponding reference documentation.
 
 ---
 
