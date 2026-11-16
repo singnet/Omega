@@ -1,5 +1,5 @@
-; Skills to manage custom skills kept in (pluginWorkflowCustomInstructionsDir).
-; Core skills in (pluginWorkflowInstructionsDir) are never touched.
+; Skills to manage custom skills kept in (pluginWorkflowCustomSkillsDir).
+; Core skills in (pluginWorkflowCoreSkillsDir) are never touched.
 
 (skill custom-skill-list "List names of custom skills" ())
 (skill custom-skill-read "Read a file of a custom skill, file_name is SKILL.md, description.txt or skill.metta" (skill_name file_name))
@@ -21,12 +21,12 @@
      (empty-to-bool (translatePredicate (memberchk $name $skills)))))
 
 (= (custom-skill-list)
-   (directory-dirs (pluginWorkflowCustomInstructionsDir)))
+   (directory-dirs (pluginWorkflowCustomSkillsDir)))
 
 (= (custom-skill-read $name $file)
    (if (not (custom-skill-valid-file $file))
      (Error (quote (custom-skill-read $name $file)) (custom-skill-invalid-file-message $file))
-     (let $path (joinPath ((pluginWorkflowCustomInstructionsDir) $name $file))
+     (let $path (joinPath ((pluginWorkflowCustomSkillsDir) $name $file))
        (if (exists-file $path)
          (read-file $path)
          (Error (quote (custom-skill-read $name $file)) (strings-concat ("ERROR: file not found: " $path)))))))
@@ -34,7 +34,7 @@
 (= (custom-skill-write $name $file $content)
    (if (not (custom-skill-valid-file $file))
      (Error (quote (custom-skill-write $name $file)) (custom-skill-invalid-file-message $file))
-     (let* (($dir (joinPath ((pluginWorkflowCustomInstructionsDir) $name)))
+     (let* (($dir (joinPath ((pluginWorkflowCustomSkillsDir) $name)))
             ($rc (make-directory-path $dir)))
        (if (exists-directory $dir)
          (write-file (joinPath ($dir $file)) $content)
@@ -43,7 +43,7 @@
 (= (custom-skill-delete $name)
    (if (not (custom-skill-exists $name))
      (Error (quote (custom-skill-delete $name)) (strings-concat ("ERROR: custom skill not found: " $name)))
-     (let* (($path (joinPath ((pluginWorkflowCustomInstructionsDir) $name)))
+     (let* (($path (joinPath ((pluginWorkflowCustomSkillsDir) $name)))
             ($rc (catch (((translatePredicate (delete_directory_and_contents $path)))))))
        (if (exists-directory $path)
          (Error (quote (custom-skill-delete $name)) (strings-concat ("ERROR: could not delete directory: " $path)))

@@ -71,7 +71,6 @@
                  (log INFO "workflow-plugin" (strings-concat ("Loading workflow skills for: " $name)))
                  (add-prompt-extension workflow_active_skills (active-skills $content))
                  (add-workflow-skills $name)
-                 (add-prompt-extension workflow_active_instructions (active-instructions $content))
                  (change-state! &workflow_active_name $name)
                  (send (strings-concat ("Loaded workflow: " $name
                                         ". Instructions active in context until completion.")))

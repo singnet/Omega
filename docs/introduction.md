@@ -12,13 +12,14 @@ This page is the conceptual introduction: what Omega is, why the hybrid architec
 
 ## What Omega does
 
-- Runs a token-efficient agentic loop that receives messages, selects skills, and acts.
+- Runs a token-efficient agentic loop that receives messages, selects tools and skills, and acts.
 - Delegates reasoning to one of two formal engines, orchestrated by the LLM:
   - **NAL** — Non-Axiomatic Logic, symbolic inference under uncertainty.
   - **PLN** — Probabilistic Logic Networks, probabilistic higher-order reasoning.
   - ONA (OpenNARS for Applications) is a planned third engine but is **not installed by default** — see [reference-lib-ona.md](./reference-lib-ona.md) for the current experimental status.
 - Maintains a **three-tier memory** architecture (working, long-term, AtomSpace — described below).
-- Exposes an extensible **skill system** covering memory, shell and file I/O, communication channels, web search, remote agents, and formal reasoning.
+- Exposes an extensible **set of tools** covering memory, shell and file I/O, communication channels, web search, remote agents, and formal reasoning.
+- Loads **skills** (step-by-step instructions for a task, in the [Agent Skills](https://agentskills.io/specification) format) through the workflow plugin. A loaded skill adds its instructions to the prompt and its own tools to the request, as the bundled research workflow does (see [Skills](#skills)).
 
 ---
 
@@ -46,12 +47,13 @@ Each reasoning hop is a synchronous five-step dance:
 
 ```
 1. NEURAL PHASE
-   LLM synthesizes context, emits a formal command
-   (e.g. (metta "(|- ...)"))
+   LLM synthesizes context, emits a tool call
+   (e.g. metta with the expression (|- ...))
 
-2. INTERCEPTION
-   The agent framework intercepts the command;
-   LLM generation is suspended.
+2. CONVERSION
+   The agent framework turns the tool call from the
+   response into an s-expression; LLM generation
+   is suspended.
 
 3. SYMBOLIC PHASE
    Framework passes the s-expression to the MeTTa /
@@ -63,8 +65,8 @@ Each reasoning hop is a synchronous five-step dance:
    (e.g. (robin --> animal) (stv 0.72 0.32)).
 
 5. INJECTION & RESUMPTION
-   Results are injected into the next prompt context
-   as immutable data. The LLM resumes, reads the data,
+   Results go back to the LLM as immutable data, in
+   messages with role `tool`. The LLM resumes, reads them,
    and decides the next move.
 ```
 
@@ -111,28 +113,29 @@ The **LLM layer** is opaque and creative. The **engine layer** is deterministic 
 ### Module map
 
 ```
-run.metta                 entry point: (omega)
-lib_omega.metta           loads all submodules
-├── src/loop.metta        agentic loop, turn structure
-├── src/memory.metta      long-term memory + history
-├── src/skills.metta      callable skill surface
-├── src/channels.metta    receive/send dispatch
-├── src/utils.metta       utility, string ops, time
-├── src/config.metta      configure
-├── src/helper.py         parenthesis balancing, normalization
-├── src/skills.pl         Prolog helpers (shell, first_char)
-├── src/websearch.py      web search
-├── lib_nal.metta         NAL truth functions
-├── lib_pln.metta         PLN rules
-└── lib_llm_ext.py        Claude / GPT / MiniMax / local embeddings
+run.metta                     entry point: (omega)
+lib_omega.metta               loads all submodules
+├── src/loop.metta            agentic loop, turn structure
+├── src/memory.metta          long-term memory + history
+├── src/skills.metta          tool list and built-in tools
+├── src/channels.metta        receive/send dispatch
+├── src/utils.metta           utility, string ops, time
+├── src/config.metta          configure
+├── src/helper.py             string normalization, time helpers
+├── src/providers.py          tool schemas, response checks, call conversion
+├── src/skills.pl             Prolog helpers (shell, first_char)
+├── src/websearch.py          web search
+├── lib_nal.metta             NAL truth functions
+├── lib_pln.metta             PLN rules
+└── providers/lib_llm_ext.py  OpenAI-compatible LLM clients, local embeddings
 
-channels/irc.py           IRC adapter
-channels/telegram.py      Telegram adapter
-channels/slack.py         Slack adapter
-channels/mattermost.py    Mattermost adapter
+channels/irc.py               IRC adapter
+channels/telegram.py          Telegram adapter
+channels/slack.py             Slack adapter
+channels/mattermost.py        Mattermost adapter
 
-memory/prompt.txt         system prompt (agent identity + values)
-memory/history.metta      episodic trace (written at runtime)
+memory/prompt.txt             system prompt (agent identity + values)
+memory/history.metta          episodic trace (written at runtime)
 ```
 
 ### The agentic turn
@@ -141,13 +144,17 @@ Each iteration of `(omega $k)` in `src/loop.metta` performs:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ 1. receive()        pull latest message from channel        │
-│ 2. getContext()     PROMPT + SKILLS +                       │
+│ 1. getContext()     PROMPT + SKILLS rules + extensions +    │
 │                     HISTORY + TIME                          │
-│ 3. LLM call         Anthropic / OpenAI / ASICloud / ASI:One │
-│ 4. sread / balance  parse response into skill s-exprs       │
-│ 5. eval each skill  (remember ...), (metta ...), ...        │
-│ 6. addToHistory     append human msg + response +           │
+│ 2. receive()        pull latest message from channel        │
+│ 3. LLM call         request with tool schemas to the        │
+│                     provider (Anthropic, OpenAI, ASICloud,  │
+│                     ASI:One, OpenRouter, ...)               │
+│ 4. llmResponseToSExpr + sread                               │
+│                     tool calls into s-exprs                 │
+│ 5. eval each call   (remember ...), (metta ...), ...,       │
+│                     result sent as a tool message           │
+│ 6. addToHistory     append human msg + tool calls +         │
 │                     any errors                              │
 │ 7. sleep            sleepInterval seconds                   │
 │ 8. recurse          (omega (+ 1 $k))                        │
@@ -156,7 +163,7 @@ Each iteration of `(omega $k)` in `src/loop.metta` performs:
 
 If no new message arrives and the `loops` counter hits zero, the agent idles until `nextWakeAt`, then runs one wake loop for background work.
 
-The neural↔symbolic sub-cycle described in [The hybrid thesis](#the-hybrid-thesis) above kicks in **inside** step 5 whenever a skill-tuple contains `(metta (|- ...))` or `(metta (|~ ...))`.
+The neural↔symbolic sub-cycle described in [The hybrid thesis](#the-hybrid-thesis) above kicks in **inside** step 5 whenever a tool call is `metta (|- ...)` or `metta (|~ ...)`.
 
 ### Division of labor
 
@@ -271,15 +278,25 @@ Dedicated pages: [reference-lib-nal.md](./reference-lib-nal.md), [reference-lib-
 
 Three distinct stores with different semantics:
 
-1. **Working memory (`pin`)** — volatile single-slot scratchpad. Overwritten each cycle.
+1. **Working memory (`pin`)** — notes kept in the episodic trace. A `pin` call is part of the reply that `addToHistory` appends to `memory/history.metta`, and it stays in `HISTORY` until newer entries push it out of the last `maxHistory` characters.
 2. **Long-term embedding memory (`remember` / `query`)** — persistent semantic recall. Survives restarts.
 3. **AtomSpace** — atomized, truth-valued knowledge used by NAL and PLN.
 
 Full detail in [reference-internals-memory-store.md](./reference-internals-memory-store.md).
 
+### Tools
+
+A tool is an action the agent can take during a turn, such as `send`, `shell`, `remember`, `query`, or `metta`. A tool has a name, a one-line description, and a list of arguments, and it runs as a MeTTa function. Built-in tools and tools from plugins are registered the same way, with `add-skill`. Built-in ones are registered in `src/skills.metta`, and `remove-skill` unregisters a tool. Each turn the registered tools go to the LLM in the `tools` field of the request, one schema per tool with a string parameter for every argument. The `SKILLS:` part of the system message holds only extra rules for some tools.
+
+A tool call is the LLM's request to run a tool. The request requires the model to call at least one tool, and the text the model writes next to its calls is not used. `llmResponseToSExpr` in `src/providers.py` turns each call into a MeTTa expression, so a `send` call with the content `Hello` becomes `(send "Hello")`, and Omega evaluates it. A reply with no tool calls, or a call to a tool that is not registered, is reported as an error. The value a tool returns is its tool result. Omega cuts each result to its last `maxFeedback` characters and sends it back as a message with role `tool` and the id of the call, and the model reads it on the next turn.
+
 ### Skills
 
-The set of callable operations available to the agent at each turn — plain MeTTa s-expressions like `(remember "...")`, `(shell "ls")`, `(metta (|- ...))`. Defined in `src/skills.metta` and `src/memory.metta`.
+A skill is a directory with a `SKILL.md` file in the [Agent Skills](https://agentskills.io/specification) format. The file holds Markdown instructions that tell the agent how to carry out a task step by step, and the directory can also hold a `skill.metta` file with the tools the skill needs. The workflow plugin loads skills and refers to a loaded skill as the active workflow. While a skill is loaded, its instructions are part of the prompt and its tools are added to the request. See [plugins/workflow/README.md](../plugins/workflow/README.md).
+
+The word `skill` means a tool in some identifiers from the code: `add-skill`, `remove-skill`, `dynamic-skill`, `getSkills`, `getSkillRules`, `src/skills.metta`, `src/skills.pl`, `skill.metta` with its `(skill ...)` entries, `&workflow_skills`, the `SKILLS:` label in the prompt, and the log lines `Add skill:`. The documentation quotes these names as they are.
+
+The texts the model reads at run time (`memory/prompt*.txt`, `memory/tg_prompt.txt`, the `SKILLS:` section of the prompt, and the workflow `description.txt` files) sometimes use `skill` for a tool as well. The documentation quotes them unchanged.
 
 ### Channels
 
@@ -330,7 +347,7 @@ The failure mode where a flawed premise is run through the formal engine and eme
 
 - **Transparency by design, not by post-hoc explanation.** Every conclusion can be traced to its premises, rule, and truth-value math.
 - **Simplicity.** A small core that is readable end-to-end.
-- **Extensibility.** New skills, channels, tools, and engines are short additions — see [reference-internals-extension-points.md](./reference-internals-extension-points.md).
+- **Extensibility.** New tools, skills, channels, and engines are short additions — see [reference-internals-extension-points.md](./reference-internals-extension-points.md).
 - **Flexibility in memory representation.** Memory items coexist with other Hyperon components in the same AtomSpace; no single representation is hardcoded.
 
 ### When to use Omega

@@ -128,7 +128,7 @@ rules. If the user asks for such a name, propose a valid one instead.
 ## Finish
 - If any skill was written or deleted, call `(workflow-refresh-list)`. It is
   MANDATORY, otherwise the changes are not available until restart.
-- Call `(workflow-unload-instructions)`
+- Call `(workflow-unload-skills)`
 - Send the user a short report: what was done and with which skill. For a
   created or edited skill tell when it is used, or that the user can ask to
   load it by name.
@@ -137,7 +137,7 @@ rules. If the user asks for such a name, propose a valid one instead.
 ### description.txt
 One line: when to load the skill and the command to load it.
 ```
-When user asks to <when to use>, load <skill-name> instructions: (workflow-load-instructions "<skill-name>")
+When user asks to <when to use>, load <skill-name> instructions: (workflow-load-skills "<skill-name>")
 ```
 
 ### SKILL.md
@@ -151,13 +151,13 @@ Next are instructions and MeTTa functions that should be performed step by step
 ## Step 1 - <step name>
 - <concrete actions and skill calls>
 ## Step N - Complete
-- Call `(workflow-unload-instructions)`
+- Call `(workflow-unload-skills)`
 ```
 - Steps are concrete, skills and functions are referenced by exact names.
 - The workflow stays loaded across loop iterations and user messages until it
   is unloaded. A step which needs the user's reply ends with
   `**WAIT for the user's reply. Do NOT unload the workflow.**`
-- `(workflow-unload-instructions)` is called only once, in the last step, when
+- `(workflow-unload-skills)` is called only once, in the last step, when
   the whole task is complete or the user cancels it.
 
 ### skill.metta

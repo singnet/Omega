@@ -127,7 +127,7 @@ on every PR in the same job as `test_comm` / `test_llm` / `test_rpc`.
 ## Integration — `test_*_ws_mock.py` (needs a `-t websocket` container)
 
 End-to-end tests through `WsMockDriver`. They prove the full wiring
-(`channels.metta` websocket dispatch, `send` skill → `agent_message`, real drain
+(`channels.metta` websocket dispatch, `send` tool → `agent_message`, real drain
 → LLM) that the unit tests cannot reach. Not in `run_mandatory` (they need a
 `-t websocket` container, unlike the `-t test` container `run_mandatory` runs
 against); run them on the stand or a dedicated CI stage.
@@ -178,10 +178,10 @@ the agent.
 - Checks: the channel drops them without crashing (connection stays open); a
   following valid prompt (`WS-ALIVE-<run_id>`) is answered normally.
 
-## Skill smoke (prove skills work over this transport)
+## Tool smoke (prove tools work over this transport)
 
 Two mirrors of the `mock/` suite with delivery swapped to `ws_send_prompt` — not
-in `run_mandatory` (skills are already covered there over the comm channel).
+in `run_mandatory` (tools are already covered there over the comm channel).
 
 ### 6. test_create_file_ws_mock.py
 
@@ -191,5 +191,5 @@ WebSocket. Same assertions as `mock/test_create_file_mock.py`.
 ### 7. test_memory_chromadb_ws_mock.py
 
 Requests the agent to remember a fact tagged `CI-SMOKE-<run_id>`, delivered over
-WebSocket; the `remember` skill runs for real and grows the ChromaDB vector
+WebSocket; the `remember` tool runs for real and grows the ChromaDB vector
 store. Same assertions as `mock/test_memory_chromadb_mock.py`.
