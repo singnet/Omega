@@ -282,7 +282,7 @@ class AIProvider(AbstractAIProvider):
         """Create OpenAI client from environment."""
         proxy_url = config_get_by_key("GATEWAY_URL")
         if proxy_url:
-            prefix = self._name.lower()
+            prefix = getattr(self, "_gateway_route", self._name.lower())
             base_url = f"{proxy_url.rstrip('/')}/{prefix}/"
             logger.info(f"[AIProvider._create_client]: Connecting via proxy: {base_url}")
             return openai.OpenAI(

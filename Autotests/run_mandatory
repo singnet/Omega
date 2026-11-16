@@ -22,6 +22,8 @@ mock/test_openclaw_delegate_mock.py
 mock/test_pin_invisible_within_iteration_mock.py
 mock/test_policy_resolve_mock.py
 mock/test_prompt_missing_files_mock.py
+mock/test_router_compat_mock.py
+mock/test_router_mock.py
 mock/test_rpc.py
 mock/test_run_error_script_mock.py
 mock/test_run_repeated_mock.py
@@ -37,6 +39,8 @@ mock/test_transition_pin_to_remember_mock.py
 mock/test_workflow_plugin_mock.py
 mock/test_workflow_reload_tools_mock.py
 mock_websocket/test_wschat_unit.py
+router/test_router_start.py
+router/test_router_start_compat.py
 test_openai_runtime_embeddings.py
 test_prompt_grounding.py
 test_websearch_smoke.py
@@ -48,6 +52,7 @@ unit/test_helper_parsing.py
 unit/test_llm_budget.py
 unit/test_openclaw_unit.py
 unit/test_nginx_llm_timeouts.py
+unit/test_router_compat.py
 unit/test_llm_timeout_message.py
 unit/test_llm_tools_request.py
 import_knowledge/test_import_knowledge.py

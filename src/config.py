@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 import pathlib
 import re
@@ -60,6 +61,33 @@ def config_get_by_key(key, default=None):
     if key in _CONFIG_FILE:
         return _cache_config(key, _CONFIG_FILE.get(key), "config file")
     return _cache_config(key, default, "defaults")
+
+def read_router_catalog(path):
+    """Return MeTTa catalog text for parsing with sread."""
+    try:
+        with open(path, encoding="utf-8") as source:
+            catalog = json.load(source)
+    except (OSError, ValueError) as e:
+        raise ValueError(f"Could not load router catalog {path}: {e}") from e
+    
+    if not isinstance(catalog, dict):
+        raise ValueError("Router catalog must be a JSON object")
+    records = []
+    for role, record in catalog.items():
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", role):
+            raise ValueError("Router catalog roles must be symbol names")
+        if not isinstance(record, dict) or any(
+            not isinstance(value, str) for value in record.values()
+        ):
+            raise ValueError("Router catalog records must contain string values")
+        fields = []
+        for key, value in record.items():
+            if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+                raise ValueError("Router catalog fields must be symbol names")
+            fields.append(f"({key} {json.dumps(value, ensure_ascii=False)})")
+        records.append(f"({role} ({' '.join(fields)}))")
+    return "(routerCatalog (" + " ".join(records) + "))"
+
 
 def _cache_config(key, value, source):
     global _CONFIG
