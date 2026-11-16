@@ -39,9 +39,9 @@ sudo apt-get install git python3 python3-dev python3-pip python3-venv build-esse
 
 Get [SWI-Prolog 10.0.2 or later](https://www.swi-prolog.org/).
 
-Install Omega:
+Install Omega using PeTTa `v1.0.4`, matching the version pinned in the Dockerfile:
 ```
-git clone https://github.com/trueagi-io/PeTTa
+git clone --depth 1 --branch v1.0.4 https://github.com/trueagi-io/PeTTa
 cd PeTTa
 mkdir -p repos
 git clone https://github.com/singnet/Omega.git repos/Omega
