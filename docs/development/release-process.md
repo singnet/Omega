@@ -1,8 +1,6 @@
 # Omega - Release Process
 
-This document describes how an Omega release is built, approved, and promoted. A release is official only after its Docker image has been approved and the version tag and `latest` have been applied. Publishing a GitHub Release starts that attempt. It does not, by itself, put the image into production.
-
-The tags promoted to production point at a manifest assembled from the images the release tests executed. Promotion does not build another image.
+This document describes how a new version of Omega is released. It explains how a change is prepared and validated, how a version is published, and how that version reaches production.
 
 ## Process overview
 
@@ -28,21 +26,7 @@ There are two kinds of builds:
 * The **pull-request build** runs in continuous integration and, when QA needs it, on a local machine. It does not publish the formal release image.
 * The **release build** runs after a GitHub Release is published. It produces the image that can be promoted.
 
-For a published release, GitHub reads the workflow file from the default branch (`main`). The jobs then check out the release tag and build that commit. These release jobs behave as described here after this workflow is on `main`. Publishing a release before that merge still runs the workflow file that is on `main` at that moment.
-
-## Workflow responsibilities
-
-| Workflow | Trigger | Responsibility | Publishes a Docker image? |
-| --- | --- | --- | --- |
-| `build.yml` | Push or pull request to `main` or `patch-to-v*`, and manual dispatch | Runs the build and tests on `linux/amd64` | No |
-| `manual.yml` | Manual dispatch of the selected ref | Optionally tests and publishes an image tagged with that commit's SHA | Only when requested |
-| `release.yml` | GitHub Release published | Resolves the tag commit, publishes its image, waits for approval, and promotes it | Yes |
-| `common.yml` | Called by the workflows above | Runs tests and the publication logic | Depends on the caller |
-| `autotests.yml` | Called by `common.yml` | Builds a local image per platform, tests it, and pushes that image when publication was requested | Only the tested platform images, when publication was requested |
-
-`cleanup.yml`, `sonar.yml`, and `renovate.yml` are not part of the release process.
-
-## 1. Development and validation
+## Phase 1. Development and validation
 
 Changes land through pull requests. `build.yml` runs on every pull request and push to `main` and to branches named `patch-to-v*`, and when someone starts it manually. It calls `common.yml` with `publish_docker: false` and `platforms: linux/amd64`.
 
@@ -76,7 +60,7 @@ Manual publication is optional. It is not required for every pull request, and i
 
 Merging into `main` runs `build.yml` again. That run still does not publish the release image. The formal release has not started.
 
-## 2. Release publication and promotion
+## Phase 2. Release publication and promotion
 
 ### 2.1. Publish the GitHub Release
 
@@ -154,7 +138,19 @@ singularitynet/omega:<commit-sha>
 
 Only one release workflow should be active at a time. `update-tags` always moves `latest`, so two overlapping runs can attach `latest` to the wrong image. Work on the next change can continue on `main`. The next GitHub Release waits until the current run is promoted or canceled.
 
-## 3. Versioning
+## 3. Workflow responsibilities
+
+| Workflow | Trigger | Responsibility | Publishes a Docker image? |
+| --- | --- | --- | --- |
+| `build.yml` | Push or pull request to `main` or `patch-to-v*`, and manual dispatch | Runs the build and tests on `linux/amd64` | No |
+| `manual.yml` | Manual dispatch of the selected ref | Optionally tests and publishes an image tagged with that commit's SHA | Only when requested |
+| `release.yml` | GitHub Release published | Resolves the tag commit, publishes its image, waits for approval, and promotes it | Yes |
+| `common.yml` | Called by the workflows above | Runs tests and the publication logic | Depends on the caller |
+| `autotests.yml` | Called by `common.yml` | Builds a local image per platform, tests it, and pushes that image when publication was requested | Only the tested platform images, when publication was requested |
+
+`cleanup.yml`, `sonar.yml`, and `renovate.yml` are not part of the release process.
+
+## 4. Versioning
 
 Versions follow the [Semantic Versioning specification](https://semver.org/). The Git tag and the Docker version tag use `v<major>.<minor>.<patch>`.
 
@@ -183,7 +179,7 @@ Git tags and Docker tags are different:
 | Docker version tag, `singularitynet/omega:v0.2.0` | The production image of a release that completed promotion. |
 | Docker `latest` | The most recently promoted production image. Promotion and a deliberate rollback are what move it. |
 
-## 4. Patch releases
+## 5. Patch releases
 
 A fix is developed from the Git tag of the release being fixed, never from `main`. That covers both a defect found before promotion and a hotfix after promotion. `main` may already contain commits that must not ship in the fix.
 
@@ -199,27 +195,27 @@ After the patch release has been promoted, open a pull request that merges the p
 
 A patch can be prepared while the next minor or major release continues on `main`. Only one release workflow may be active at a time.
 
-## 5. Failure and cancellation
+## 6. Failure and cancellation
 
-### 5.1. Technical failure
+### 6.1. Technical failure
 
 Docker Hub sometimes fails the upload of a large layer. On a release, tests have already run, so the workflow retries that `docker push` once and does not build the image again. A manual publication with tests turned off has no tested image to reuse, so its retry builds and pushes again.
 
 Other transient failures, such as a GitHub Actions interruption, can be retried by re-running the workflow when the source does not need to change. A re-run builds the images again and pushes the same commit SHA. The in-job retry is the one that reuses the image already tested in that run.
 
-### 5.2. The source needs to change
+### 6.2. The source needs to change
 
 If QA, community testing, or another check finds a product defect, cancel the attempt.
 
 1. Cancel any workflow run that can still reach `update-tags`. The workflow has no rejected state. A later approval would still promote that image. Removing the GitHub Release does not stop a run that is already going, so cancel the run first.
 2. Remove the GitHub Release from the releases page so it is not shown as a current release.
 3. Keep the Git tag. If GitHub offers to delete the tag together with the Release, keep the tag. The version stays reserved.
-4. Fix the code on the patch branch cut from that tag, not by committing the fix onto `main`.
+4. Commit the fix on the existing patch branch and push it to that same branch. Do not commit the fix onto `main`.
 5. Publish a new GitHub Release with a new version, pointing at the corrected commit.
 
 A canceled attempt remains traceable through its Git tag. It is not an official production release, and it must not be promoted.
 
-## 6. Rollback
+## 7. Rollback
 
 Rollback is manual. No workflow performs it.
 
@@ -232,7 +228,7 @@ If a promoted release must be taken out of production:
 5. Leave version-specific Docker tags unchanged. `v0.2.0` keeps pointing at the image that was promoted for `v0.2.0`.
 6. Confirm that production is running the restored image, not only that a tag was updated.
 
-## 7. Key points
+## 8. Key points
 
 * A release is official only after `update-tags` applies the version tag and `latest`.
 * The release workflow checks out the Git tag and publishes that commit. It does not publish the tip of `main` unless the tag points there.
