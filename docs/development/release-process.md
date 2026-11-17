@@ -66,7 +66,7 @@ Merging into `main` runs `build.yml` again. That run still does not publish the 
 
 Create the GitHub Release with the version name, for example `v0.2.0`. The tag must point at the exact commit that should be built. The workflow checks that commit out. It does not build the current tip of `main` unless the tag points there.
 
-`release.yml` starts when the release is published. Its first job checks out `github.event.release.tag_name` and records `git rev-parse HEAD` as the release SHA. Later jobs check out that same tag and fail if `HEAD` is not that SHA.
+`release.yml` starts when the release is published. Its first job checks out `github.event.release.tag_name` and records `git rev-parse HEAD` as the release SHA. The build checks out that same tag in `autotests.yml` and fails if `HEAD` is not that SHA. `qa-approval`, `admin-approval`, and `update-tags` do not check out the repository. `update-tags` retags the SHA recorded by the first job.
 
 ```yaml
 publish_docker: true
