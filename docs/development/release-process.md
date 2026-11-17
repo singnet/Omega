@@ -19,7 +19,7 @@ The release process has two phases:
 | 2 | QA approval | QA approves the published image. |
 | 2 | Community testing | Minor and major releases are tested by the community before administrative approval. Patch releases skip this. |
 | 2 | Administrative approval | Final approval is granted. |
-| 2 | Promotion | The published image receives `v0.2.0` and `latest`. |
+| 2 | Promotion | The published image receives the version tag and `latest`. |
 
 There are two kinds of builds:
 
@@ -31,8 +31,6 @@ There are two kinds of builds:
 Changes land through pull requests. `build.yml` runs on every pull request and push to `main` and to branches named `patch-to-v*`, and when someone starts it manually. It calls `common.yml` with `publish_docker: false` and `platforms: linux/amd64`.
 
 That run executes the test suite, including the image tests in `autotests.yml`. It does not publish an image to Docker Hub. Because the tests already built the image, the workflow does not build it a second time.
-
-A push uses the workflow file in the commit that was pushed. A patch branch created from an older tag runs this continuous integration only after this `build.yml` is on that branch.
 
 QA still validates a pull request by building the selected commit locally. That local build is not published.
 
@@ -77,9 +75,9 @@ move_latest: false
 
 `move_latest` stays false, so this build does not move `latest`.
 
-The Git tag is not moved after publication. It keeps pointing at the commit that was built. The release event runs the workflow files contained in the tagged commit. That commit must contain this pipeline. A release cut from `main` after this pipeline is merged already does. A patch tag on a commit that still has the previous `release.yml` runs that older workflow: it tags the image with `github.sha` and builds again after the tests.
+The Git tag is not moved after publication. It keeps pointing at the commit that was built.
 
-Publishing a pre-release starts the same jobs. The version tag and `latest` are applied after the same approvals. Marking the GitHub Release as a pre-release does not hold those Docker tags. `v0.1.23` and `v0.1.24` were pre-releases and both reached `update-tags`.
+Publishing a pre-release starts the same jobs. The version tag and `latest` are applied after the same approvals. Marking the GitHub Release as a pre-release does not hold those Docker tags.
 
 ### 2.2. Test and publish the image
 
@@ -189,9 +187,9 @@ A fix is developed from the Git tag of the release being fixed, never from `main
 
 The branch name is `patch-to-<version>`, for example `patch-to-v0.2.0`, created from the tag of the release being fixed. Further fixes in that cycle stay on that branch.
 
-`build.yml` tests pushes and pull requests to `patch-to-v*` on `linux/amd64` and does not publish an image. A branch created from an older tag receives that run only after this `build.yml` is on the branch.
+`build.yml` tests pushes and pull requests to `patch-to-v*` on `linux/amd64` and does not publish an image.
 
-When the branch is ready, publish a new GitHub Release whose tag points at the patch commit. That commit must contain this release pipeline. Use the next patch version. The release workflow checks out that tag, tests it, and publishes `singularitynet/omega:<patch-commit-sha>`. Approval and promotion then add the patch version tag and `latest`. A pre-release receives those same Docker tags.
+When the branch is ready, publish a new GitHub Release whose tag points at the patch commit. Use the next patch version. The release workflow checks out that tag, tests it, and publishes `singularitynet/omega:<patch-commit-sha>`. Approval and promotion then add the patch version tag and `latest`. A pre-release receives those same Docker tags.
 
 If a patch attempt is canceled, keep the same branch, fix it there, and publish the next patch number from the corrected commit. For example, `v0.2.1` is published and then canceled. The fix stays on `patch-to-v0.2.0`. The next publication is `v0.2.2`.
 
@@ -235,10 +233,10 @@ If a promoted release must be taken out of production:
 ## 8. Key points
 
 * A release is official only after `update-tags` applies the version tag and `latest`.
-* The release event runs the workflow in the tagged commit. That commit must contain this pipeline. The workflow then checks out the Git tag and publishes that commit.
+* The release workflow checks out the Git tag and publishes that commit. It does not publish the tip of `main` unless the tag points there.
 * A published pre-release follows the same jobs and also receives the version tag and `latest`.
 * The published SHA manifest is assembled from the images the tests executed. Promotion does not build another image.
-* `build.yml` tests `main` and `patch-to-v*` and does not publish. A patch branch created from an older tag gets that CI only after this `build.yml` is on the branch.
+* `build.yml` tests `main` and `patch-to-v*` and does not publish.
 * `manual.yml` can publish a SHA-tagged image for any selected ref. Publication is off unless requested. With tests left on, the pushed image is the tested image. Do not publish a SHA that a release is waiting to promote.
 * QA approval uses the `dockerhub-production` environment. Administrative approval uses `dockerhub-admin-approval`.
 * Community testing for minor and major releases is a manual wait before administrative approval. Patch releases skip it.
