@@ -32,7 +32,7 @@ Changes land through pull requests. `build.yml` runs on every pull request and p
 
 That run executes the test suite, including the image tests in `autotests.yml`. It does not publish an image to Docker Hub. Because the tests already built the image, the workflow does not build it a second time.
 
-The `patch-to-v*` trigger is in this branch's `build.yml`. It is not on `main` until this branch is merged. A later fix branch receives that continuous integration only when the trigger is in the workflow file on the branch that is pushed.
+A push uses the workflow file in the commit that was pushed. A patch branch created from an older tag runs this continuous integration only after this `build.yml` is on that branch.
 
 QA still validates a pull request by building the selected commit locally. That local build is not published.
 
@@ -77,7 +77,9 @@ move_latest: false
 
 `move_latest` stays false, so this build does not move `latest`.
 
-The Git tag is not moved after publication. It keeps pointing at the commit that was built. GitHub runs this workflow from `main`, so the workflow file on `main` must already contain this checkout. The source that gets built is still the tag, including a tag on a `patch-to-v*` branch.
+The Git tag is not moved after publication. It keeps pointing at the commit that was built. The release event runs the workflow files contained in the tagged commit. That commit must contain this pipeline. A release cut from `main` after this pipeline is merged already does. A patch tag on a commit that still has the previous `release.yml` runs that older workflow: it tags the image with `github.sha` and builds again after the tests.
+
+Publishing a pre-release starts the same jobs. The version tag and `latest` are applied after the same approvals. Marking the GitHub Release as a pre-release does not hold those Docker tags. `v0.1.23` and `v0.1.24` were pre-releases and both reached `update-tags`.
 
 ### 2.2. Test and publish the image
 
@@ -136,7 +138,9 @@ singularitynet/omega:<commit-sha>
 
 `latest` is the most recently promoted production release. It is not applied to an image that has not finished both approvals. A release that was published but not promoted does not receive a production version tag and does not become `latest`.
 
-Only one release workflow should be active at a time. `update-tags` always moves `latest`, so two overlapping runs can attach `latest` to the wrong image. Work on the next change can continue on `main`. The next GitHub Release waits until the current run is promoted or canceled.
+Only one release workflow should be active at a time. `update-tags` always moves `latest`, so two overlapping runs can attach `latest` to the wrong image. The workflow does not enforce that with a concurrency lock. Work on the next change can continue on `main`. The next GitHub Release waits until the current run is promoted or canceled.
+
+`update-tags` retags whatever `singularitynet/omega:<commit-sha>` points at when it runs. A `manual.yml` publication of that same commit, while the release is waiting for approval, replaces that manifest. Promotion then attaches the version tag and `latest` to the replacement. Do not publish that SHA from `manual.yml` until the release is promoted or canceled.
 
 ## 3. Workflow responsibilities
 
@@ -185,9 +189,9 @@ A fix is developed from the Git tag of the release being fixed, never from `main
 
 The branch name is `patch-to-<version>`, for example `patch-to-v0.2.0`, created from the tag of the release being fixed. Further fixes in that cycle stay on that branch.
 
-`build.yml` tests pushes and pull requests to `patch-to-v*` on `linux/amd64` and does not publish an image.
+`build.yml` tests pushes and pull requests to `patch-to-v*` on `linux/amd64` and does not publish an image. A branch created from an older tag receives that run only after this `build.yml` is on the branch.
 
-When the branch is ready, publish a new GitHub Release whose tag points at the patch commit. Use the next patch version. The release workflow checks out that tag, tests it, and publishes `singularitynet/omega:<patch-commit-sha>`. Approval and promotion then add the patch version tag and `latest`.
+When the branch is ready, publish a new GitHub Release whose tag points at the patch commit. That commit must contain this release pipeline. Use the next patch version. The release workflow checks out that tag, tests it, and publishes `singularitynet/omega:<patch-commit-sha>`. Approval and promotion then add the patch version tag and `latest`. A pre-release receives those same Docker tags.
 
 If a patch attempt is canceled, keep the same branch, fix it there, and publish the next patch number from the corrected commit. For example, `v0.2.1` is published and then canceled. The fix stays on `patch-to-v0.2.0`. The next publication is `v0.2.2`.
 
@@ -210,7 +214,7 @@ If QA, community testing, or another check finds a product defect, cancel the at
 1. Cancel any workflow run that can still reach `update-tags`. The workflow has no rejected state. A later approval would still promote that image. Removing the GitHub Release does not stop a run that is already going, so cancel the run first.
 2. Remove the GitHub Release from the releases page so it is not shown as a current release.
 3. Keep the Git tag. If GitHub offers to delete the tag together with the Release, keep the tag. The version stays reserved.
-4. Commit the fix on the existing patch branch and push it to that same branch. Do not commit the fix onto `main`.
+4. If the patch branch does not exist yet, as on the first minor or major attempt, create `patch-to-<version>` from the release tag. Commit the fix on that branch and push it to the same branch. Do not commit the fix onto `main`.
 5. Publish a new GitHub Release with a new version, pointing at the corrected commit.
 
 A canceled attempt remains traceable through its Git tag. It is not an official production release, and it must not be promoted.
@@ -231,13 +235,14 @@ If a promoted release must be taken out of production:
 ## 8. Key points
 
 * A release is official only after `update-tags` applies the version tag and `latest`.
-* The release workflow checks out the Git tag and publishes that commit. It does not publish the tip of `main` unless the tag points there.
+* The release event runs the workflow in the tagged commit. That commit must contain this pipeline. The workflow then checks out the Git tag and publishes that commit.
+* A published pre-release follows the same jobs and also receives the version tag and `latest`.
 * The published SHA manifest is assembled from the images the tests executed. Promotion does not build another image.
-* `build.yml` tests `main` and `patch-to-v*` and does not publish.
-* `manual.yml` can publish a SHA-tagged image for any selected ref. Publication is off unless requested. With tests left on, the pushed image is the tested image.
+* `build.yml` tests `main` and `patch-to-v*` and does not publish. A patch branch created from an older tag gets that CI only after this `build.yml` is on the branch.
+* `manual.yml` can publish a SHA-tagged image for any selected ref. Publication is off unless requested. With tests left on, the pushed image is the tested image. Do not publish a SHA that a release is waiting to promote.
 * QA approval uses the `dockerhub-production` environment. Administrative approval uses `dockerhub-admin-approval`.
 * Community testing for minor and major releases is a manual wait before administrative approval. Patch releases skip it.
 * `latest` moves only in `update-tags`, together with the version tag, or when an operator points it back during rollback.
 * Published Git tags are never deleted, moved, or reused. The next attempt uses a new version.
 * A fix branch is always created from the release tag, named `patch-to-<version>`, and merged back to `main` by a pull request after promotion.
-* Only one release workflow is active at a time.
+* Only one release workflow is active at a time. The workflow does not lock this. `update-tags` promotes whatever `singularitynet/omega:<commit-sha>` points at when it runs.
