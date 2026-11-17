@@ -67,6 +67,46 @@ Install Python dependencies — core's, and those of any plugin that declares it
 ```
 ./repos/Omega/scripts/install_dependencies.sh
 ```
+
+### Prepare standalone startup
+
+Keep the virtual environment active and run these steps from the PeTTa root.
+
+The default `embeddingprovider: Local` uses `intfloat/e5-large-v2`. Omega loads
+this model in offline mode, so download it once before the first start, while
+connected to the internet:
+```bash
+env -u HF_HUB_OFFLINE -u TRANSFORMERS_OFFLINE python3 - <<'PY'
+from sentence_transformers import SentenceTransformer
+
+SentenceTransformer("intfloat/e5-large-v2", device="cpu")
+PY
+```
+Download and run Omega as the same OS user, with the same cache settings
+(`HF_HOME` and `SENTENCE_TRANSFORMERS_HOME`, if set). Otherwise, startup may not
+find the downloaded model. This step is only needed for Local embeddings.
+
+Configure `securityPolicyPath` in `repos/Omega/config/config.yaml` before
+starting. The default `profile/policy.yaml` contains Docker paths such as
+`/PeTTa` and `/memory-transfer`; it does not match a standalone installation.
+
+For an isolated development or test environment, set:
+```yaml
+securityPolicyPath: ""
+```
+This disables Omega's filesystem restrictions: the agent can access files with
+the permissions of the OS user running it.
+
+To keep filesystem restrictions enabled, copy `repos/Omega/profile/policy.yaml`
+to a separate file and adapt its `read_only` and `read_write` paths to your host.
+Allow reads of the PeTTa checkout, Python environment and model cache, and writes
+to the configured memory directory, ChromaDB directory and any required cache
+or temporary directories. Replace or remove the Docker-specific paths and make
+sure all required paths exist. Set `securityPolicyPath` to the absolute path of
+your adapted file. See the [filesystem policy reference](./docs/reference-tools-io.md#get-io-policy).
+
+Continue with [Usage](#usage) to select a provider and start the agent.
+
 ---
 
 ## Run Omega in Docker
@@ -153,7 +193,9 @@ Before running the system you need to choose your LLM API provider and export th
 | `OpenAIAPI` | `OPENAIAPI_API_KEY` |  Use OpenAI API with any endpoint and model. API endpoint and model are set via `openaiapi_url` and `model` command line parameters. |
 | `OpenRouter` | `OPENROUTER_API_KEY` |  GLM model via OpenRouter inference endpoint. |
 
-Run the system via the following command which ensures the system is started from the root folder of PeTTa:
+For standalone mode, complete [Prepare standalone startup](#prepare-standalone-startup)
+first, activate the same virtual environment, and run the following command from
+the PeTTa root:
 ```
 OMEGA_AUTH_SECRET=<channel-secret> sh run.sh run.metta IRC_channel="<irc-channel>"
 ```
