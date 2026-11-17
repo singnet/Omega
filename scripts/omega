@@ -847,14 +847,7 @@ options() {
            return 1
            ;;
     esac
-    if [ -n "${embedding_override}" ]; then
-        case "${embedding_override}" in
-            Local|OpenAI|ASICloud) embeddingprovider="${embedding_override}" ;;
-            *) echo "Unsupported embedding provider: ${embedding_override}, use Local, OpenAI or ASICloud" >&2
-               return 1
-               ;;
-        esac
-    fi
+    embeddingprovider="${embedding_override:-${embeddingprovider}}"
     if [[ -n "${!api_token_var:-}" ]]; then
         api_token="${!api_token_var}"
     else
@@ -888,17 +881,12 @@ options() {
 remove_partly_copied_memory() {
     local volume="$1"
     local container="$2"
-    local label="$3"
-    local leftover
     local holder
     local holders=""
 
     if ! docker volume inspect "${volume}" >/dev/null 2>&1; then
         return 0
     fi
-    for leftover in $(docker ps -aq --filter "label=${label}" --filter "volume=${volume}" 2>/dev/null); do
-        docker rm -f "${leftover}" >/dev/null 2>&1 || true
-    done
     for holder in $(docker ps -a --filter "volume=${volume}" --format '{{.Names}}' 2>/dev/null); do
         if [ "${holder}" != "${container}" ]; then
             holders="${holders:+${holders} }${holder}"
@@ -930,6 +918,7 @@ migrate_omegaclaw_memory() {
     local stopped_old_container=0
     local old_state
     local new_state
+    local leftovers
 
     if ! docker volume inspect "${old_volume}" >/dev/null 2>&1; then
         return 0
@@ -939,13 +928,23 @@ migrate_omegaclaw_memory() {
         echo "Could not read the migration markers in ${old_volume}" >&2
         return 1
     fi
+    if [ "${old_state}" = "interrupted" ]; then
+        if ! leftovers=$(docker ps -aq --filter "label=${migration_label}" --filter "volume=${new_volume}"); then
+            echo "Could not list the copy containers on ${new_volume}" >&2
+            return 1
+        fi
+        if [ -n "${leftovers}" ] && ! docker rm -f ${leftovers} >/dev/null; then
+            echo "Could not remove the copy containers left on ${new_volume} by the interrupted copy: ${leftovers//$'\n'/ }" >&2
+            return 1
+        fi
+    fi
     if [ -n "${memory_import_file}" ]; then
         if [ "${old_state}" = "interrupted" ]; then
-            if [[ "${memory_import_only_history}" == "1" || "${memory_import_only_vector}" == "1" ]]; then
-                echo "The last copy from ${old_volume} did not finish, keeping ${new_volume} for the partial memory import"
+            if [[ "${memory_import_only_history}" == "1" || "${memory_import_only_vector}" == "1" || "${memory_import_mode}" == "append" ]]; then
+                echo "The last copy from ${old_volume} did not finish, keeping ${new_volume} for the memory import"
             else
                 echo "The last copy from ${old_volume} did not finish, the memory import replaces it"
-                remove_partly_copied_memory "${new_volume}" "${new_container}" "${migration_label}" || return 1
+                remove_partly_copied_memory "${new_volume}" "${new_container}" || return 1
             fi
             if ! docker run --rm --label "${migration_label}" --entrypoint sh --volume "${old_volume}:/from" "${image}" \
                 -c "rm -f /from/${started_marker}"; then
@@ -977,7 +976,7 @@ migrate_omegaclaw_memory() {
                 fi
             fi
             echo "The last copy from ${old_volume} did not finish, copying again"
-            remove_partly_copied_memory "${new_volume}" "${new_container}" "${migration_label}" || return 1
+            remove_partly_copied_memory "${new_volume}" "${new_container}" || return 1
             ;;
         *)
             if docker volume inspect "${new_volume}" >/dev/null 2>&1; then
@@ -1188,6 +1187,14 @@ start() {
     memory_import_env=()
     memory_export_option=()
     embedding_token_env=()
+
+    case "${embeddingprovider}" in
+        Local|OpenAI|ASICloud) ;;
+        *)
+            echo "Unsupported embedding provider: ${embeddingprovider}, use Local, OpenAI or ASICloud" >&2
+            return 1
+            ;;
+    esac
 
     case "${embeddingprovider}" in
         OpenAI) emb_token_var="OPENAI_API_KEY" ;;

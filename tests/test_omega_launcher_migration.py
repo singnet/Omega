@@ -262,6 +262,26 @@ def _container_state(root, name):
     return (root / "containers" / name).read_text()
 
 
+@pytest.mark.parametrize("command", ["-h", "-v", "stop", "clean"])
+def test_non_start_commands_ignore_invalid_embedding_provider(docker_root, monkeypatch, command):
+    monkeypatch.setenv("EMBEDDING_PROVIDER", "unsupported")
+    (docker_root / "containers" / "omega").write_text("running")
+    (docker_root / "volumes" / "omega-memory").mkdir()
+
+    result = _launcher(docker_root, command)
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_start_rejects_invalid_embedding_provider_before_docker(docker_root, monkeypatch):
+    monkeypatch.setenv("EMBEDDING_PROVIDER", "unsupported")
+
+    result = _launcher(docker_root, "start")
+
+    assert result.returncode == 1
+    assert not _calls(docker_root)
+
+
 @pytest.mark.parametrize("interrupted", [False, True])
 def test_migration_recovery_links_use_release_tag(docker_root, interrupted):
     if interrupted:
