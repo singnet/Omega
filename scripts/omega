@@ -846,14 +846,7 @@ options() {
            return 1
            ;;
     esac
-    if [ -n "${embedding_override}" ]; then
-        case "${embedding_override}" in
-            Local|OpenAI|ASICloud) embeddingprovider="${embedding_override}" ;;
-            *) echo "Unsupported embedding provider: ${embedding_override}, use Local, OpenAI or ASICloud" >&2
-               return 1
-               ;;
-        esac
-    fi
+    embeddingprovider="${embedding_override:-${embeddingprovider}}"
     if [[ -n "${!api_token_var:-}" ]]; then
         api_token="${!api_token_var}"
     else
@@ -1170,6 +1163,14 @@ start() {
     memory_import_env=()
     memory_export_option=()
     embedding_token_env=()
+
+    case "${embeddingprovider}" in
+        Local|OpenAI|ASICloud) ;;
+        *)
+            echo "Unsupported embedding provider: ${embeddingprovider}, use Local, OpenAI or ASICloud" >&2
+            return 1
+            ;;
+    esac
 
     case "${embeddingprovider}" in
         OpenAI) emb_token_var="OPENAI_API_KEY" ;;
