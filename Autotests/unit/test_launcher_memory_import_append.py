@@ -1,6 +1,8 @@
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 _SOURCE = Path(__file__).resolve().parents[2] / "tests" / "test_omega_launcher_migration.py"
 _spec = importlib.util.spec_from_file_location("launcher_migration_harness", _SOURCE)
 harness = importlib.util.module_from_spec(_spec)
@@ -35,3 +37,27 @@ def test_append_import_without_only_flags_keeps_memory_on_new_volume_after_inter
     else:
         assert not import_runs, import_runs
         assert (old / ".migration-started").exists(), "the refusal removed the migration marker from the old volume"
+
+
+@pytest.mark.parametrize("flags", [
+    ("--memory-mode", "append"),
+    ("--only-history",),
+    ("--only-vector",),
+    ("--memory-mode", "overwrite"),
+])
+def test_import_removes_running_copy_container_before_starting_the_agent(docker_root, tmp_path, flags):
+    harness._interrupted_migration(docker_root, image_files=True)
+    harness._container_on_volume(
+        docker_root, "musing_haslett", "running", "omegaclaw-memory omega-memory", label=harness.MIGRATION_LABEL
+    )
+
+    result = harness._launcher(docker_root, *harness._memory_import_arguments(docker_root, tmp_path), *flags)
+
+    assert result.returncode == 0, result.stderr
+    assert not (docker_root / "containers" / "musing_haslett").exists()
+    calls = harness._calls(docker_root)
+    removals = [index for index, call in enumerate(calls) if call.startswith("rm ") and "musing_haslett" in call.split()]
+    starts = [index for index, call in enumerate(calls) if call.startswith("run -d")]
+    assert removals, calls
+    assert starts, calls
+    assert removals[0] < starts[0], calls
