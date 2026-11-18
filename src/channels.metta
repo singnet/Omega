@@ -27,3 +27,8 @@
        (progn (change-state! &lastsend $msg)
               (let $safemsg (string-replace $msg  "\n" "\\n")
                    (let $temp (cut) (commChannelSend $safemsg)))) _))
+
+;Send a harness notice to all communication channels, bypassing the limits of the `send`
+(= (notify $msg)
+   (let $safemsg (string-replace $msg  "\n" "\\n")
+        (let $temp (cut) (commChannelSend $safemsg))))

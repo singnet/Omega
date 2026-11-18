@@ -51,3 +51,4 @@ unit/test_nginx_llm_timeouts.py
 unit/test_llm_timeout_message.py
 unit/test_llm_tools_request.py
 import_knowledge/test_import_knowledge.py
+llm_requests/test_empty_tool_calls_after_truncated_reply.py
