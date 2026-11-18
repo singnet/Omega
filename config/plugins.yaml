@@ -52,3 +52,7 @@
 - name: openclaw
   loader: metta
   location: "{REPO}/plugins/openclaw"
+
+- name: context
+  loader: metta
+  location: "{REPO}/plugins/context"

@@ -71,21 +71,30 @@ A list-shaped result containing the nearest memory items.
 ```
 
 ### Purpose
-Return the line of the episodic trace whose timestamp is closest to the given one, with up to `maxEpisodeRecallLines` lines before and after it (at most 41 lines with the default of 20).
+Return bounded history around the given timestamp, including original audit
+entries and pruned frame events. Without an exact match, use the nearest timestamp.
 
 ### Parameters
 - `timestamp` — must match the format produced by `get_time_as_string`.
+  Pass back the supplied `timestamp#offset` cursor unchanged to continue a result.
 
 ### Returns
-A block of lines from `memory/history.metta`.
+Numbered history text from `memory/history.metta`. `MORE HISTORY` supplies the
+next `episodes` call when additional matching context remains.
 
 ### Examples
 ```metta
 (episodes "2026-04-15 14:30:00")
+; Follow the exact cursor returned by MORE HISTORY, for example:
+(episodes "2026-04-15 14:30:00#1500")
 ```
 
 ### Notes / Limits
 - Implemented by `helper.around_time`.
+- Pages contain at most `2 * maxEpisodeRecallLines + 1` history lines and fit
+  within `maxFeedback`, including tool wrapping. Long lines can span pages.
+- The cursor is a character offset into the selected history text. Rewriting
+  history or changing the recall radius invalidates it.
 - Useful for answering questions like "what was I doing around X?"
 
 ---

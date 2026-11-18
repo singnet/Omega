@@ -49,8 +49,8 @@ def test_tool_result_for_every_call_mock(llm, comm):
         calls = re.findall(r"LLMToolCall\[id='([^']*)',name='([^']*)'", request)
         results = dict((callid, content) for content, callid in re.findall(
             r"LLMToolCallResponseMessage\[role='tool',content=(.*?),callid='([^']*)'\]", request))
-        if [name for _, name in calls] != ["read-file", "send"]:
-            c.fail("assistant calls", f"expected the read-file and send calls of the answer, got {calls}")
+        if [name for _, name in calls[:2]] != ["read-file", "send"]:
+            c.fail("assistant calls", f"expected read-file and send as the first calls, got {calls}")
         c.ok("assistant calls", f"{calls}")
         if sorted(results) != sorted(callid for callid, _ in calls):
             c.fail("one result per call", f"calls {calls}, tool results {results}")

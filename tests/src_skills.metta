@@ -9,6 +9,7 @@
 (= (memoryDirectory) (joinPath ((projectRootDirectory) "memory")))
 
 ; used by prompt-extension
+!(import! &self ./src/context_provider)
 !(import! &self ./src/loop)
 
 !(test (progn
