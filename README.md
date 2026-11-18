@@ -28,7 +28,9 @@ of approximately 200 lines of code.
 
 ---
 
-## Installation
+## Standalone installation
+
+### System prerequisites
 
 Prerequisites: Git, Python 3.10 or later including dev headers, Pip and [venv](https://docs.python.org/3/library/venv.html) library, C compiler (for building [janus-swi](https://pypi.org/project/janus-swi/) library)
 
@@ -39,6 +41,8 @@ sudo apt-get install git python3 python3-dev python3-pip python3-venv build-esse
 
 Get [SWI-Prolog 10.0.2 or later](https://www.swi-prolog.org/).
 
+### Repository setup
+
 Install Omega using PeTTa `v1.0.4`, matching the version pinned in the Dockerfile:
 ```
 git clone --depth 1 --branch v1.0.4 https://github.com/trueagi-io/PeTTa
@@ -48,6 +52,8 @@ git clone https://github.com/singnet/Omega.git repos/Omega
 git clone https://github.com/patham9/petta_lib_chromadb.git repos/petta_lib_chromadb
 cp repos/Omega/run.metta ./
 ```
+
+### Python environment and dependencies
 
 Setup Python virtual environment (or use your own), and upgrade its pip. An older
 pip cannot install the CPU build of torch below and falls back to the GPU one:
@@ -68,13 +74,16 @@ Install Python dependencies — core's, and those of any plugin that declares it
 ./repos/Omega/scripts/install_dependencies.sh
 ```
 
-### Prepare standalone startup
+### Configuration
 
 Keep the virtual environment active and run these steps from the PeTTa root.
 
-The default `embeddingprovider: Local` uses `intfloat/e5-large-v2`. Omega loads
-this model in offline mode, so download it once before the first start, while
-connected to the internet:
+The model download below is required only for `embeddingprovider: Local` (the
+default). Skip it if you configure a cloud embedding provider such as OpenAI or
+ASICloud in `repos/Omega/config/config.yaml`.
+
+Local embeddings use `intfloat/e5-large-v2`. Omega loads this model in offline
+mode, so download it once before the first start, while connected to the internet:
 ```bash
 env -u HF_HUB_OFFLINE -u TRANSFORMERS_OFFLINE python3 - <<'PY'
 from sentence_transformers import SentenceTransformer
@@ -84,26 +93,28 @@ PY
 ```
 Download and run Omega as the same OS user, with the same cache settings
 (`HF_HOME` and `SENTENCE_TRANSFORMERS_HOME`, if set). Otherwise, startup may not
-find the downloaded model. This step is only needed for Local embeddings.
+find the downloaded model.
 
 Configure `securityPolicyPath` in `repos/Omega/config/config.yaml` before
 starting. The default `profile/policy.yaml` contains Docker paths such as
 `/PeTTa` and `/memory-transfer`; it does not match a standalone installation.
 
-For an isolated development or test environment, set:
-```yaml
-securityPolicyPath: ""
-```
-This disables Omega's filesystem restrictions: the agent can access files with
-the permissions of the OS user running it.
-
-To keep filesystem restrictions enabled, copy `repos/Omega/profile/policy.yaml`
-to a separate file and adapt its `read_only` and `read_write` paths to your host.
+The recommended setup keeps filesystem restrictions enabled: copy
+`repos/Omega/profile/policy.yaml` to a separate file and adapt its `read_only`
+and `read_write` paths to your host.
 Allow reads of the PeTTa checkout, Python environment and model cache, and writes
 to the configured memory directory, ChromaDB directory and any required cache
 or temporary directories. Replace or remove the Docker-specific paths and make
 sure all required paths exist. Set `securityPolicyPath` to the absolute path of
 your adapted file. See the [filesystem policy reference](./docs/reference-tools-io.md#get-io-policy).
+
+As an alternative, only in an isolated development or test environment with no
+sensitive host files or credentials exposed, set:
+```yaml
+securityPolicyPath: ""
+```
+This disables Omega's filesystem restrictions: the agent can access files with
+the permissions of the OS user running it.
 
 Continue with [Usage](#usage) to select a provider and start the agent.
 
@@ -193,7 +204,7 @@ Before running the system you need to choose your LLM API provider and export th
 | `OpenAIAPI` | `OPENAIAPI_API_KEY` |  Use OpenAI API with any endpoint and model. API endpoint and model are set via `openaiapi_url` and `model` command line parameters. |
 | `OpenRouter` | `OPENROUTER_API_KEY` |  GLM model via OpenRouter inference endpoint. |
 
-For standalone mode, complete [Prepare standalone startup](#prepare-standalone-startup)
+For standalone mode, complete [Configuration](#configuration)
 first, activate the same virtual environment, and run the following command from
 the PeTTa root:
 ```
