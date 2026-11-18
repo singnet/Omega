@@ -38,8 +38,10 @@ def test_create_empty_file_telegram_mock(llm, tg):
         )
         llm.set_answer(
             prompt,
-            f'(shell "mkdir -p {TARGET_DIR}") '
-            f'(write-file "{TARGET_FILE}" "")',
+            [
+                ("shell", { "cmd": f"mkdir -p {TARGET_DIR}" }),
+                ("write-file", { "filename": f"{TARGET_FILE}", "content": "" }),
+            ],
         )
         tg_send_prompt(tg, prompt)
         c.ok("telegram", f"run-id={c.run_id}")

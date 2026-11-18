@@ -77,7 +77,7 @@ If PLN returns empty, reformulate as NAL or try a different premise shape. See r
 
 ## Invocation
 
-Through the `(metta ...)` skill. Variables use `$1`, `$2`, …
+Through the `(metta ...)` tool. Variables use `$1`, `$2`, …
 
 ### Modus Ponens example
 

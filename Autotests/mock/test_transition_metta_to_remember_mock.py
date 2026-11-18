@@ -57,16 +57,20 @@ def test_transition_metta_to_remember_mock(llm, comm):
             f"memory tagged '{conclusion_marker}'.",
         )
         metta_call = (
-            '(metta "(|- ((--> sam friend) (stv 1.0 0.9)) '
-            '((--> garfield animal) (stv 1.0 0.9)))")'
+            "(|- ((--> sam friend) (stv 1.0 0.9)) "
+            "((--> garfield animal) (stv 1.0 0.9)))"
         )
         remember_call = (
-            f'(remember "{conclusion_marker}: Sam is friend of an animal '
-            '(derived via NAL inheritance).")'
+            f"{conclusion_marker}: Sam is friend of an animal "
+            "(derived via NAL inheritance)."
         )
         llm.set_answer(
             prompt,
-            f'{metta_call} {remember_call} (send "Reasoned and remembered.")',
+            [
+                ("metta", { "sexpression": metta_call }),
+                ("remember", { "content": remember_call }),
+                ("send", { "content": "Reasoned and remembered." })
+            ]
         )
         if not comm.send_message(prompt):
             c.fail("comm", "could not deliver prompt within 60s")

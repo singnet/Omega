@@ -108,7 +108,7 @@ def test_git_push_to_remote_telegram_mock(llm, tg):
             f"git commit -m 'qa run {c.run_id}' && "
             f"git push -u origin {branch}"
         )
-        llm.set_answer(prompt, f'(shell "{chain}")')
+        llm.set_answer(prompt, [("shell", { "cmd": f"{chain}" })])
         tg_send_prompt(tg, prompt)
         c.ok("telegram", f"run-id={c.run_id}")
 

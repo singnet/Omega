@@ -1,6 +1,5 @@
 import os
-import openai
-from typing import Optional, Dict, Any
+from typing import Any
 import lib_llm_ext as llm
 import providers
 from src.logger import get_logger
@@ -22,8 +21,8 @@ class OpenRouterProvider(providers.LLMProvider):
     def stop(self) -> None:
         self.delegate.stop()
 
-    def chat(self, prompt: str, max_tokens: int = 6000, reasoning_mode: str = "medium") -> str:
-        return self.delegate.chat(prompt, max_tokens, reasoning_mode)
+    def chat(self, args: providers.LLMRequest) -> providers.LLMResponse:
+        return self.delegate.chat(args)
 
 def loadOmegaPlugin():
     providers.registerLLMProvider("OpenRouter", OpenRouterProvider())
@@ -31,29 +30,15 @@ def loadOmegaPlugin():
 class OpenRouterProviderImpl(llm.AIProvider):
     """OpenRouter provider with reasoning mode enabled (reasoning tokens excluded from the response)."""
 
-    def _create_client(self) -> Optional[openai.OpenAI]:
-        """Create OpenRouter client from environment."""
-        proxy_url = config_get_by_key("GATEWAY_URL")
-        if proxy_url:
-            base_url = f"{proxy_url.rstrip('/')}/openrouter/"
-            logger.info(f"[OpenRouterProviderImpl._create_client]: Connecting via proxy: {base_url}")
-            return openai.OpenAI(
-                    api_key="proxy",
-                    base_url=base_url,
-                    )
-        if self._var_name in os.environ:
-            return openai.OpenAI(api_key=os.environ.get(self._var_name), base_url=self._base_url)
-
-        return None
-
-    def _openrouter_extra_body(self, content: str, reasoning: str) -> Dict[str, Any]:
+    def _openrouter_extra_body(self, request: providers.LLMRequest) -> dict[str, Any]:
         is_anthropic = self._model_name.lower().startswith("anthropic/")
-        sysmsg, _ = llm._split_system_user(content)
+        sysmsg = request.messages[0].content
+        reasoning = request.reasoning_mode
         # For models that accept only a reasoning token budget (e.g. Anthropic),
         # OpenRouter derives it from the effort level and max_tokens itself.
         body = {
             "reasoning": {
-                "enabled": True if reasoning and str(reasoning).lower() != "none" else False,
+                "enabled": bool(reasoning and str(reasoning).lower() != "none"),
                 "effort": reasoning,
                 "exclude": True,
             }
@@ -77,17 +62,10 @@ class OpenRouterProviderImpl(llm.AIProvider):
 
         return body
 
-
-    def chat(self, content: str, max_tokens: int = 6000, reasoning: str = "medium", **kwargs) -> str:
-        extra_body = llm._merge_dicts(
-            self._openrouter_extra_body(content, reasoning),
-            kwargs.pop("extra_body", None),
+    def convert_request(self, request: providers.LLMRequest) -> dict[str, Any]:
+        result = super().convert_request(request)
+        result['extra_body'] = llm._merge_dicts(
+            self._openrouter_extra_body(request),
+            result.pop("extra_body", None),
         )
-
-        return super().chat(
-            content=content,
-            max_tokens=max_tokens,
-            reasoning=reasoning,
-            extra_body=extra_body,
-            **kwargs,
-        )
+        return result

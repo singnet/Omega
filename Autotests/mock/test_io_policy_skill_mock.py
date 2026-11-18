@@ -13,6 +13,29 @@ from helpers import Checker, dexec, make_prompt, wait_for_skill_call
 
 JSON_POLICY_OUTPUT_PATH = "/tmp/policy_out.json"
 YAML_POLICY_INPUT_PATH = "/PeTTa/repos/Omega/profile/policy.yaml"
+EXPECTED_READ_ONLY = [
+    "/PeTTa",
+    "/bin",
+    "/dev/urandom",
+    "/etc",
+    "/lib",
+    "/opt",
+    "/proc",
+    "/sys/devices/system",
+    "/usr",
+    "/var/log",
+]
+EXPECTED_READ_WRITE = [
+    "/PeTTa/repos/Omega/memory",
+    "/dev/null",
+    "/dev/shm",
+    "/memory-transfer",
+    "/opt/huggingface",
+    "/opt/sentence_transformers",
+    "/tmp",
+    "/var/tmp",
+]
+GLOB_CHARACTERS = "*?["
 
 
 def test_get_io_policy_mock(llm, comm):
@@ -27,10 +50,10 @@ def test_get_io_policy_mock(llm, comm):
         prompt = make_prompt(c.run_id, "Check your IO policy.")
         llm.set_answer(
             request=prompt,
-            response=(
-                f'(send "Checking my io policy {c.run_id}")\n'
-                '(get-io-policy)'
-            )
+            response=([
+                ("send", { "content": f"Checking my io policy {c.run_id}" }),
+                ("get-io-policy", {})
+            ])
         )
         if not comm.send_message(prompt):
             c.fail("comm", "could not deliver prompt within timeout")
@@ -51,10 +74,10 @@ def test_get_io_policy_mock(llm, comm):
         prompt = make_prompt(c.run_id, "Retrieve the current filesystem access policy.")
         llm.set_answer(
             request=prompt,
-            response=(
-                f'(metta (write-file "{JSON_POLICY_OUTPUT_PATH}" (get-io-policy)))\n'
-                f'(send "Policy checked for {c.run_id}")'
-            )
+            response=([
+                ("metta", { "sexpression":  f'(write-file "{JSON_POLICY_OUTPUT_PATH}" (get-io-policy))' }),
+                ("send", { "content": f"Policy checked for {c.run_id}" })
+            ])
         )
         if not comm.send_message(prompt):
             c.fail("comm", "could not deliver prompt within timeout")
@@ -83,49 +106,48 @@ def test_get_io_policy_mock(llm, comm):
         except yaml.YAMLError as e:
             c.fail("yaml_parse", f"Failed to parse policy.yaml: {e}")
         c.ok("yaml_parse", "policy.yaml successfully parsed")
-        
-        c.step("compare get-io-policy skill result with actual policy.yaml permissions")
+
+        c.step("compare policy.yaml with the pinned default policy")
         fs_policy_yaml = parsed_yaml.get("filesystem_policy", {})
-        yaml_read_only = fs_policy_yaml.get("read_only", [])
-        yaml_read_write = fs_policy_yaml.get("read_write", [])
-        json_read_only = policy_json.get("read_only", [])
-        json_read_write = policy_json.get("read_write", [])
-        missing_read_only_paths = set(yaml_read_only) - set(json_read_only)
-        extra_read_only_paths = set(json_read_only) - set(yaml_read_only)
-        missing_read_write_paths = set(yaml_read_write) - set(json_read_write)
-        extra_read_write_paths = set(json_read_write) - set(yaml_read_write)
-        if missing_read_only_paths:
-            c.fail(
-                name="compare_read_only",
-                detail=(
-                    "Read-only permissions mismatch! Missing from JSON: "
-                    f"{missing_read_only_paths}"
+        for category, expected in (("read_only", EXPECTED_READ_ONLY),
+                                   ("read_write", EXPECTED_READ_WRITE)):
+            actual = fs_policy_yaml.get(category, [])
+            if sorted(actual) != sorted(expected):
+                c.fail(
+                    name=f"pinned_{category}",
+                    detail=(
+                        f"Default policy changed! policy.yaml {category} is {sorted(actual)}, "
+                        f"the test expects {sorted(expected)}. Update the test if the "
+                        "change is intended."
+                    )
                 )
-            )
-        if extra_read_only_paths:
-            c.fail(
-                name="compare_read_only",
-                detail=(
-                    "Read-only permissions mismatch! Extra in JSON: "
-                    f"{extra_read_only_paths}"
+        c.ok("pinned", "policy.yaml matches the pinned default policy")
+
+        c.step("compare get-io-policy skill result with the pinned default policy")
+        for category, expected in (("read_only", EXPECTED_READ_ONLY),
+                                   ("read_write", EXPECTED_READ_WRITE)):
+            reported = policy_json.get(category, [])
+            missing_paths = set(expected) - set(reported)
+            extra_paths = set(reported) - set(expected)
+            if missing_paths:
+                c.fail(
+                    name=f"compare_{category}",
+                    detail=f"{category} permissions mismatch! Missing from JSON: {missing_paths}"
                 )
-            )
-        if missing_read_write_paths:
-            c.fail(
-                name="compare_read_write",
-                detail=(
-                    "Read-write permissions mismatch! Missing from JSON: "
-                    f"{missing_read_write_paths}"
+            if extra_paths:
+                c.fail(
+                    name=f"compare_{category}",
+                    detail=f"{category} permissions mismatch! Extra in JSON: {extra_paths}"
                 )
-            )
-        if extra_read_write_paths:
-            c.fail(
-                name="compare_read_write",
-                detail=(
-                    "Read-write permissions mismatch! Extra in JSON: "
-                    f"{extra_read_write_paths}"
+            unresolved = [p for p in reported if any(ch in p for ch in GLOB_CHARACTERS)]
+            if unresolved:
+                c.fail(
+                    name=f"resolved_{category}",
+                    detail=(
+                        f"{category} contains unresolved glob patterns: {unresolved}. "
+                        "The skill must report the paths the policy resolves to."
+                    )
                 )
-            )
-        c.ok("compare", "get-io-policy skill result exactly matches the actual policy.yaml.")
+        c.ok("compare", "get-io-policy skill result exactly matches the pinned default policy.")
         
         c.done()

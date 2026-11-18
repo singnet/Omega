@@ -46,7 +46,7 @@ def test_memory_episode_slack_mock(llm, sl):
         )
         llm.set_answer(
             prompt1,
-            '(remember "Barney the dog lost his first baby tooth at the vet today.")',
+            [("remember", { "content": "Barney the dog lost his first baby tooth at the vet today." })],
         )
         sl_send_prompt(sl, prompt1)
         c.ok("irc-1", f"run-id={fact_marker}")
@@ -88,7 +88,10 @@ def test_memory_episode_slack_mock(llm, sl):
         )
         llm.set_answer(
             prompt2,
-            f'(query "Barney tooth") (send "{recall_reply}")',
+            [
+                ("query", { "content": "Barney tooth" }),
+                ("send", { "content": f"{recall_reply}" }),
+            ],
         )
         sl_send_prompt(sl, prompt2)
         c.ok("irc-2", f"run-id={recall_marker}")
