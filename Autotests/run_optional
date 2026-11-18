@@ -4,3 +4,4 @@ mock/test_memory_episode_mock.py
 mock/test_run_create_dirs_mock.py
 mock/test_skill_episodes_mock.py
 mock/test_skill_query_mock.py
+unit/test_launcher_memory_import_append.py

@@ -185,6 +185,8 @@ class LLMResponse:
     def __init__(self):
         self.calls: List[LLMToolCall] = []
         self.error = None
+        self.output_limit_reached = False
+        self.limit_notice = ""
 
     def add_tool_call(self, call: LLMToolCall):
         self.calls.append(call)
@@ -253,7 +255,11 @@ def llmProviderChat(request):
         return LLMResponse()
 
 def _validate_response(request: LLMRequest, response: LLMResponse) -> LLMResponse:
-    if not response.calls and not response.is_error():
+    if (
+        not response.calls
+        and not response.is_error()
+        and not response.output_limit_reached
+    ):
         return response.with_error("List of tool calls is empty")
 
     for call in response.calls:
