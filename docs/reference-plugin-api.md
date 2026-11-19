@@ -17,18 +17,18 @@ To register additional plugins, set `customPluginsConfigPath` in
 [config/config.yaml](/config/config.yaml) to the path of a separate YAML file.
 With the default value `""`, Omega loads only the core plugins.
 
-For instance, to load `Omega/plugins/wordcount/wordcount.metta`, set:
+For instance, to load `plugins/wordcount/wordcount.metta`, set:
 
 ```yaml
-customPluginsConfigPath: "Omega/config/plugins-custom.yaml"
+customPluginsConfigPath: "repos/Omega/config/plugins-custom.yaml"
 ```
 
-Then add this entry to `Omega/config/plugins-custom.yaml`:
+Then add this entry to `repos/Omega/config/plugins-custom.yaml`:
 
 ```yaml
 - name: wordcount
   loader: metta
-  location: "Omega/plugins/wordcount"
+  location: "{REPO}/plugins/wordcount"
 ```
 
 Omega appends the custom entries to the core list and calls each plugin's
@@ -141,6 +141,14 @@ When running Omega in Docker, make the custom YAML file and plugin code
 available inside the container, either in the image or through a volume or
 bind mount. Use container paths for both `customPluginsConfigPath` and
 `location`. Relative paths resolve from the agent's working directory.
+The active security policy must allow the agent to read both the YAML file
+and the plugin code at their container paths. The
+[default policy](/profile/policy.yaml) allows reads under `/PeTTa`.
+
+With `docker run`, pass the setting after the image name, for example
+`customPluginsConfigPath=/PeTTa/repos/Omega/config/plugins-custom.yaml`.
+With `scripts/omega start`, set `customPluginsConfigPath` in the image's
+`config/config.yaml` because the launcher has no option for this setting.
 
 ## Communication channel integration
 
