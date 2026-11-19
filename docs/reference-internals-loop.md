@@ -16,7 +16,7 @@ Initializes state:
 
 - `(initLoop)` — configures all loop parameters (see [reference-configuration.md](./reference-configuration.md)).
 - `(initMemory)` — configures memory parameters and loads the embedding model.
-- `(initPlugins)` — loads the plugins listed in `config/plugins.yaml`. Their `loadOmegaPlugin` functions register channels and LLM providers and add plugin tools with `add-skill`.
+- `(initPlugins)` — loads the plugins listed in `config/plugins.yaml` and, when configured, the additional plugins listed in the file specified by `customPluginsConfigPath`. Their `loadOmegaPlugin` functions register channels and LLM providers and add plugin tools with `add-skill`.
 - `(initChannels)` — opens the active communication channel.
 - `(llmProviderStart (provider))` — starts the LLM provider named by `provider`.
 

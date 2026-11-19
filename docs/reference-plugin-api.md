@@ -12,13 +12,28 @@ implement new agent's features. The plugin API provides functions to:
 - extend LLM prompt by adding new information or removing it
 - etc
 
-In order to be loaded the plugin should be included into the
-[config/plugins.yaml](/config/plugins.yaml) file. The agent loads each module
-listed in this file on start and calls `loadOmegaPlugin` entry function of
-each loaded module. All communication channels and LLM integrations of
-Omega are implemented using this API. The full list of plugins available in
-the Omega repository can be found in the
-[config/plugins.yaml](/config/plugins.yaml) file.
+Omega reads its core plugin list from [config/plugins.yaml](/config/plugins.yaml).
+To register additional plugins, set `customPluginsConfigPath` in
+[config/config.yaml](/config/config.yaml) to the path of a separate YAML file.
+With the default value `""`, Omega loads only the core plugins.
+
+For instance, to load `plugins/wordcount/wordcount.metta`, set:
+
+```yaml
+customPluginsConfigPath: "repos/Omega/config/plugins-custom.yaml"
+```
+
+Then add this entry to `repos/Omega/config/plugins-custom.yaml`:
+
+```yaml
+- name: wordcount
+  loader: metta
+  location: "{REPO}/plugins/wordcount"
+```
+
+Omega appends the custom entries to the core list and calls each plugin's
+`loadOmegaPlugin` entry point at startup. Plugin names must be unique across
+both files. Omega rejects duplicates even if the names differ only in case.
 
 Plugin can be implemented as a MeTTa module, a single Python file or a Python
 module. The plugin record has the following fields:
@@ -60,8 +75,8 @@ execution succeeds, the module stays imported even if its entry point fails;
 callbacks or other side effects already performed by that entry point are not
 automatically undone.
 
-The built-in OpenAI plugin file is now `providers/omega_openai.py`. If you keep
-a custom `plugins.yaml`, change its Python plugin entry from `name: openai` to
+The built-in OpenAI plugin file is now `providers/omega_openai.py`. If you maintain
+a full replacement for `config/plugins.yaml`, change its Python plugin entry from `name: openai` to
 `name: omega_openai`, retaining `location: "{REPO}/providers"`. The provider
 identifier remains `OpenAI`, so `provider=OpenAI` and API key configuration do
 not change. `import openai` continues to refer to the OpenAI SDK.
@@ -122,15 +137,18 @@ APIs are available only as the Python modules and others only as the MeTTa
 modules. Partially it is because writing some kinds of plugins is simpler using
 Python.
 
-Another issue is that it is difficult to run plugins inside Docker container.
-There are two ways of doing this:
-  1. Build fresh image including plugin's code and modified
-     `config/plugins.yaml` configuration file.
-  2. Mount the plugin's code and modified `config/plugins.yaml` configuration
-     file into the container using custom `docker run` command.
+When running Omega in Docker, make the custom YAML file and plugin code
+available inside the container, either in the image or through a volume or
+bind mount. Use container paths for both `customPluginsConfigPath` and
+`location`. Relative paths resolve from the agent's working directory.
+The active security policy must allow the agent to read both the YAML file
+and the plugin code at their container paths. The
+[default policy](/profile/policy.yaml) allows reads under `/PeTTa`.
 
-This document doesn't describe using Docker in details it is a subject to the
-future Omega improvements.
+With `docker run`, pass the setting after the image name, for example
+`customPluginsConfigPath=/PeTTa/repos/Omega/config/plugins-custom.yaml`.
+With `scripts/omega start`, set `customPluginsConfigPath` in the image's
+`config/config.yaml` because the launcher has no option for this setting.
 
 ## Communication channel integration
 
