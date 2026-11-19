@@ -101,51 +101,19 @@
      (remove-prompt-extension workflow_active_instructions)
      (add-prompt-extension workflow_active_instructions $content)))
 
-;;========================== Functions to load workflow description =======================
-;; returns workflow name and its description
-(= (workflow-list-available)
-   (let*  ( ($base (instructionsDir))
-            ($dirs (directory-dirs $base)))
-        (collect-description $dirs $base)))
+;;========================== Functions to list available workflows =======================
+;; Returns the prompt text listing the workflows in $base, built from the
+;; frontmatter of their SKILL.md files, or an empty string when there are none.
+(= (workflow-catalog $base)
+   (py-call (skill_catalog.catalog_prompt $base)))
 
 ;; re-reads available workflows into the prompt
 (= (workflow-refresh-list)
-   (let $text (join (newline) (cons-atom "Available workflows: " (workflow-list-available)))
+   (let $text (workflow-catalog (instructionsDir))
      (progn
        (remove-prompt-extension workflows-available)
-       (add-prompt-extension workflows-available $text))))
-
-;; collects workflow description from description.txt
-(= (collect-description () $base) ())
-(= (collect-description (cons $first $tail) $base)
-   (let*  (($path  (joinPath ($base $first "description.txt")))
-           ($rest (collect-description $tail $base)))
-     (if (exists-file $path)
-       (cons-atom (strings-concat ($first ": " (read-file $path))) $rest)
-       $rest)))
-
-( = (directory-files $dir)
-   (progn (translatePredicate (directory_files $dir $files))
-          $files)
-)
-
-( = (directory-dirs $dir)
-  (let $f (directory-files $dir)
-       (filter-dirs  $f $dir)
-   )
-)
-
-(= (filter-dirs () $dir) ())
-(= (filter-dirs (cons $head $tail) $dir)
-   (progn (translatePredicate (atom_string $head $first))
-          (let* (
-                 ($fullpath (joinPath ($dir $first)))
-                 ($rest     (filter-dirs $tail $dir)))
-            (if (or (== $first ".") (== $first ".."))
-              $rest
-              (if (exists-directory $fullpath)
-                (cons-atom $first $rest)
-                $rest))
-            )
-          )
-   )
+       (if (== (string_length $text) 0)
+         (progn
+           (log WARNING "workflow-plugin" (strings-concat ("No workflows found in " (instructionsDir))))
+           True)
+         (add-prompt-extension workflows-available $text)))))
