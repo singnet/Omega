@@ -5,6 +5,7 @@
 !(import! &self ./src/log)
 !(import! &self ./src/skills)
 !(import! &self ./plugins/workflow/workflow)
+!(import! &self ../plugins/workflow/skill_catalog.py)
 
 (= (pluginWorkflowInstructionsDir) (joinPath ((projectRootDirectory) "plugins" "workflow" "instructions")))
 
@@ -83,3 +84,73 @@
 !(test (let $res (nop)
          (= (cons Error (cons $_ $error)) $res))
        False)
+
+;;========================== List of available workflows =======================
+; tests/res/workflows holds one workflow per frontmatter case
+
+(= (fixture-catalog) (workflow-catalog "./tests/res/workflows"))
+
+(= (catalog-entry $name $description)
+   (strings-concat ("<skill><name>" $name "</name><description>" $description "</description></skill>")))
+
+(= (workflows-available-text)
+   (match &self (= (prompt-extension workflows-available) $text) $text))
+
+; valid frontmatter is listed with its description
+!(test (contains-text (fixture-catalog) (catalog-entry "valid-single" "Single line description. Use when testing."))
+       True)
+
+; a description over several lines is listed in full, on one line
+!(test (contains-text (fixture-catalog) (catalog-entry "valid-folded" "Folded description over two lines."))
+       True)
+
+; an unquoted ": " inside a value is quoted and parsed again
+!(test (contains-text (fixture-catalog) (catalog-entry "colon-description" "Use when: the user asks for it"))
+       True)
+
+; the description is escaped for the prompt markup
+!(test (contains-text (fixture-catalog) (catalog-entry "escaped-description" "Compare a &lt; b &amp; c."))
+       True)
+
+; a name that differs from the directory is listed under the directory name
+!(test (contains-text (fixture-catalog) (catalog-entry "name-mismatch" "Listed under its directory name."))
+       True)
+
+; workflows without frontmatter, with broken YAML or without a description are
+; left out, and description.txt is not read
+!(test (contains-text (fixture-catalog) "<name>no-frontmatter</name>") False)
+!(test (contains-text (fixture-catalog) "<name>broken-yaml</name>") False)
+!(test (contains-text (fixture-catalog) "<name>empty-description</name>") False)
+!(test (contains-text (fixture-catalog) "<name>legacy-description</name>") False)
+!(test (contains-text (fixture-catalog) "Old description that is no longer read") False)
+
+; a directory without SKILL.md is not a workflow
+!(test (contains-text (fixture-catalog) "<name>not-a-skill</name>") False)
+
+; the list tells the agent how to load a workflow
+!(test (contains-text (fixture-catalog) "call workflow-load-instructions") True)
+
+; no workflows give no list at all
+!(test (string_length (workflow-catalog "./tests/res/workflows-none")) 0)
+
+; refresh puts the shipped workflows into the prompt with their frontmatter
+; descriptions
+!(test (progn
+         (workflow-refresh-list)
+         (let $text (workflows-available-text)
+           (contains-text $text "<skill><name>research-workflow</name><description>End-to-end research workflow.")))
+       True)
+
+!(test (progn
+         (workflow-refresh-list)
+         (let $text (workflows-available-text)
+           (contains-text $text "<skill><name>test-workflow</name><description>Demonstrates the workflow plugin")))
+       True)
+
+; repeated refreshes keep a single list in the prompt
+!(test (progn
+         (workflow-refresh-list)
+         (workflow-refresh-list)
+         (let $all (collapse (workflows-available-text))
+           (and (!= $all ()) (== (cdr-atom $all) ()))))
+       True)

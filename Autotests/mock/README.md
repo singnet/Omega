@@ -65,7 +65,7 @@ source venv/bin/activate
 pytest -s -v mock/test_*_mock.py
 ```
 
-The `LlmMockController`, `CommMockServer`, and the OpenClaw Gateway stub are provided by session-scoped fixtures in `mock/conftest.py`, so all three are started once per pytest session. Expected output: `54 passed`, minus the ones whose optional variables are unset - `test_git_push_to_remote_mock` skips without `OMEGA_GIT_TOKEN`, and the eight OpenClaw tests skip without `OMEGA_OPENCLAW_TOKEN` (see "OpenClaw plugin" below).
+The `LlmMockController`, `CommMockServer`, and the OpenClaw Gateway stub are provided by session-scoped fixtures in `mock/conftest.py`, so all three are started once per pytest session. Expected output: `55 passed`, minus the ones whose optional variables are unset - `test_git_push_to_remote_mock` skips without `OMEGA_GIT_TOKEN`, and the eight OpenClaw tests skip without `OMEGA_OPENCLAW_TOKEN` (see "OpenClaw plugin" below).
 
 ## 5a. OpenClaw plugin (`test_openclaw_delegate_mock.py`)
 
@@ -108,7 +108,7 @@ This removes the `omega` container and the `omega-memory` volume created by the 
 
 # Tests description
 
-All 54 tests follow the same pattern: the test registers a fixed mock-LLM answer for the prompt via `llm.set_answer(prompt, response)`, delivers the prompt to the agent over the test channel via `comm.send_message(prompt)`, then verifies the resulting tool calls and side effects (filesystem, `history.metta`, ChromaDB, docker logs). The OpenClaw group additionally drives the stub Gateway, whose replies are real rather than scripted. Because the LLM is deterministic, no `try_with_clarification` retries are needed; every test either passes on the first attempt or fails outright.
+All 55 tests follow the same pattern: the test registers a fixed mock-LLM answer for the prompt via `llm.set_answer(prompt, response)`, delivers the prompt to the agent over the test channel via `comm.send_message(prompt)`, then verifies the resulting tool calls and side effects (filesystem, `history.metta`, ChromaDB, docker logs). The OpenClaw group additionally drives the stub Gateway, whose replies are real rather than scripted. Because the LLM is deterministic, no `try_with_clarification` retries are needed; every test either passes on the first attempt or fails outright.
 
 ## Creating files
 
@@ -452,3 +452,10 @@ Loading a workflow again must not repeat its tools in the request to the LLM. An
 
 - Mock answers: `send` for an ordinary turn, then `nop` for the idle message. The test removes the idle answer with `clear_answer`, so later tests get no answer on idle turns. Then it answers one more ordinary turn with `send`, which restarts the idle iteration count, so idle requests follow it again.
 - Checks: `nop` is among the tools of the request that carries its result; the result is `SUCCESS` without an error; nothing reaches the channel while the agent idles; after `clear_answer` the idle requests get no answer again.
+
+### 44. test_workflow_plugin_mock.py::test_workflow_list_in_prompt
+
+The workflow plugin lists the available workflows in the prompt with the `description` from the frontmatter of each `SKILL.md`, so the agent knows which workflow to load.
+
+- Mock answers: `send` for one ordinary turn.
+- Checks: the `REQUEST:` line that carries the turn holds an `<available_skills>` list with an entry for `test-workflow` and one for `research-workflow`, each starting with its frontmatter description.
