@@ -110,6 +110,8 @@
                                        ($_ (log INFO "loop" (REQUEST: (py-str ($request)))))
                                        ($response (llmProviderChat $request))
                                        ($_ (log INFO "loop" (RESPONSE: (py-str ($response)))))
+                                       ($notice (llmLimitNotice $response))
+                                       ($_ (if (> (string_length $notice) 0) (notify $notice) _))
                                        ($respstr (py-call (providers.llmResponseToSExpr $response)))
                                        ($resp (catch (sread $respstr)))
                                        ($_ (log INFO "loop" (RESPONSE: $resp)))
@@ -117,9 +119,11 @@
                                        ($_ (messagesClear))
                                        ($sexpr (if (HandleError (quote $resp) $error)
                                                  $error
-                                                 (progn (messagesAppend (llmToolCallMessage role "assistant"
-                                                                                           calls (llmResponseCalls $response)
-                                                                                           content "[TOOL CALL]"))
+                                                 (progn (if (llmResponseIsEmpty $response)
+                                                      ()
+                                                      (messagesAppend (llmToolCallMessage role "assistant"
+                                                                                          calls (llmResponseCalls $response)
+                                                                                          content "[TOOL CALL]")))
                                                    (collapse
                                                          (let ($callid $s) (superpose $resp)
                                                            (let $result
