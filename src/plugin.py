@@ -63,14 +63,18 @@ def parsePluginConfig(config_path):
                 f"'name' field is not a string, file: {config_path}, index: {i}"
             )
         if name in _plugins or name.casefold() in name_set:
-            _error("parsePluginConfig", f"name '{name}' is not unique")
+            _error(
+                "parsePluginConfig",
+                f"name '{name}' is not unique, file: {config_path}, index: {i}"
+            )
         name_set.add(name.casefold())
 
         loader = p.get("loader")
         if not loader in _LOADERS:
             _error(
                 "parsePluginConfig",
-                f"incorrect loader type '{loader}', only {_LOADERS} are supported"
+                f"plugin '{name}' requires a 'loader' from {_LOADERS}, "
+                f"got {loader!r}, file: {config_path}, index: {i}"
             )
 
         location = p.get("location")
