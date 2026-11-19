@@ -1,7 +1,9 @@
 ---
 name: research-workflow
-description: End-to-end research workflow for Omega. Iterative planning,
-  data acquisition, experiments, and write-up.
+description: End-to-end research workflow. Defines the problem, researches it
+  online, plans, acquires data, runs experiments and writes up the results. Use
+  when the user asks to start a research task, investigate, study or analyze a
+  topic, or build a machine learning model.
 ---
 # Research Workflow (Omega)
 This workflow guides you through problem definition, online research,
