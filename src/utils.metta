@@ -8,6 +8,7 @@
 !(import_prolog_function sread)
 !(import_prolog_function string_concat)
 !(import_prolog_function make_directory)
+!(import_prolog_function make_directory_path)
 
 (= (sleep $t)
    (progn (translatePredicate (sleep $t))
@@ -27,6 +28,10 @@
 
 (= (make-directory $path)
   (let $rc (catch (((translatePredicate (make_directory $path)))))
+    (return-on-error $rc True)))
+
+(= (make-directory-path $path)
+  (let $rc (catch (((translatePredicate (make_directory_path $path)))))
     (return-on-error $rc True)))
 
 (= (string-replace $str $a $b)

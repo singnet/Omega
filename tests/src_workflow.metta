@@ -6,7 +6,8 @@
 !(import! &self ./src/skills)
 !(import! &self ./plugins/workflow/workflow)
 
-(= (pluginWorkflowInstructionsDir) (joinPath ((projectRootDirectory) "plugins" "workflow" "instructions")))
+(= (pluginWorkflowCoreSkillsDir) (joinPath ((projectRootDirectory) "plugins" "workflow" "core-skills")))
+(= (pluginWorkflowCustomSkillsDir) (joinPath ((projectRootDirectory) "tests" "res" "no-custom-skills")))
 
 (= (send $msg) ())
 
@@ -20,20 +21,20 @@
     (expression-count-item (getSkills) (research-step "Mark research step done" (research_name step result next_action)))
     (expression-count-item (getSkills) (research-checkpoint "Pause for user approval" (researchname message)))
     (expression-count-item (getSkills) (research-complete "Finish research and unload workflow" (researchname)))
-    (expression-count-item (getSkills) (load-research-dynamic-instructions " Load a generated file into active context" (researchname_in_quotes filename_in_quotes)))
+    (expression-count-item (getSkills) (load-research-dynamic-skills " Load a generated file into active context" (researchname_in_quotes filename_in_quotes)))
     (expression-count-item (getSkills) (researchDir "Get research directory" ()))))
 
 !(test (progn
-         (collapse (workflow-load-instructions test-workflow))
+         (collapse (workflow-load-skills test-workflow))
          (count-test-skill))
        1)
 
-!(test (let $res (collapse (workflow-load-instructions test-workflow))
+!(test (let $res (collapse (workflow-load-skills test-workflow))
          (= (cons (cons Error (cons $_ $error)) ()) $res))
        True)
 
 !(test (progn
-         (collapse (workflow-load-instructions test-workflow))
+         (collapse (workflow-load-skills test-workflow))
          (count-test-skill))
        1)
 
@@ -43,37 +44,37 @@
        1)
 
 !(test (progn
-         (collapse (workflow-unload-instructions))
+         (collapse (workflow-unload-skills))
          (count-test-skill))
        0)
 
 !(test (progn
-         (collapse (workflow-load-instructions test-workflow))
+         (collapse (workflow-load-skills test-workflow))
          (count-test-skill))
        1)
 
 !(test (progn
-         (collapse (workflow-unload-instructions))
+         (collapse (workflow-unload-skills))
          (count-test-skill))
        0)
 
 !(test (progn
-         (collapse (workflow-load-instructions research-workflow))
+         (collapse (workflow-load-skills research-workflow))
          (count-research-skills))
        (1 1 1 1 1 1))
 
 !(test (progn
-         (collapse (workflow-unload-instructions))
+         (collapse (workflow-unload-skills))
          (count-research-skills))
        (0 0 0 0 0 0))
 
 !(test (progn
-         (collapse (workflow-load-instructions research-workflow))
+         (collapse (workflow-load-skills research-workflow))
          (count-research-skills))
        (1 1 1 1 1 1))
 
 !(test (progn
-         (collapse (workflow-unload-instructions))
+         (collapse (workflow-unload-skills))
          (count-research-skills))
        (0 0 0 0 0 0))
 

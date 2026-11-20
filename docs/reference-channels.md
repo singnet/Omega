@@ -79,7 +79,7 @@ Minimal JSON chat adapter over a WebSocket connection. Selected with `commchanne
 - `stop_websocket()` — stop the listener thread and close the socket.
 - Requires the `websockets` Python package.
 - When `WS_TOKEN` is set it is sent as an `Authorization: Bearer <token>` header. Unlike the IRC/Telegram/Slack adapters there is no one-time `auth <secret>` gate — trust is established by the endpoint URL and bearer token.
-- Supports immediate `/memory-export history|ltm|both` commands when memory export is enabled and `WS_TOKEN` is configured. The export handler uses a SHA-256-derived connection principal and never exposes the bearer token. Protect the endpoint with `wss://` and server-side access controls because WebSocket does not have the per-user ownership gate used by the other channels.
+- Supports immediate `/memory-export history|ltm|skills|all` commands when memory export is enabled and `WS_TOKEN` is configured. The export handler uses a SHA-256-derived connection principal and never exposes the bearer token. Protect the endpoint with `wss://` and server-side access controls because WebSocket does not have the per-user ownership gate used by the other channels.
 - Reconnects automatically with exponential backoff (1s → 30s, ±20% jitter) and is safe to start once at process startup.
 
 ### Frame protocol
