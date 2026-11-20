@@ -2,7 +2,8 @@ import os
 import re
 import glob
 import hashlib
-import chromadb
+import threading
+from pathlib import Path
 import openai
 from src.logger import get_logger
 from config import config_get_by_key
@@ -12,40 +13,42 @@ logger = get_logger(__name__)
 
 # --- Constants -----------------------------------------------------------
 
-COLLECTION_NAME = "memories"
 TOP_K = 5
 MIN_CHUNK_CHARS = 100
 MAX_CHUNK_CHARS = 6000
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-DB_PATH = os.environ.get(
-    "CHROMA_DB_PATH",
-    "/PeTTa/chroma_db" if os.path.isdir("/PeTTa/chroma_db") else
-    os.path.join(_PROJECT_ROOT, "..", "..","chroma_db")
-)
-
-# --- Lazy ChromaDB client ------------------------------------------------
-
-_client = None
-_collection = None
-
 
 def _get_collection():
-    global _client, _collection
-    if _collection is None:
-        os.makedirs(DB_PATH, exist_ok=True)
-        _client = chromadb.PersistentClient(path=DB_PATH)
-        _collection = _client.get_or_create_collection(
-            name=COLLECTION_NAME,
-            embedding_function=None,
-        )
-    return _collection
+    # Share the collection used by runtime remember/query.
+    import lib_chromadb
+
+    return lib_chromadb.COLLECTION
+
+
+def _configure_chroma_from_env():
+    """Apply the custom database path to the shared bridge before indexing."""
+    path = os.environ.get("CHROMA_DB_PATH")
+    if path is None:
+        return
+    import lib_chromadb
+
+    path = Path(path).resolve()
+    if Path(lib_chromadb.CLIENT.get_settings().persist_directory).resolve() == path:
+        return
+    import chromadb
+
+    client = chromadb.PersistentClient(path=str(path))
+    collection = client.get_or_create_collection(
+        name="memories", embedding_function=None
+    )
+    lib_chromadb.CLIENT, lib_chromadb.COLLECTION = client, collection
 
 
 # --- Helpers -------------------------------------------------------------
 
-HEADING_RE = re.compile(r"^(#{1,4})\s+(.+)$", re.MULTILINE)
+HEADING_RE = re.compile(r"^(#{1,4})[ \t]+(.+)$", re.MULTILINE)
 
 
 def _resolve_knowledge_dir():
@@ -64,14 +67,34 @@ def _decode_metta(s):
 
 # --- Chunking ------------------------------------------------------------
 
-def _chunk_markdown(text, filename):
-    """Heading-aware markdown chunking with breadcrumb tracking."""
-    matches = list(HEADING_RE.finditer(text))
-    if not matches:
-        return [{"text": text.strip(), "breadcrumb": filename}]
+def _cut_to_limit(text, breadcrumb):
+    """Split text that is still over MAX_CHUNK_CHARS."""
+    pieces = []
+    text = text.strip()
+    while len(text) > MAX_CHUNK_CHARS:
+        window = text[:MAX_CHUNK_CHARS]
+        # Cut mid-token only when there is no whitespace.
+        cut = max(window.rfind("\n"), window.rfind(" "))
+        if cut <= 0:
+            cut = MAX_CHUNK_CHARS
+        head = text[:cut].strip()
+        if head:
+            pieces.append({"text": head, "breadcrumb": breadcrumb})
+        text = text[cut:].strip()
+    if text:
+        pieces.append({"text": text, "breadcrumb": breadcrumb})
+    return pieces
 
+
+def _sections_from_headings(text, filename, matches):
+    """Split on headings and merge sections under MIN_CHUNK_CHARS."""
     sections = []
     stack = {}  # level -> heading text
+
+    # Text before the first heading belongs to no section, so add it as one.
+    preamble = text[:matches[0].start()].strip()
+    if preamble:
+        sections.append({"text": preamble, "breadcrumb": filename, "heading": ""})
 
     for i, m in enumerate(matches):
         level = len(m.group(1))
@@ -101,7 +124,9 @@ def _chunk_markdown(text, filename):
     carry_bc = ""
     for s in sections:
         combined = (carry + "\n\n" + s["text"]).strip() if carry else s["text"]
-        bc = carry_bc or s["breadcrumb"]
+        # Only the preamble is breadcrumbed by filename alone, and it has no
+        # heading to contribute, so the section it merges into keeps its own.
+        bc = s["breadcrumb"] if carry_bc == filename else (carry_bc or s["breadcrumb"])
         if len(combined) < MIN_CHUNK_CHARS and s is not sections[-1]:
             carry = combined
             carry_bc = bc
@@ -115,8 +140,22 @@ def _chunk_markdown(text, filename):
         else:
             merged.append({"text": carry, "breadcrumb": carry_bc})
 
-    # Split large sections on paragraph boundaries
+    return merged
+
+
+def _chunk_markdown(text, filename):
+    """Heading-aware markdown chunking with breadcrumb tracking."""
+    matches = list(HEADING_RE.finditer(text))
+    if matches:
+        merged = _sections_from_headings(text, filename, matches)
+    else:
+        # No headings: one section, still goes through the size pass below.
+        logger.warning(f"{filename}: no headings, chunking on paragraphs")
+        merged = [{"text": text.strip(), "breadcrumb": filename}]
+
+    # Split large sections on paragraph boundaries, then on characters if needed.
     final = []
+    hard_cuts = 0
     for s in merged:
         if len(s["text"]) <= MAX_CHUNK_CHARS:
             final.append(s)
@@ -124,13 +163,21 @@ def _chunk_markdown(text, filename):
         paragraphs = s["text"].split("\n\n")
         chunk_text = ""
         for p in paragraphs:
-            if chunk_text and len(chunk_text) + len(p) > MAX_CHUNK_CHARS:
-                final.append({"text": chunk_text.strip(), "breadcrumb": s["breadcrumb"]})
+            # Count the "\n\n" join, else the chunk overshoots and leaves a fragment.
+            if chunk_text and len(chunk_text) + 2 + len(p) > MAX_CHUNK_CHARS:
+                pieces = _cut_to_limit(chunk_text, s["breadcrumb"])
+                hard_cuts += len(pieces) - 1
+                final.extend(pieces)
                 chunk_text = p
             else:
                 chunk_text = (chunk_text + "\n\n" + p).strip()
         if chunk_text.strip():
-            final.append({"text": chunk_text.strip(), "breadcrumb": s["breadcrumb"]})
+            pieces = _cut_to_limit(chunk_text, s["breadcrumb"])
+            hard_cuts += len(pieces) - 1
+            final.extend(pieces)
+
+    if hard_cuts:
+        logger.warning(f"{filename}: {hard_cuts} chunk(s) cut to MAX_CHUNK_CHARS")
 
     return final
 
@@ -139,6 +186,16 @@ def _chunk_markdown(text, filename):
 
 def cloud_embed_batch(texts):
     """Embed a list of texts via an OpenAI-compatible API. Returns list of float vectors."""
+    if not texts:
+        return []
+
+    # 32 valid OpenAI inputs use at most 32 * 8192 = 262144 tokens,
+    # below the 300000-token request limit. Other providers can use a smaller cap.
+    batch_size = config_get_by_key("embeddingBatchSize", 32)
+    if not re.fullmatch(r"[1-9][0-9]*", str(batch_size).strip()):
+        raise ValueError("embeddingBatchSize must be a positive integer")
+    batch_size = int(batch_size)
+
     provider = str(config_get_by_key("embeddingprovider", "OpenAI"))
     model = embedding_model(provider, config_get_by_key("embeddingModel", ""))
     proxy_url = config_get_by_key("GATEWAY_URL")
@@ -146,12 +203,17 @@ def cloud_embed_batch(texts):
         client = openai.OpenAI(base_url=f"{proxy_url.rstrip('/')}/{provider.lower()}/", api_key="unused")
     else:
         client = openai.OpenAI()
+    embeddings = []
     try:
-        resp = client.embeddings.create(model=model, input=texts)
+        for start in range(0, len(texts), batch_size):
+            resp = client.embeddings.create(
+                model=model, input=texts[start:start + batch_size]
+            )
+            embeddings.extend(item.embedding for item in resp.data)
     except Exception as e:
         logger.error(f"Embedding request failed: provider={provider} model={model}: {e}")
         raise RuntimeError(f"Embedding request failed: {e}") from e
-    return [item.embedding for item in resp.data]
+    return embeddings
 
 
 def cloud_embed(text):
@@ -199,10 +261,10 @@ def get_existing_LTM_embedding_profile():
 
 
 def ensure_embedding_profile():
-    """Set the current profile on an empty collection."""
+    """Set the current profile on an empty collection with no dimension."""
     collection = _get_collection()
-    # Skip if the collection is not empty to avoid mislabeling.
-    if collection.count() != 0:
+    # Chroma retains the dimension after the last record is deleted.
+    if collection.count() != 0 or collection.get_model().dimension is not None:
         return
     stored_metadata = collection.metadata or {}
     profile = get_current_embedding_profile()
@@ -216,7 +278,7 @@ def ensure_embedding_profile():
 
 
 def check_embedding_profile():
-    """Prepare an empty collection's profile and check compatibility."""
+    """Ensure the embedding profile is set when possible and check compatibility."""
     ensure_embedding_profile()
     existing = get_existing_LTM_embedding_profile()
     current = get_current_embedding_profile()
@@ -267,7 +329,46 @@ _last_query = None
 _last_result = None
 
 
+_knowledge_lock = threading.Lock()
+_knowledge_worker = None
+
+
 def init_knowledge(embedding_selection):
+    """Index knowledge synchronously or in an opt-in background thread."""
+    global _knowledge_worker
+    value = config_get_by_key("knowledgeIndexingBackground", False)
+    background = value is True or (
+        isinstance(value, str) and value.strip().lower() == "true"
+    )
+    with _knowledge_lock:
+        if _knowledge_worker is not None and _knowledge_worker.is_alive():
+            return "Knowledge indexing already running"
+        try:
+            _configure_chroma_from_env()
+        except Exception as e:
+            logger.exception(f"Knowledge init failed: {e}")
+            return f"Knowledge init failed: {e}"
+        if background:
+            try:
+                _knowledge_worker = threading.Thread(
+                    target=_index_knowledge_background,
+                    args=(embedding_selection,),
+                    daemon=True,
+                )
+                _knowledge_worker.start()
+            except Exception as e:
+                _knowledge_worker = None
+                logger.exception(f"Knowledge worker could not start: {e}")
+                return f"Knowledge init failed: {e}"
+            return "Knowledge indexing started in background"
+    return _index_knowledge(embedding_selection)
+
+
+def _index_knowledge_background(embedding_selection):
+    logger.info(_index_knowledge(embedding_selection))
+
+
+def _index_knowledge(embedding_selection):
     """Chunk, embed, and store knowledge files. Skips unchanged files."""
     global _embedding_dim, _last_query, _last_result
     _last_query = None

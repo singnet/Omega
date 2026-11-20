@@ -33,7 +33,7 @@
          (read_file_tail $history_file (maxHistory))
          "")))
 
-(= (addToHistory $lastmessage $response $sexpr $msgnew)
+(= (addToHistory $lastmessage $response $msgnew)
    (if $msgnew
        (if (== (get-state &error) ())
            (appendToHistory ((get_time_as_string) (newline) "HUMAN_MESSAGE: " $lastmessage (newline) $response (newline)))

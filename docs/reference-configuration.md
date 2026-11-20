@@ -1,14 +1,14 @@
 # Reference — Configuration
 
-Every tunable in Omega is declared as `(= (name) (empty))` and later bound by a `configure` call inside an `init*` function. The `configure` helper in `src/utils.metta` is:
+Every tunable in Omega is declared as `(= (name) (empty))` and later bound by a `configure` call inside an `init*` function. The `configure` helper in `src/config.metta` is:
 
 ```metta
 (= (configure $name $default)
-   (let $value (argk $name $default)
+   (let $value (configGetByKey $name $default)
         (add-atom &self (= ($name) $value))))
 ```
 
-This reads a command-line override via `argk` (`name=value` on the MeTTa command line) if present, otherwise falls back to the default.
+This resolves the value through the Python configuration layer, using command-line overrides, environment variables, YAML configuration, and the caller's default in that order.
 
 ## Loop (`src/loop.metta`, `initLoop`)
 
@@ -21,20 +21,59 @@ This reads a command-line override via `argk` (`name=value` on the MeTTa command
 | `provider` | `Anthropic` | LLM provider — `Anthropic`, `OpenAI`, `ASICloud`, or `ASIOne`. |
 | `maxOutputToken` | 6000 | Output cap passed to the provider. |
 | `reasoningMode` | `medium` | Reasoning-effort hint passed to the provider. |
+| `supportsReasoningEffort` | `false` | **OpenAIAPI only:** opt in to forwarding `reasoningMode` as `reasoning_effort` when the backend/model supports that parameter. An absent or false flag preserves the previous request shape. Other providers, including Anthropic and ASICloud, are unaffected. |
 | `wakeupInterval` | 600 (seconds) | How long idle before the next scheduled wake-up. |
+| `showStartupVersion` | `true` | Send the Omega version to the communication channel on startup. Set to `false` in `config.yaml` to suppress this message; standard logging and the `version` skill are unaffected. |
+
+For `OpenAIAPI`, enable `supportsReasoningEffort` only after confirming that the
+selected backend/model accepts `reasoning_effort` and the requested effort level.
+With the flag enabled, `reasoningMode: low` sends `reasoning_effort: low`;
+`reasoningMode: "none"` sends the explicit `"none"` value rather than leaving the
+backend's default in effect. A null or empty `reasoningMode` omits the parameter.
+Whether a level reduces or disables thinking depends on the backend/model; the
+flag does not detect support or guarantee that an answer fits the output budget.
+
+The flag is enabled only when the resolved configuration value is boolean `true`
+or the string `"true"` (case-insensitive, so `"True"` and `"TRUE"` also enable it).
+All other values disable it, including the strings `"yes"`, `"on"`, `"1"`,
+`" true "` (whitespace is not trimmed), and typos such
+as `"flase"`, as well as the number `1`. Use `true`/`false` in YAML. The existing
+YAML loader also converts unquoted `yes` and `on` to boolean `true` before this
+check; quoted `"yes"` and `"on"` remain strings and do not enable the flag.
+
+When launching through `scripts/omega start`, configure this flag in
+`config/config.yaml` inside the Docker image/container used by Omega. The
+launcher does not mount the host's configuration file, accept this flag as a CLI
+argument, or forward `OMEGA_supportsReasoningEffort` into Docker. The container
+entrypoint also removes that environment variable before starting Omega.
+
+For direct runtime launches that bypass the launcher and container entrypoint,
+the Python configuration layer accepts `supportsReasoningEffort=true` as a
+command-line override or `OMEGA_supportsReasoningEffort=true` in the environment.
+Use `false` instead of `true` to disable forwarding explicitly.
 
 ## Memory (`src/memory.metta`, `initMemory`)
 
 | Parameter | Default | Meaning |
 |---|---|---|
-| `maxFeedback` | 50000 (chars) | Ceiling on `LAST_SKILL_USE_RESULTS` text fed back into the prompt. |
+| `maxFeedback` | 50000 (chars) | Ceiling on a single tool call result text fed back into the prompt. |
 | `maxRecallItems` | 20 | Items returned by `query`. |
-| `maxEpisodeRecallLines` | 20 | Lines returned by `episodes`. |
+| `maxEpisodeRecallLines` | 20 | Lines `episodes` returns on each side of the closest timestamp, up to 41 lines in all. |
 | `maxHistory` | 30000 (chars) | Tail of `memory/history.metta` included in the prompt. |
 | `memoryDirectory` | `./repos/Omega/memory` | Directory containing persistent memory files such as `history.metta`. |
 | `chromaDbPath` | `./chroma_db` | ChromaDB persistence directory used for memory backup and restore. |
 | `embeddingprovider` | `Local` | `Local` (Python-side model), or the id of a provider that serves an OpenAI-compatible `/embeddings` endpoint — `OpenAI` and `ASICloud` are known to. The gateway supplies that provider's key. |
 | `embeddingModel` | empty | Model asked of a non-`Local` `embeddingprovider`. Empty means the provider default: `text-embedding-3-large` for `OpenAI`, `WhereIsAI/UAE-Large-V1` for `ASICloud`. |
+| `embeddingBatchSize` | `32` | Positive integer: maximum texts per cloud embedding request during runtime knowledge loading. Lower it for providers with smaller request limits. The default keeps valid OpenAI inputs below the 300,000-token request limit (32 × 8192 = 262,144 tokens). Larger values must fit the provider's input-count and total-token limits. This does not split or truncate individual texts that exceed the model's context limit. |
+
+### Startup knowledge indexing
+
+`knowledgeIndexingBackground` defaults to `false`, keeping synchronous startup.
+Set it to `true` to index `knowledge-priors/*.md` in a background thread while
+plugins and channels start. Completed files become available to `query`
+progressively in the runtime memory collection. Background errors are logged.
+
+Local model loading still happens before indexing and can delay cold startup.
 
 Keep the same embedding provider and model when reusing a memory collection.
 Changing either can make existing vectors incompatible: different dimensions
@@ -46,13 +85,15 @@ to select embeddings independently of the LLM provider.
 ### Startup memory profile check
 
 Before starting the agent container, `scripts/omega` runs `ltm_precheck` against
-the persistent memory collection. If the collection is empty, its profile is
-set to the configured provider and model before comparison, replacing any
-different or incomplete profile without a warning. A matching provider and model produce no
-warning. A mismatch produces a warning showing the stored and configured
+the persistent memory collection. If the collection is empty and Chroma reports
+no dimension, the precheck sets its profile to the configured provider and model
+before comparison, replacing any different or incomplete profile without a warning.
+Once Chroma has set the dimension, the precheck preserves the stored profile
+even after all records have been deleted. A matching provider and model produce
+no warning. A mismatch produces a warning showing the stored and configured
 profiles. If the stored profile is unknown or incomplete, the launcher warns
-that the original provider and model must be checked manually. This check
-compares profile metadata only; it does not compare vector dimensions.
+that the original provider and model must be checked manually. The compatibility
+warning is based on the provider and model recorded in the profile.
 
 The same check runs during `rag.init_knowledge()`, including standalone startup,
 before checking for knowledge files. With the launcher, warnings can appear both
@@ -63,7 +104,7 @@ itself fails, the launcher reports that it could not complete the check and
 continues startup.
 
 For a new installation, Docker creates the missing `omega-memory` volume and
-the precheck creates the collection and records its profile while it is empty.
+the precheck creates the collection and records its profile before the first embedding is stored.
 This happens before the optional knowledge import (`IMPORT_KB_ON_START=1`).
 The knowledge importer does not validate the collection profile itself. If the
 precheck fails, recording a profile before that import is not guaranteed.
@@ -106,6 +147,16 @@ Configuration values are resolved in this order: command-line `key=value`,
 `OMEGA_<KEY>` environment variable, `config/config.yaml`, then the caller's
 default. `TG_BOT_TOKEN` and `OMEGA_AUTH_SECRET` are read directly from the
 environment and must be placed before the `metta`/`petta` command.
+
+For numeric settings, unambiguous integer and floating-point command-line values
+are parsed as numbers: `maxFeedback=25000` and `sleepInterval=0.5` can be used in
+arithmetic. The caller's default determines the setting's type; when no default is
+provided, the YAML value is used. String settings and settings without a known
+type keep their CLI text unchanged, including `IRC_channel=123`,
+`IRC_channel=001`, and `OPENROUTER_SESSION_ID=123`.
+A bare argument remains a boolean flag, but a numeric setting requires
+`key=<number>`. For example,
+`maxFeedback` without a value raises an error naming the parameter when resolved.
 
 Telegram example:
 

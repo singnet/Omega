@@ -4,9 +4,9 @@ Omega uses a **three-tier memory architecture**. Each tier has distinct semantic
 
 ## Overview
 
-| Tier | Skill | Persistence | Role |
+| Tier | Tool | Persistence | Role |
 |---|---|---|---|
-| 1. Working memory | `pin` | Single slot, overwritten per cycle, session-local | Task state — "what am I doing right now?" |
+| 1. Working memory | `pin` | Kept in `memory/history.metta`, visible in `HISTORY` until newer entries push it out of the last `maxHistory` characters | Task state — "what am I doing right now?" |
 | 2. Long-term embedding memory | `remember` / `query` | Persistent across sessions | Accumulated knowledge, semantic recall |
 | 3. AtomSpace | `(metta ...)` | Per-invocation (fresh AtomSpace each `\|-` call) | Formal reasoning over truth-valued atoms |
 
@@ -18,9 +18,9 @@ Omega uses a **three-tier memory architecture**. Each tier has distinct semantic
 Holds the agent's current task state: what it is doing, what step comes next, what intermediate results matter.
 
 ### Characteristics
-- **Limited, volatile, constantly updated.**
-- Each cycle can overwrite the previous pin.
-- Does **not** persist across sessions.
+- **Limited and constantly updated.**
+- A new pin does not replace the previous one. Each pin is part of the reply that `addToHistory` appends to `memory/history.metta`.
+- Pins stay in that file across restarts, but the agent sees a pin only while it is inside the last `maxHistory` characters, which `getHistory` returns as `HISTORY`.
 - Analogous to human working memory.
 
 ### Use it for
@@ -59,11 +59,12 @@ or unreliable search results, even when vector dimensions match.
 
 The collection metadata stores `omega_embedding_provider` and
 `omega_embedding_model`. In `src/rag.py`, `ensure_embedding_profile()` records
-the configured provider and model when the collection is empty, replacing any
+the configured provider and model only when the collection is empty and Chroma
+has not yet set its dimension. In that case it replaces any
 different or incomplete profile while preserving other collection metadata.
-If the profile already matches, no metadata update is made. Nonempty collections
-keep their existing metadata; a missing or incomplete profile remains unknown
-to avoid labeling old vectors with the current configuration.
+If the profile already matches, no metadata update is made. Once Chroma has set
+the dimension, the function preserves the existing metadata even if all records
+have been deleted. A missing or incomplete profile then remains unknown.
 
 `check_embedding_profile()` calls this function and then compares the stored
 and configured profiles. Both the launcher's `ltm_precheck` and
@@ -76,8 +77,7 @@ in the agent's configured logs.
 
 On a new volume, a successful precheck creates and labels the collection before
 the optional startup knowledge import. The importer reuses that collection
-without validating or overwriting its profile. Nonempty collections keep their
-profile, and a warning alone does not prevent an import with incompatible
+without validating or overwriting its profile. A warning alone does not prevent an import with incompatible
 embeddings. See [startup memory profile check](reference-configuration.md#startup-memory-profile-check)
 for launcher behavior when the check fails.
 
@@ -203,7 +203,7 @@ They are complementary, not overlapping. Long-term memory *feeds* the AtomSpace 
 
 ## See also
 
-- [reference-skills-memory.md](./reference-skills-memory.md) — user-facing surface.
+- [reference-tools-memory.md](./reference-tools-memory.md) — user-facing surface.
 - [reference-configuration.md](./reference-configuration.md) — memory tunables.
 - [introduction.md#the-hybrid-thesis](./introduction.md#the-hybrid-thesis) — why this layout exists.
 - [tutorial-01-teaching-memories.md](./tutorial-01-teaching-memories.md) — hands-on use.

@@ -55,7 +55,7 @@ def test_run_error_script_telegram_mock(llm, tg):
         )
         llm.set_answer(
             prompt,
-            f'(shell "sh {SCRIPT_FILE} > {OUTPUT_FILE} 2>&1")',
+            [("shell", { "cmd": f"sh {SCRIPT_FILE} > {OUTPUT_FILE} 2>&1" })],
         )
         tg_send_prompt(tg, prompt)
         c.ok("telegram", f"run-id={c.run_id}")
