@@ -15,7 +15,9 @@ Full walkthrough: [tutorial-03-writing-a-custom-tool.md](./tutorial-03-writing-a
 
 ## Add a skill
 
-A skill is a directory in `plugins/workflow/instructions`, or in the directory set by `pluginWorkflowInstructionsDir`. Its `description.txt` holds the one-line description the agent sees in the list of workflows, `SKILL.md` holds the instructions in the [Agent Skills](https://agentskills.io/specification) format, and the optional `skill.metta` declares the tools of the skill with `(skill ...)` entries and defines them. The workflow plugin lists the skill when the agent starts or after `workflow-refresh-list`, and the agent loads it with `workflow-load-instructions`. [plugins/workflow/README.md](../plugins/workflow/README.md) describes the files, and [research-workflow](../plugins/workflow/instructions/research-workflow) is a complete example.
+Each skill has its own directory. Omega ships core skills in `pluginWorkflowCoreSkillsDir` (default `plugins/workflow/core-skills`). Put custom skills in `pluginWorkflowCustomSkillsDir` (default `<memoryDirectory>/workflow/custom-skills`). A custom skill overrides a core skill with the same directory name.
+
+Each skill’s `description.txt` holds the one-line description the agent sees in the list of workflows, `SKILL.md` holds the skills in the [Agent Skills](https://agentskills.io/specification) format, and the optional `skill.metta` declares the tools of the skill with `(skill ...)` entries and defines them. The workflow plugin lists the skill when the agent starts or after `workflow-refresh-list`, and the agent loads it with `workflow-load-skills`. [plugins/workflow/README.md](../plugins/workflow/README.md) describes the files, and [research-workflow](../plugins/workflow/core-skills/research-workflow) is a complete example.
 
 ## Add a channel
 

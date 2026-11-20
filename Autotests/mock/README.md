@@ -443,7 +443,7 @@ Each call of a model answer gets exactly one tool result in the next request, al
 
 Loading a workflow again must not repeat its tools in the request to the LLM. Anthropic rejects a request that names the same tool twice.
 
-- Mock answers: `workflow-unload-instructions` for a workflow left by an earlier test, then `workflow-load-instructions test-workflow`, `workflow-unload-instructions`, `workflow-load-instructions test-workflow` twice in a row, `send`, and `workflow-unload-instructions` at the end so that the next tests start without a workflow.
+- Mock answers: `workflow-unload-skills` for a workflow left by an earlier test, then `workflow-load-skills test-workflow`, `workflow-unload-skills`, `workflow-load-skills test-workflow` twice in a row, `send`, and `workflow-unload-skills` at the end so that the next tests start without a workflow.
 - Checks: in the `REQUEST:` line after each turn every tool name appears once; after the first load every tool name matches `^[a-zA-Z0-9_-]{1,64}$`; `test-skill` is there after a load and gone after the unload; the second load in a row is rejected with `There is an active workflow`; after the reload and the last turn the tool names are the same as after the first load.
 
 ### 43. test_idle_nop_mock.py
