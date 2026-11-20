@@ -41,7 +41,7 @@ In `src/loop.metta`, the LLM call is:
 To add a provider:
 
 1. Implement a class derived from `providers.LLMProvider` with a `chat(self, request: LLMRequest) -> LLMResponse` method (see [reference-plugin-api.md](./reference-plugin-api.md#llm-provider-integration)).
-2. Register it with `providers.registerLLMProvider` in the plugin's `loadOmegaPlugin`, and list the plugin in `config/plugins.yaml`.
+2. Register it with `providers.registerLLMProvider` in the plugin's `loadOmegaPlugin`, and list the plugin in the YAML file specified by `customPluginsConfigPath`.
 3. Use the new provider name in the `configure provider ...` line or via command-line `provider=...`.
 
 ## Change the prompt
