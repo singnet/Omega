@@ -6,7 +6,7 @@ Report suspected security vulnerabilities in Omega privately to
 [security@singularitynet.io](mailto:security@singularitynet.io).
 
 Please do not disclose vulnerabilities in public GitHub issues, pull requests,
-or discussions, including in the OmegaClaw-Core community issue tracker.
+or discussions, including in the Omega community issue tracker.
 
 If GitHub private vulnerability reporting is available in the repository,
 you can also use **Report a vulnerability** on its **Security** tab.
