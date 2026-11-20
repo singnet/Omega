@@ -57,13 +57,15 @@ to select embeddings independently of the LLM provider.
 ### Startup memory profile check
 
 Before starting the agent container, `scripts/omega` runs `ltm_precheck` against
-the persistent memory collection. If the collection is empty, its profile is
-set to the configured provider and model before comparison, replacing any
-different or incomplete profile without a warning. A matching provider and model produce no
-warning. A mismatch produces a warning showing the stored and configured
+the persistent memory collection. If the collection is empty and Chroma reports
+no dimension, the precheck sets its profile to the configured provider and model
+before comparison, replacing any different or incomplete profile without a warning.
+Once Chroma has set the dimension, the precheck preserves the stored profile
+even after all records have been deleted. A matching provider and model produce
+no warning. A mismatch produces a warning showing the stored and configured
 profiles. If the stored profile is unknown or incomplete, the launcher warns
-that the original provider and model must be checked manually. This check
-compares profile metadata only; it does not compare vector dimensions.
+that the original provider and model must be checked manually. The compatibility
+warning is based on the provider and model recorded in the profile.
 
 The same check runs during `rag.init_knowledge()`, including standalone startup,
 before checking for knowledge files. With the launcher, warnings can appear both
@@ -74,7 +76,7 @@ itself fails, the launcher reports that it could not complete the check and
 continues startup.
 
 For a new installation, Docker creates the missing `omega-memory` volume and
-the precheck creates the collection and records its profile while it is empty.
+the precheck creates the collection and records its profile before the first embedding is stored.
 This happens before the optional knowledge import (`IMPORT_KB_ON_START=1`).
 The knowledge importer does not validate the collection profile itself. If the
 precheck fails, recording a profile before that import is not guaranteed.

@@ -261,10 +261,10 @@ def get_existing_LTM_embedding_profile():
 
 
 def ensure_embedding_profile():
-    """Set the current profile on an empty collection."""
+    """Set the current profile on an empty collection with no dimension."""
     collection = _get_collection()
-    # Skip if the collection is not empty to avoid mislabeling.
-    if collection.count() != 0:
+    # Chroma retains the dimension after the last record is deleted.
+    if collection.count() != 0 or collection.get_model().dimension is not None:
         return
     stored_metadata = collection.metadata or {}
     profile = get_current_embedding_profile()
@@ -278,7 +278,7 @@ def ensure_embedding_profile():
 
 
 def check_embedding_profile():
-    """Prepare an empty collection's profile and check compatibility."""
+    """Ensure the embedding profile is set when possible and check compatibility."""
     ensure_embedding_profile()
     existing = get_existing_LTM_embedding_profile()
     current = get_current_embedding_profile()

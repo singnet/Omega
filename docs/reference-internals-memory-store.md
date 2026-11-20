@@ -59,11 +59,12 @@ or unreliable search results, even when vector dimensions match.
 
 The collection metadata stores `omega_embedding_provider` and
 `omega_embedding_model`. In `src/rag.py`, `ensure_embedding_profile()` records
-the configured provider and model when the collection is empty, replacing any
+the configured provider and model only when the collection is empty and Chroma
+has not yet set its dimension. In that case it replaces any
 different or incomplete profile while preserving other collection metadata.
-If the profile already matches, no metadata update is made. Nonempty collections
-keep their existing metadata; a missing or incomplete profile remains unknown
-to avoid labeling old vectors with the current configuration.
+If the profile already matches, no metadata update is made. Once Chroma has set
+the dimension, the function preserves the existing metadata even if all records
+have been deleted. A missing or incomplete profile then remains unknown.
 
 `check_embedding_profile()` calls this function and then compares the stored
 and configured profiles. Both the launcher's `ltm_precheck` and
@@ -76,8 +77,7 @@ in the agent's configured logs.
 
 On a new volume, a successful precheck creates and labels the collection before
 the optional startup knowledge import. The importer reuses that collection
-without validating or overwriting its profile. Nonempty collections keep their
-profile, and a warning alone does not prevent an import with incompatible
+without validating or overwriting its profile. A warning alone does not prevent an import with incompatible
 embeddings. See [startup memory profile check](reference-configuration.md#startup-memory-profile-check)
 for launcher behavior when the check fails.
 
