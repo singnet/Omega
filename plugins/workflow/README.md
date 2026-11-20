@@ -3,9 +3,8 @@
 Workflow loading plugin allows loading skills written in the [Agent Skills
 format](https://agentskills.io/specification). A skill is a directory with a
 `SKILL.md` file, and this plugin refers to a skill as a workflow. Each workflow
-consists of short description in `description.txt` file, detailed description
-in `SKILL.md` file and optionally `skill.metta` file which contains the
-implementation of the related tools in MeTTa language.
+consists of a `SKILL.md` file and optionally a `skill.metta` file which
+contains the implementation of the related tools in MeTTa language.
 
 [Research workflow](./instructions/research-workflow) is a ready-to-use example
 of the workflow. One can try it starting the agent and asking it doing a
@@ -17,26 +16,15 @@ logistic regression and random forest.
 
 ## Workflow files
 
-`description.txt` (required) contains short usually one-line workflow
-description for the agent. The file is specific to this plugin and is not part
-of the Agent Skills format. When the agent starts, the plugin adds the
-descriptions of all workflows to the prompt, so the agent knows which
-workflows it can load. A workflow without `description.txt` is not listed. An
-example of the file:
-```
-When user asks to demonstrate workflow plugin load test-workflow instructions: (workflow-load-instructions \"test-workflow\")
-```
-
 `SKILL.md` (required) is the skill file in the [Agent Skills
-format](https://agentskills.io/specification). When the workflow is loaded, the
-plugin puts the whole file into the prompt as the active workflow instructions.
-The plugin does not parse the frontmatter. The workflow name is the name of its
-directory, and the prompt lists the workflow with the text of
-`description.txt`. For example:
+format](https://agentskills.io/specification). It starts with YAML frontmatter
+between `---` lines, followed by the instructions in Markdown. For example:
 ```md
 ---
 name: test-workflow
-description: Created to check how SKILL.md is loaded to Omega.
+description: Demonstrates the workflow plugin by sending a message with a tool
+  that exists only while the workflow is active. Use when the user asks to
+  demonstrate or test the workflow plugin.
 ---
 Next are instructions and MeTTa  functions  that should be performed step by step
 # Test Workflow (Omega)
@@ -45,6 +33,32 @@ Next are instructions and MeTTa  functions  that should be performed step by ste
 ## Step 2 - complete workflow
 - Call `(workflow-unload-instructions)`
 ```
+
+The frontmatter is required. When the agent starts, the plugin reads the
+frontmatter of every workflow and adds the list of workflows to the prompt, so
+the agent knows which workflows exist and when to load them. Each entry is the
+workflow's directory name and its `description`, so write the description as
+the spec recommends: say what the workflow does and when to use it, with the
+words a user is likely to say. When the workflow is loaded, the plugin puts the
+whole `SKILL.md` file into the prompt as the active workflow instructions.
+
+The plugin checks the frontmatter leniently, as the Agent Skills [client
+guide](https://agentskills.io/client-implementation/adding-skills-support)
+recommends, and logs every problem with the path of the file:
+- A workflow is left out of the list when `SKILL.md` has no frontmatter, the
+  frontmatter is not valid YAML, or it has no `description`. A value with an
+  unquoted `: ` inside, such as `description: Use when: ...`, is quoted and
+  parsed again before the workflow is skipped.
+- A workflow is listed with a warning when `name` is missing, differs from the
+  directory name, is longer than 64 characters or has characters other than
+  lowercase letters, digits and single hyphens, when `description` is longer
+  than 1024 characters, or when `SKILL.md` is longer than 500 lines. The
+  workflow is always listed and loaded by its directory name.
+
+Earlier versions of the plugin read the description from a `description.txt`
+file. That file is no longer read: move its text into the `description` field.
+A workflow that still has `description.txt` and no valid description is
+skipped with an error that says so.
 
 `skill.metta` (optional) contains the list of tools which the workflow adds
 while it is active and additional MeTTa functions which are mentioned in
