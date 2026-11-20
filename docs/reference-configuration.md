@@ -75,6 +75,40 @@ progressively in the runtime memory collection. Background errors are logged.
 
 Local model loading still happens before indexing and can delay cold startup.
 
+Keep the same embedding provider and model when reusing a memory collection.
+Changing either can make existing vectors incompatible: different dimensions
+cause writes and searches to fail, while models with the same dimensions can
+still produce incompatible vectors and unreliable search results.
+Use the launcher option `-e Local|OpenAI|ASICloud` or `EMBEDDING_PROVIDER`
+to select embeddings independently of the LLM provider.
+
+### Startup memory profile check
+
+Before starting the agent container, `scripts/omega` runs `ltm_precheck` against
+the persistent memory collection. If the collection is empty and Chroma reports
+no dimension, the precheck sets its profile to the configured provider and model
+before comparison, replacing any different or incomplete profile without a warning.
+Once Chroma has set the dimension, the precheck preserves the stored profile
+even after all records have been deleted. A matching provider and model produce
+no warning. A mismatch produces a warning showing the stored and configured
+profiles. If the stored profile is unknown or incomplete, the launcher warns
+that the original provider and model must be checked manually. The compatibility
+warning is based on the provider and model recorded in the profile.
+
+The same check runs during `rag.init_knowledge()`, including standalone startup,
+before checking for knowledge files. With the launcher, warnings can appear both
+in the launcher console and in the agent's configured logs.
+
+These warnings do not stop startup or convert existing vectors. If the check
+itself fails, the launcher reports that it could not complete the check and
+continues startup.
+
+For a new installation, Docker creates the missing `omega-memory` volume and
+the precheck creates the collection and records its profile before the first embedding is stored.
+This happens before the optional knowledge import (`IMPORT_KB_ON_START=1`).
+The knowledge importer does not validate the collection profile itself. If the
+precheck fails, recording a profile before that import is not guaranteed.
+
 ## Channels (`src/channels.metta`, `initChannels`)
 
 | Parameter | Default | Meaning |
