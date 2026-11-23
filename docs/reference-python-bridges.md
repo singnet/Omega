@@ -101,7 +101,7 @@ Request and response types for the LLM, the provider registry, and the conversio
 | `llmRequest(prompt, episodes, max_tokens, reasoning_mode, tools)` | Build a request from the system message, the other messages, and the tools. |
 | `llmResponseCalls`, `llmResponseIsEmpty`, `llmResponseIsError`, `llmResponseGetError` | Read a response. |
 | `llmToolCallGetName`, `llmToolCallGetId`, `llmToolCallGetArguments`, `llmToolCallIsError`, `llmToolCallGetError` | Read a tool call. |
-| `llmToolCallToSExpr(call)` | Write one call as `(<id> (<name> "arg" ...))`, or as an `Error` form if the call has an error. |
+| `llmToolCallToSExpr(call)` | Write one call as `("<id>" ("<name>" "arg" ...))`, or as an `Error` form if the call has an error. |
 | `llmResponseToSExpr(response)` | Write a response as a list of such pairs, or as `(Error () "<text>")` if the response has an error. |
 
 ## `src/utils.py`

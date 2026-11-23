@@ -24,9 +24,9 @@ The model answers with tool calls, each holding an id, a tool name, and a value 
 - A call without a parameter from the schema gets `Call tool parameter is not set: ...`.
 - A parameter whose value is not a string gets `Call tool parameter is not a string: ...`.
 
-`llmResponseToSExpr` turns the checked response into text. A response error becomes `(Error () "<text>")`. Otherwise the text is a list of `(<id> (<name> "arg1" "arg2" ...))` pairs with the arguments in schema order. Only `"` and `\` are escaped in the strings, so `$x` and parentheses in an argument are plain text. Arguments that are not in the schema are dropped. A call with an error becomes `(<id> (Error (<name> ...) "<text>"))`.
+`llmResponseToSExpr` turns the checked response into text. A response error becomes `(Error () "<text>")`. Otherwise the text is a list of `("<id>" ("<name>" "arg1" "arg2" ...))` pairs with the arguments in schema order. Only `"` and `\` are escaped in the strings, so `$x` and parentheses in an argument are plain text. Arguments that are not in the schema are dropped. A call with an error becomes `("<id>" (Error ("<name>" ...) "<text>"))`.
 
-For example, the calls `send` with `content` set to `Checking the disk` and `shell` with `cmd` set to `df -h /tmp` become `((id1 (send "Checking the disk")) (id2 (shell "df -h /tmp")))`.
+For example, the calls `send` with `content` set to `Checking the disk` and `shell` with `cmd` set to `df -h /tmp` become `(("id1" ("send" "Checking the disk")) ("id2" ("shell" "df -h /tmp")))`.
 
 ## Step-by-step dispatch
 
@@ -35,7 +35,7 @@ From `src/loop.metta`:
 1. **Request** — `llmRequest` combines the system message, the messages in `&messages_all`, and `(collectTools)`. `llmProviderChat` sends it and checks the response.
 2. **Convert** — `providers.llmResponseToSExpr` gives `$respstr`, and `catch (sread $respstr)` gives `$resp`. If `$resp` is an `(Error ...)`, `HandleError` records the error, and no `assistant` or `tool` messages are added.
 3. **Assistant message** — one message with role `assistant` carries the calls of the response (`llmResponseCalls`) and the text `[TOOL CALL]`.
-4. **Fan out** — `(superpose $resp)` produces one binding of `($callid $s)` per call.
+4. **Fan out** — `(superpose $resp)` produces one `($callid $raw)` pair per call. For a validated call, `toolCallCommand` converts the name string to a single dispatch symbol and returns the command as `$s`. An error form passes through unchanged.
 5. **Evaluate each** — an `$s` that is an `(Error ...)` goes to `HandleError`. Any other `$s` runs as `(catch (let $R (collapse (eval $s)) ...))`, and the value is normalized with `helper.normalize_string`. An error from `eval` goes to `HandleError`. A normal result gets the prefix `SUCCESS, RETURN: `.
 6. **Feedback** — `(llmToolCallResponseMessage role "tool" callid $callid content (last_chars $result (maxFeedback)))` adds the result to the request for every call, so each call id gets an answer.
 7. **History** — the list of calls without ids and without results is stored with `addToHistory`.
