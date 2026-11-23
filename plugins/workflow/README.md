@@ -42,18 +42,28 @@ the spec recommends: say what the workflow does and when to use it, with the
 words a user is likely to say. When the workflow is loaded, the plugin puts the
 whole `SKILL.md` file into the prompt as the active workflow instructions.
 
-The plugin checks the frontmatter leniently, as the Agent Skills [client
-guide](https://agentskills.io/client-implementation/adding-skills-support)
-recommends, and logs every problem with the path of the file:
-- A workflow is left out of the list when `SKILL.md` has no frontmatter, the
-  frontmatter is not valid YAML, or it has no `description`. A value with an
-  unquoted `: ` inside, such as `description: Use when: ...`, is quoted and
-  parsed again before the workflow is skipped.
+The plugin checks every `SKILL.md` and logs each problem with the path of the
+file. One broken file does not affect the other workflows.
+- A workflow is left out of the list when `SKILL.md` is not valid UTF-8, has
+  no frontmatter, its frontmatter is not valid YAML (including values YAML
+  cannot build, such as the date `2026-02-30`), or it has no `description`. A
+  value with an unquoted `: ` inside, such as `description: Use when: ...`, is
+  quoted and parsed again before the workflow is skipped.
+- A workflow is also left out when `description` is longer than 1024
+  characters or `SKILL.md` is longer than 500 lines. The Agent Skills spec
+  gives these numbers as guidelines; this plugin uses them as limits, because a
+  loaded workflow keeps its whole `SKILL.md` in the prompt. Move long details
+  into separate files.
+- `workflow-load-instructions` uses the same rules: it refuses to load a
+  workflow that is not listed, and its error says why.
 - A workflow is listed with a warning when `name` is missing, differs from the
   directory name, is longer than 64 characters or has characters other than
-  lowercase letters, digits and single hyphens, when `description` is longer
-  than 1024 characters, or when `SKILL.md` is longer than 500 lines. The
-  workflow is always listed and loaded by its directory name.
+  lowercase letters, digits and single hyphens. The workflow is always listed
+  and loaded by its directory name.
+- The description is shown as YAML gives it. A plain or folded (`>`)
+  description becomes one line, and a block (`|`) description keeps its line
+  breaks. Only a `---` at the start of a line ends the frontmatter, so an
+  indented `---` inside a block description stays part of it.
 
 Earlier versions of the plugin read the description from a `description.txt`
 file. That file is no longer read: move its text into the `description` field.
