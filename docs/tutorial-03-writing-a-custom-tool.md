@@ -60,7 +60,8 @@ The same tool as a plugin needs a MeTTa file `plugins/wordcount/wordcount.metta`
           $count))
 ```
 
-and an entry in [config/plugins.yaml](/config/plugins.yaml):
+Add the following entry to the YAML file specified by `customPluginsConfigPath`
+(see the [Plugin API reference](/docs/reference-plugin-api.md)):
 
 ```yaml
 - name: wordcount
