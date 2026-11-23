@@ -326,11 +326,12 @@ def test_openrouter_reasoning_body(effort, want):
     assert create.calls[0]["extra_body"]["reasoning"] == want
 
 
-@pytest.mark.parametrize("effort", ["low", "medium", "none"])
-def test_openaiapi_forwards_reasoning_effort(monkeypatch, effort):
+@pytest.mark.parametrize("effort", ["low", "medium", "high", "xhigh", "max", "none"])
+@pytest.mark.parametrize("name", ["OpenAIAPI", "ASICloud"])
+def test_openaiapi_forwards_reasoning_effort(monkeypatch, name, effort):
     monkeypatch.setitem(CONFIG_STUB, "supportsReasoningEffort", True)
     create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls"))
-    provider = make_registered_provider(create, monkeypatch)
+    provider = make_registered_provider(create, monkeypatch, name)
     request = make_request(reasoning=effort)
     expected = llm.AIProvider.convert_request(provider.delegate, request)
     expected["extra_body"] = {"reasoning_effort": effort}
@@ -347,10 +348,11 @@ def test_openaiapi_forwards_reasoning_effort(monkeypatch, effort):
     ("flase", False), (" true ", False),
     (True, True), ("true", True), ("True", True), ("TRUE", True), ("TrUe", True),
 ])
-def test_openaiapi_requires_explicit_true_reasoning_flag(monkeypatch, flag, want_sent):
+@pytest.mark.parametrize("name", ["OpenAIAPI", "ASICloud"])
+def test_openaiapi_requires_explicit_true_reasoning_flag(monkeypatch, name, flag, want_sent):
     monkeypatch.setitem(CONFIG_STUB, "supportsReasoningEffort", flag)
     create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls"))
-    provider = make_registered_provider(create, monkeypatch)
+    provider = make_registered_provider(create, monkeypatch, name)
     request = make_request()
     expected = llm.AIProvider.convert_request(provider.delegate, request)
     if want_sent:
@@ -361,9 +363,10 @@ def test_openaiapi_requires_explicit_true_reasoning_flag(monkeypatch, flag, want
     assert create.calls == [expected]
 
 
-def test_openaiapi_preserves_request_when_flag_is_unset(monkeypatch):
+@pytest.mark.parametrize("name", ["OpenAIAPI", "ASICloud"])
+def test_openaiapi_preserves_request_when_flag_is_unset(monkeypatch, name):
     create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls"))
-    provider = make_registered_provider(create, monkeypatch)
+    provider = make_registered_provider(create, monkeypatch, name)
     request = make_request()
 
     provider.chat(request)
@@ -373,10 +376,11 @@ def test_openaiapi_preserves_request_when_flag_is_unset(monkeypatch):
 
 
 @pytest.mark.parametrize("effort", [None, ""])
-def test_openaiapi_omits_unset_reasoning_even_when_flag_is_on(monkeypatch, effort):
+@pytest.mark.parametrize("name", ["OpenAIAPI", "ASICloud"])
+def test_openaiapi_omits_unset_reasoning_even_when_flag_is_on(monkeypatch, name, effort):
     monkeypatch.setitem(CONFIG_STUB, "supportsReasoningEffort", True)
     create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls"))
-    provider = make_registered_provider(create, monkeypatch)
+    provider = make_registered_provider(create, monkeypatch, name)
     request = make_request(reasoning=effort)
 
     provider.chat(request)
@@ -385,14 +389,14 @@ def test_openaiapi_omits_unset_reasoning_even_when_flag_is_on(monkeypatch, effor
     assert "extra_body" not in create.calls[0]
 
 
-@pytest.mark.parametrize("name", ["base", "Anthropic", "ASICloud", "OpenRouter", "OpenAI", "ASIOne"])
+@pytest.mark.parametrize("name", ["base", "Anthropic", "OpenRouter", "OpenAI", "ASIOne"])
 @pytest.mark.parametrize("effort", ["medium", "none"])
 def test_reasoning_effort_flag_does_not_change_other_providers(monkeypatch, name, effort):
     raw = chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls")
     if name == "OpenAI":
         raw = responses_response([function_call("fc_1", "send", '{"content": "hi"}')], "completed")
     create = FakeCreate(raw, raw, raw)
-    if name in ("Anthropic", "ASICloud"):
+    if name == "Anthropic":
         provider = make_registered_provider(create, monkeypatch, name)
     else:
         factory = {"base": make_anthropic, "OpenRouter": make_openrouter,
@@ -409,7 +413,7 @@ def test_reasoning_effort_flag_does_not_change_other_providers(monkeypatch, name
     assert len(create.calls) == 3
     assert create.calls[0] == create.calls[1] == create.calls[2]
     assert "reasoning_effort" not in create.calls[1].get("extra_body", {})
-    if name in ("base", "Anthropic", "ASICloud"):
+    if name in ("base", "Anthropic"):
         assert "extra_body" not in create.calls[1]
 
 

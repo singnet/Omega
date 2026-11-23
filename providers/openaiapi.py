@@ -50,10 +50,9 @@ class OpenAIAPI(providers.LLMProvider):
 
 class OpenAIAPIPreconfigured(OpenAIAPI):
 
-    _delegate_class = llm.AIProvider
-
-    def __init__(self, name, api_token_var, default_model, base_url):
+    def __init__(self, name, api_token_var, default_model, base_url, *, delegate_class=llm.AIProvider):
         super().__init__(name)
+        self._delegate_class = delegate_class
         self._api_token_var = api_token_var
         self._default_model = default_model
         self._base_url = base_url
@@ -70,6 +69,9 @@ class OpenAIAPIPreconfigured(OpenAIAPI):
 def loadOmegaPlugin():
     providers.registerLLMProvider("OpenAIAPI", OpenAIAPI("OpenAIAPI"))
     asicloud_model = config_get_by_key("asicloud_model", "minimax/minimax-m3.1-flash")
-    providers.registerLLMProvider("ASICloud", OpenAIAPIPreconfigured("ASICloud", "ASI_API_KEY", asicloud_model, "https://llm.a.singularitycompute.com/v1/"))
+    providers.registerLLMProvider("ASICloud", OpenAIAPIPreconfigured(
+        "ASICloud", "ASI_API_KEY", asicloud_model, "https://llm.a.singularitycompute.com/v1/",
+        delegate_class=OpenAIAPIProviderImpl,
+    ))
     anthropic_model = config_get_by_key("anthropic_model", "claude-opus-4-8")
     providers.registerLLMProvider("Anthropic", OpenAIAPIPreconfigured("Anthropic", "ANTHROPIC_API_KEY", anthropic_model, "https://api.anthropic.com/v1/"))
