@@ -14,6 +14,7 @@ provider: Anthropic
 maxOutputToken: 6000
 # Reasoning-effort hint passed to the provider
 reasoningMode: medium
+supportsReasoningEffort: false
 # How long idle before the next scheduled wake-up (seconds)
 wakeupInterval: 600
 # Send the Omega version to the communication channel on startup.
@@ -22,6 +23,8 @@ showStartupVersion: true
 # Path to the logger configuration file
 # See https://docs.python.org/3/library/logging.config.html#configuration-file-format
 logConfigPath: ""
+# Path to the YAML file containing custom plugins. An empty value disables custom plugins.
+customPluginsConfigPath: ""
 # Directory containing persistent memory files such as history.metta.
 memoryDirectory: "./repos/Omega/memory"
 

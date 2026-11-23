@@ -129,7 +129,11 @@
                                                                 ($s (toolCallCommand $raw)))
                                                            (let $result
                                                              (if (HandleError (quote $s) $error) $error
-                                                               (let $rc (catch (let $R (collapse (eval $s)) (py-call (helper.normalize_string $R))))
+                                                               (let $rc (catch (let $R (collapse (eval $s))
+                                                                 (case $R
+                                                                   ((((Error $tool_error_cmd $tool_error_msg))
+                                                                     (Error $tool_error_cmd $tool_error_msg))
+                                                                    ($else (py-call (helper.normalize_string $R)))))))
                                                                  (if (HandleError $rc $error) $error (strings-concat ("SUCCESS, RETURN: " $rc)))))
                                                              (progn
                                                                ($_ (log INFO "loop" (COMMAND_RETURN: ((quote $s) $result))))

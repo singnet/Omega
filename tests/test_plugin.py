@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import config
 import plugin
 
 
@@ -277,3 +278,98 @@ def test_telegram_import_uses_registered_channels_outbox(plugin_file, monkeypatc
 
     assert [item["text"] for item in sent] == ["from helper", "from registered channel"]
     assert all(item["chat_id"] == "101" for item in sent)
+
+
+@pytest.mark.parametrize("settings", [{}, {"customPluginsConfigPath": ""}])
+def test_list_plugins_without_custom_config(tmp_path, monkeypatch, settings) -> None:
+    monkeypatch.setattr(plugin, "_REPO", tmp_path)
+    monkeypatch.setattr(plugin, "_plugins", {})
+    monkeypatch.setattr(config, "_CONFIG", {})
+    monkeypatch.setattr(config, "_COMMAND_LINE", {})
+    monkeypatch.setattr(config, "_CONFIG_FILE", settings)
+    monkeypatch.delenv("OMEGA_customPluginsConfigPath", raising=False)
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config/plugins.yaml").write_text(
+        "- name: core_plugin\n  loader: python\n", encoding="utf-8"
+    )
+
+    assert plugin.listPlugins() == [["python", "core_plugin", ""]]
+
+
+def test_list_plugins_with_custom_config(tmp_path, monkeypatch) -> None:
+    custom_path = tmp_path / "plugins-custom.yaml"
+    monkeypatch.setattr(plugin, "_REPO", tmp_path)
+    monkeypatch.setattr(plugin, "_plugins", {})
+    monkeypatch.setattr(config, "_CONFIG", {})
+    monkeypatch.setattr(config, "_COMMAND_LINE", {})
+    monkeypatch.setattr(
+        config, "_CONFIG_FILE", {"customPluginsConfigPath": str(custom_path)}
+    )
+    monkeypatch.delenv("OMEGA_customPluginsConfigPath", raising=False)
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config/plugins.yaml").write_text(
+        "- name: core_plugin\n  loader: python\n"
+        "- name: core_metta\n  loader: metta\n  location: '{REPO}/plugins'\n",
+        encoding="utf-8",
+    )
+    custom_path.write_text(
+        "- name: custom_plugin\n  loader: python\n"
+        "- name: custom_metta\n  loader: metta\n  location: '{REPO}/custom'\n",
+        encoding="utf-8",
+    )
+
+    assert plugin.listPlugins() == [
+        ["python", "core_plugin", ""],
+        ["metta", "core_metta", str(tmp_path / "plugins")],
+        ["python", "custom_plugin", ""],
+        ["metta", "custom_metta", str(tmp_path / "custom")],
+    ]
+
+
+@pytest.mark.parametrize("custom_name", ["core_plugin", "CORE_PLUGIN"])
+def test_list_plugins_custom_name_conflict(tmp_path, monkeypatch, custom_name) -> None:
+    custom_path = tmp_path / "plugins-custom.yaml"
+    monkeypatch.setattr(plugin, "_REPO", tmp_path)
+    monkeypatch.setattr(plugin, "_plugins", {})
+    monkeypatch.setattr(config, "_CONFIG", {})
+    monkeypatch.setattr(config, "_COMMAND_LINE", {})
+    monkeypatch.setattr(
+        config, "_CONFIG_FILE", {"customPluginsConfigPath": str(custom_path)}
+    )
+    monkeypatch.delenv("OMEGA_customPluginsConfigPath", raising=False)
+    (tmp_path / "config").mkdir()
+    core_path = tmp_path / "config/plugins.yaml"
+    core_path.write_text(
+        "- name: core_plugin\n  loader: python\n", encoding="utf-8"
+    )
+    custom_path.write_text(
+        f"- name: {custom_name}\n  loader: python\n", encoding="utf-8"
+    )
+
+    with pytest.raises(RuntimeError, match="conflicts with core plugin") as error:
+        plugin.listPlugins()
+
+    assert custom_name in str(error.value)
+    assert str(core_path) in str(error.value)
+    assert str(custom_path) in str(error.value)
+
+
+def test_list_plugins_missing_custom_config(tmp_path, monkeypatch) -> None:
+    custom_path = tmp_path / "missing.yaml"
+    monkeypatch.setattr(plugin, "_REPO", tmp_path)
+    monkeypatch.setattr(plugin, "_plugins", {})
+    monkeypatch.setattr(config, "_CONFIG", {})
+    monkeypatch.setattr(config, "_COMMAND_LINE", {})
+    monkeypatch.setattr(
+        config, "_CONFIG_FILE", {"customPluginsConfigPath": str(custom_path)}
+    )
+    monkeypatch.delenv("OMEGA_customPluginsConfigPath", raising=False)
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config/plugins.yaml").write_text(
+        "- name: core_plugin\n  loader: python\n", encoding="utf-8"
+    )
+
+    with pytest.raises(RuntimeError, match="failed to read") as error:
+        plugin.listPlugins()
+
+    assert str(custom_path) in str(error.value)
