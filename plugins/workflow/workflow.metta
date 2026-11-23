@@ -53,15 +53,18 @@
          (let $path (joinPath ((instructionsDir) $name "SKILL.md"))
            (if (not (exists-file $path))
              (Error (quote (workflow-load-instructions $name)) (strings-concat ("ERROR: skill file not found: " $path ". Try to call workflow-refresh-list")))
-             (let $content (read-file $path)
-               (progn
-                 (log INFO "workflow-plugin" (strings-concat ("Loading workflow instructions for: " $name)))
-                 (add-prompt-extension workflow_active_instructions (active-instructions $content))
-                 (add-workflow-skills $name)
-                 (change-state! &workflow_active_name $name)
-                 (send (strings-concat ("Loaded workflow: " $name
-                                        ". Instructions active in context until completion.")))
-                 )))))
+             (let $problem (workflow-load-problem (joinPath ((instructionsDir) $name)))
+               (if (> (string_length $problem) 0)
+                 (Error (quote (workflow-load-instructions $name)) (strings-concat ("ERROR: cannot load workflow " $name ": " $problem)))
+                 (let $content (read-file $path)
+                   (progn
+                     (log INFO "workflow-plugin" (strings-concat ("Loading workflow instructions for: " $name)))
+                     (add-prompt-extension workflow_active_instructions (active-instructions $content))
+                     (add-workflow-skills $name)
+                     (change-state! &workflow_active_name $name)
+                     (send (strings-concat ("Loaded workflow: " $name
+                                            ". Instructions active in context until completion.")))
+                     )))))))
        (Error (quote (workflow-load-instructions $name)) (strings-concat ("ERROR: There is an active workflow: " $active ". Unload it before loading new one"))))))
 
 (= (workflow-unload-instructions)
@@ -106,6 +109,11 @@
 ;; frontmatter of their SKILL.md files, or an empty string when there are none.
 (= (workflow-catalog $base)
    (py-call (skill_catalog.catalog_prompt $base)))
+
+;; Returns why the workflow in $dir may not be loaded, or an empty string when
+;; it may. The rules are the same as for the list of available workflows.
+(= (workflow-load-problem $dir)
+   (py-call (skill_catalog.load_problem $dir)))
 
 ;; re-reads available workflows into the prompt
 (= (workflow-refresh-list)

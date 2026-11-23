@@ -100,7 +100,7 @@
 !(test (contains-text (fixture-catalog) (catalog-entry "valid-single" "Single line description. Use when testing."))
        True)
 
-; a description over several lines is listed in full, on one line
+; a folded description is joined by YAML into one line
 !(test (contains-text (fixture-catalog) (catalog-entry "valid-folded" "Folded description over two lines."))
        True)
 
@@ -127,8 +127,29 @@
 ; a directory without SKILL.md is not a workflow
 !(test (contains-text (fixture-catalog) "<name>not-a-skill</name>") False)
 
-; the list tells the agent how to load a workflow
-!(test (contains-text (fixture-catalog) "call workflow-load-instructions") True)
+; a block description keeps its lines, and an indented "---" inside it does
+; not end the frontmatter
+!(test (contains-text (fixture-catalog) "<skill><name>block-description</name><description>Write a report using this layout:") True)
+!(test (contains-text (fixture-catalog) "---") True)
+!(test (contains-text (fixture-catalog) "Details</description></skill>") True)
+
+; a file that is not UTF-8 or a value YAML cannot build, such as the date
+; 2026-02-30, leaves out only that workflow
+!(test (contains-text (fixture-catalog) "<name>invalid-utf8</name>") False)
+!(test (contains-text (fixture-catalog) "<name>invalid-date</name>") False)
+
+; a description over 1024 characters or a SKILL.md over 500 lines is left out
+!(test (contains-text (fixture-catalog) "<name>long-description</name>") False)
+!(test (contains-text (fixture-catalog) "<name>long-file</name>") False)
+
+; a workflow may be loaded exactly when it is listed
+!(test (string_length (workflow-load-problem "./tests/res/workflows/valid-single")) 0)
+!(test (contains-text (workflow-load-problem "./tests/res/workflows/long-file") "more than the limit of 500") True)
+!(test (contains-text (workflow-load-problem "./tests/res/workflows/no-frontmatter") "does not start with YAML frontmatter") True)
+
+; the list tells the agent how to load a workflow and which value to pass
+!(test (contains-text (fixture-catalog) "call `workflow-load-instructions <workflow_name>`") True)
+!(test (contains-text (fixture-catalog) "the value of that skill's `<name>` field") True)
 
 ; no workflows give no list at all
 !(test (string_length (workflow-catalog "./tests/res/workflows-none")) 0)
