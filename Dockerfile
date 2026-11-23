@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # For maximum integrity, set this to an immutable digest in CI/CD.
-ARG SWIPL_IMAGE=docker.io/library/swipl:10.0.2
+ARG SWIPL_IMAGE=docker.io/library/swipl:11.0.0
 
 # Only plugin requirements reach the install step, so editing plugin code keeps its cache.
 FROM ${SWIPL_IMAGE} AS plugin-requirements-collector
