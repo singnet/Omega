@@ -73,12 +73,17 @@ class Rejected:
     reason: str
 
     def message(self) -> str:
-        hint = ""
-        legacy = os.path.join(os.path.dirname(self.path), LEGACY_DESCRIPTION_FILE)
-        if os.path.exists(legacy):
-            hint = (f". {LEGACY_DESCRIPTION_FILE} is no longer read: move its text"
-                    f" into the description field of the {SKILL_FILE} frontmatter")
-        return f"{self.path}: {self.reason}{hint}"
+        return f"{self.path}: {self.reason}"
+
+
+def _no_description(path: str, reason: str) -> Rejected:
+    """Reject a workflow that has no usable description. When the folder still
+    has the old description.txt, the reason says where its text has to go."""
+    legacy = os.path.join(os.path.dirname(path), LEGACY_DESCRIPTION_FILE)
+    if os.path.exists(legacy):
+        reason += (f". {LEGACY_DESCRIPTION_FILE} is no longer read: move its text"
+                   f" into the description field of the {SKILL_FILE} frontmatter")
+    return Rejected(path, reason)
 
 
 def _split_frontmatter(text: str) -> Optional[str]:
@@ -146,7 +151,8 @@ def read_entry(skill_dir: str) -> Union[CatalogEntry, Rejected]:
     rejection."""
     path = os.path.join(skill_dir, SKILL_FILE)
     try:
-        with open(path, encoding="utf-8") as f:
+        # utf-8-sig drops the byte-order mark some editors put at the start
+        with open(path, encoding="utf-8-sig") as f:
             text = f.read()
     except UnicodeDecodeError as e:
         return Rejected(path, f"the file is not valid UTF-8 ({e.reason} at byte {e.start})")
@@ -159,14 +165,14 @@ def read_entry(skill_dir: str) -> Union[CatalogEntry, Rejected]:
                               f" move details into separate files")
     frontmatter = _split_frontmatter(text)
     if frontmatter is None:
-        return Rejected(path, "the file does not start with YAML frontmatter between '---' lines")
+        return _no_description(path, "the file does not start with YAML frontmatter between '---' lines")
     fields = _parse_frontmatter(frontmatter)
     if isinstance(fields, str):
         return Rejected(path, fields)
 
     description = fields.get("description")
     if not isinstance(description, str) or not description.strip():
-        return Rejected(path, "the frontmatter has no description")
+        return _no_description(path, "the frontmatter has no description")
     description = description.strip()
     if len(description) > MAX_DESCRIPTION_LENGTH:
         return Rejected(path, f"the description has {len(description)} characters,"

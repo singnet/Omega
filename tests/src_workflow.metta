@@ -147,6 +147,13 @@
 !(test (contains-text (workflow-load-problem "./tests/res/workflows/long-file") "more than the limit of 500") True)
 !(test (contains-text (workflow-load-problem "./tests/res/workflows/no-frontmatter") "does not start with YAML frontmatter") True)
 
+; a SKILL.md saved with a byte-order mark is read like any other
+!(test (contains-text (fixture-catalog) (catalog-entry "bom-skill" "Saved with a byte-order mark.")) True)
+
+; the description.txt hint is given only when the description is missing
+!(test (contains-text (workflow-load-problem "./tests/res/workflows/legacy-description") "description.txt is no longer read") True)
+!(test (contains-text (workflow-load-problem "./tests/res/workflows/legacy-long-file") "description.txt") False)
+
 ; the list tells the agent how to load a workflow and which value to pass
 !(test (contains-text (fixture-catalog) "call `workflow-load-instructions <workflow_name>`") True)
 !(test (contains-text (fixture-catalog) "the value of that skill's `<name>` field") True)
