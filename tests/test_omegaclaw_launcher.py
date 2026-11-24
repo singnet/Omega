@@ -18,6 +18,10 @@ CONTAINER_TEST_IMAGE = os.environ.get("OMEGA_LAUNCHER_TEST_IMAGE", "")
 UPLOAD_PREFIX_SIZE = 1024
 FAKE_DOCKER = """\
 #!/bin/sh
+if [ "$1 $2 $3" = "volume inspect --format" ]; then
+  echo 1
+  exit 0
+fi
 version_path=""
 for arg in "$@"; do
   case "$arg" in

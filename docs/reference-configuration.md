@@ -111,6 +111,27 @@ precheck fails, recording a profile before that import is not guaranteed.
 
 ## Channels (`src/channels.metta`, `initChannels`)
 
+The Docker launcher mounts `omega-state` at `/var/lib/omega-state`. The proxy
+stores channel owners and authorized groups under `channel/`, accessible only to
+`www-data` and root. Bindings survive container recreation. On the first upgrade
+from file-based Docker authentication, bind the owner and groups again. The
+proxy ignores records from `omega-memory`, including imported archives.
+`scripts/omega clean` removes both live volumes and clears channel bindings.
+
+For `scripts/omega start`, `-s` takes precedence over `OMEGA_AUTH_SECRET`.
+When neither supplies a secret, the launcher generates a fresh one. The host
+operator can retrieve it with `docker exec omega printenv OMEGA_AUTH_SECRET`.
+Recreating a container with a new secret preserves its existing owner binding.
+
+For Telegram owner and group bindings, the proxy independently reads pending
+updates from the Telegram Bot API before the adapter acknowledges them. Group
+changes require a matching command from the stored owner for that group and the Telegram update ID. The proxy records the last
+applied update for each group to prevent an earlier command from undoing a later one.
+
+The launcher labels its state volume on creation. If an existing `omega-state`
+volume lacks this label, startup stops and `clean` preserves that volume.
+Back up or relocate its contents before freeing the name for a new state volume.
+
 | Parameter | Default | Meaning |
 |---|---|---|
 | `commchannel` | `irc` | Active channel — `irc`, `telegram`, `slack`, `mattermost`, or `websocket`. |
@@ -119,7 +140,7 @@ precheck fails, recording a profile before that import is not guaranteed.
 | `IRC_port` | 6667 | IRC port. |
 | `IRC_user` | `omega` | IRC nickname. |
 | `TG_CHAT_ID` | *(empty)* | Legacy single-chat bootstrap/fallback, primarily for authentication-disabled deployments. With authentication enabled, the authenticated owner's DM becomes the proactive-message default. |
-| `TG_ALLOWED_CHAT_IDS` | *(empty)* | Optional comma-separated initial allowed-chat set. The authenticated owner can add groups with `/bind` and remove them with `/unbind`; those changes are persisted in `memory/.channel/authenticated-group.json`, not written back to YAML. |
+| `TG_ALLOWED_CHAT_IDS` | *(empty)* | Optional comma-separated initial allowed-chat set. The authenticated owner can add groups with `/bind` and remove them with `/unbind`; Docker persists those changes in `omega-state`. Standalone runs use `memory/.channel/authenticated-group.json`. |
 | `TG_POLL_TIMEOUT` | 20 | Telegram long-poll timeout in seconds. |
 | `SL_CHANNEL_ID` | *(empty — auto-bind supported)* | Optional Slack channel ID where Omega reads/writes messages. Leave empty to auto-bind on first valid inbound auth/message. |
 | `SL_POLL_INTERVAL` | 60 | Slack poll interval in seconds (minimum effective value is 60). |
