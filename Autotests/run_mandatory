@@ -32,6 +32,7 @@ mock/test_skill_metta_mock.py
 mock/test_skill_pin_mock.py
 mock/test_call_id_number_overflow_mock.py
 mock/test_tool_call_field_boundaries_mock.py
+mock/test_tool_call_injection_mock.py
 mock/test_tool_result_for_every_call_mock.py
 mock/test_transition_episodes_after_eviction_mock.py
 mock/test_transition_metta_to_remember_mock.py
