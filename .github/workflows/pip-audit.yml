@@ -10,6 +10,9 @@ on:
 
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   pip-audit:
     uses: singnet/security-workflows/.github/workflows/pip-audit.yml@master
