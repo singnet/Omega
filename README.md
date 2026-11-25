@@ -28,7 +28,9 @@ of approximately 200 lines of code.
 
 ---
 
-## Installation
+## Standalone installation
+
+### System prerequisites
 
 Prerequisites: Git, Python 3.10 or later including dev headers, Pip and [venv](https://docs.python.org/3/library/venv.html) library, C compiler (for building [janus-swi](https://pypi.org/project/janus-swi/) library)
 
@@ -39,15 +41,19 @@ sudo apt-get install git python3 python3-dev python3-pip python3-venv build-esse
 
 Get [SWI-Prolog 10.0.2 or later](https://www.swi-prolog.org/).
 
-Install Omega:
+### Repository setup
+
+Install Omega using PeTTa `v1.0.4`, matching the version pinned in the Dockerfile:
 ```
-git clone https://github.com/trueagi-io/PeTTa
+git clone --depth 1 --branch v1.0.4 https://github.com/trueagi-io/PeTTa
 cd PeTTa
 mkdir -p repos
 git clone https://github.com/singnet/Omega.git repos/Omega
 git clone https://github.com/patham9/petta_lib_chromadb.git repos/petta_lib_chromadb
 cp repos/Omega/run.metta ./
 ```
+
+### Python environment and dependencies
 
 Setup Python virtual environment (or use your own), and upgrade its pip. An older
 pip cannot install the CPU build of torch below and falls back to the GPU one:
@@ -67,11 +73,64 @@ Install Python dependencies — core's, and those of any plugin that declares it
 ```
 ./repos/Omega/scripts/install_dependencies.sh
 ```
+
+### Configuration
+
+Keep the virtual environment active and run these steps from the PeTTa root.
+
+The model download below is required only for `embeddingprovider: Local` (the
+default). Skip it if you configure a cloud embedding provider such as OpenAI or
+ASICloud in `repos/Omega/config/config.yaml`.
+
+Local embeddings use `intfloat/e5-large-v2`. Omega loads this model in offline
+mode, so download it once before the first start, while connected to the internet:
+```bash
+env -u HF_HUB_OFFLINE -u TRANSFORMERS_OFFLINE python3 - <<'PY'
+from sentence_transformers import SentenceTransformer
+
+SentenceTransformer("intfloat/e5-large-v2", device="cpu")
+PY
+```
+Download and run Omega as the same OS user, with the same cache settings
+(`HF_HOME` and `SENTENCE_TRANSFORMERS_HOME`, if set). Otherwise, startup may not
+find the downloaded model.
+
+Configure `securityPolicyPath` in `repos/Omega/config/config.yaml` before
+starting. The default `profile/policy.yaml` contains Docker paths such as
+`/PeTTa` and `/memory-transfer`; it does not match a standalone installation.
+
+The recommended setup keeps filesystem restrictions enabled: copy
+`repos/Omega/profile/policy.yaml` to a separate file and adapt its `read_only`
+and `read_write` paths to your host.
+Allow reads of the PeTTa checkout, Python environment and model cache, and writes
+to the configured memory directory, ChromaDB directory and any required cache
+or temporary directories. Replace or remove the Docker-specific paths and make
+sure all required paths exist. Set `securityPolicyPath` to the absolute path of
+your adapted file. See the [filesystem policy reference](./docs/reference-tools-io.md#get-io-policy).
+
+As an alternative, only in an isolated development or test environment with no
+sensitive host files or credentials exposed, set:
+```yaml
+securityPolicyPath: ""
+```
+This disables Omega's filesystem restrictions: the agent can access files with
+the permissions of the OS user running it.
+
+Continue with [Usage](#usage) to select a provider and start the agent.
+
 ---
 
 ## Run Omega in Docker
 
 Ensure that you have [Docker installed](https://docs.docker.com/engine/install/)
+
+> When reusing existing memory, **keep the same** embedding provider and model used
+to create it.
+
+Use `-e Local|OpenAI|ASICloud` or `EMBEDDING_PROVIDER` to select the
+embedding provider independently of the LLM provider. Switching can break
+memory writes and searches; equal vector dimensions do not guarantee
+that different models are compatible.
 
 Run Omega using the interactive launcher for release `v0.1.23`:
 ```bash
@@ -148,12 +207,14 @@ Before running the system you need to choose your LLM API provider and export th
 |---|---|---|
 | `Anthropic` (default) | `ANTHROPIC_API_KEY` | Claude models via the Anthropic API. |
 | `OpenAI` | `OPENAI_API_KEY` | GPT models. Also reused by the OpenAI embedding provider below. |
-| `ASICloud` | `ASI_API_KEY` |  MiniMax models via ASI Alliance inference endpoint (`inference.asicloud.cudos.org`). |
+| `ASICloud` | `ASI_API_KEY` |  MiniMax models via ASI Alliance inference endpoint (`llm.a.singularitycompute.com`). |
 | `ASIOne` | `ASIONE_API_KEY` |  ASI1 Ultra model via ASI:One inference endpoint (`https://api.asi1.ai/v1`). |
 | `OpenAIAPI` | `OPENAIAPI_API_KEY` |  Use OpenAI API with any endpoint and model. API endpoint and model are set via `openaiapi_url` and `model` command line parameters. |
 | `OpenRouter` | `OPENROUTER_API_KEY` |  GLM model via OpenRouter inference endpoint. |
 
-Run the system via the following command which ensures the system is started from the root folder of PeTTa:
+For standalone mode, complete [Configuration](#configuration)
+first, activate the same virtual environment, and run the following command from
+the PeTTa root:
 ```
 OMEGA_AUTH_SECRET=<channel-secret> sh run.sh run.metta IRC_channel="<irc-channel>"
 ```
@@ -164,6 +225,9 @@ After start go to https://webchat.quakenet.org/ to communicate with the agent. J
 If you are running Omega without Docker and would like to load it with preset knowledge, follow these steps:
 
 1. Set EMBEDDING_PROVIDER in your environment. It can be set to OpenAI, ASICloud or Local. OpenAI embeddings also require OPENAI_API_KEY, and ASICloud embeddings require ASI_API_KEY to be set in your environment.
+
+   When using an existing memory collection, use its original embedding provider
+   and model. Changing either can make the stored vectors incompatible.
 
 2. Run:
 ```

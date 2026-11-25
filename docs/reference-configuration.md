@@ -21,8 +21,36 @@ This resolves the value through the Python configuration layer, using command-li
 | `provider` | `Anthropic` | LLM provider — `Anthropic`, `OpenAI`, `ASICloud`, or `ASIOne`. |
 | `maxOutputToken` | 6000 | Output cap passed to the provider. |
 | `reasoningMode` | `medium` | Reasoning-effort hint passed to the provider. |
+| `supportsReasoningEffort` | `false` | **OpenAIAPI only:** opt in to forwarding `reasoningMode` as `reasoning_effort` when the backend/model supports that parameter. An absent or false flag preserves the previous request shape. Other providers, including Anthropic and ASICloud, are unaffected. |
 | `wakeupInterval` | 600 (seconds) | How long idle before the next scheduled wake-up. |
 | `showStartupVersion` | `true` | Send the Omega version to the communication channel on startup. Set to `false` in `config.yaml` to suppress this message; standard logging and the `version` skill are unaffected. |
+
+For `OpenAIAPI`, enable `supportsReasoningEffort` only after confirming that the
+selected backend/model accepts `reasoning_effort` and the requested effort level.
+With the flag enabled, `reasoningMode: low` sends `reasoning_effort: low`;
+`reasoningMode: "none"` sends the explicit `"none"` value rather than leaving the
+backend's default in effect. A null or empty `reasoningMode` omits the parameter.
+Whether a level reduces or disables thinking depends on the backend/model; the
+flag does not detect support or guarantee that an answer fits the output budget.
+
+The flag is enabled only when the resolved configuration value is boolean `true`
+or the string `"true"` (case-insensitive, so `"True"` and `"TRUE"` also enable it).
+All other values disable it, including the strings `"yes"`, `"on"`, `"1"`,
+`" true "` (whitespace is not trimmed), and typos such
+as `"flase"`, as well as the number `1`. Use `true`/`false` in YAML. The existing
+YAML loader also converts unquoted `yes` and `on` to boolean `true` before this
+check; quoted `"yes"` and `"on"` remain strings and do not enable the flag.
+
+When launching through `scripts/omega start`, configure this flag in
+`config/config.yaml` inside the Docker image/container used by Omega. The
+launcher does not mount the host's configuration file, accept this flag as a CLI
+argument, or forward `OMEGA_supportsReasoningEffort` into Docker. The container
+entrypoint also removes that environment variable before starting Omega.
+
+For direct runtime launches that bypass the launcher and container entrypoint,
+the Python configuration layer accepts `supportsReasoningEffort=true` as a
+command-line override or `OMEGA_supportsReasoningEffort=true` in the environment.
+Use `false` instead of `true` to disable forwarding explicitly.
 
 ## Memory (`src/memory.metta`, `initMemory`)
 
@@ -46,6 +74,40 @@ plugins and channels start. Completed files become available to `query`
 progressively in the runtime memory collection. Background errors are logged.
 
 Local model loading still happens before indexing and can delay cold startup.
+
+Keep the same embedding provider and model when reusing a memory collection.
+Changing either can make existing vectors incompatible: different dimensions
+cause writes and searches to fail, while models with the same dimensions can
+still produce incompatible vectors and unreliable search results.
+Use the launcher option `-e Local|OpenAI|ASICloud` or `EMBEDDING_PROVIDER`
+to select embeddings independently of the LLM provider.
+
+### Startup memory profile check
+
+Before starting the agent container, `scripts/omega` runs `ltm_precheck` against
+the persistent memory collection. If the collection is empty and Chroma reports
+no dimension, the precheck sets its profile to the configured provider and model
+before comparison, replacing any different or incomplete profile without a warning.
+Once Chroma has set the dimension, the precheck preserves the stored profile
+even after all records have been deleted. A matching provider and model produce
+no warning. A mismatch produces a warning showing the stored and configured
+profiles. If the stored profile is unknown or incomplete, the launcher warns
+that the original provider and model must be checked manually. The compatibility
+warning is based on the provider and model recorded in the profile.
+
+The same check runs during `rag.init_knowledge()`, including standalone startup,
+before checking for knowledge files. With the launcher, warnings can appear both
+in the launcher console and in the agent's configured logs.
+
+These warnings do not stop startup or convert existing vectors. If the check
+itself fails, the launcher reports that it could not complete the check and
+continues startup.
+
+For a new installation, Docker creates the missing `omega-memory` volume and
+the precheck creates the collection and records its profile before the first embedding is stored.
+This happens before the optional knowledge import (`IMPORT_KB_ON_START=1`).
+The knowledge importer does not validate the collection profile itself. If the
+precheck fails, recording a profile before that import is not guaranteed.
 
 ## Channels (`src/channels.metta`, `initChannels`)
 

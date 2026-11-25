@@ -114,6 +114,8 @@
                                        ($_ (log INFO "loop" (REQUEST: (py-str ($request)))))
                                        ($response (llmProviderChat $request (router)))
                                        ($_ (log INFO "loop" (RESPONSE: (py-str ($response)))))
+                                       ($notice (llmLimitNotice $response))
+                                       ($_ (if (> (string_length $notice) 0) (notify $notice) _))
                                        ($respstr (py-call (providers.llmResponseToSExpr $response)))
                                        ($resp (catch (sread $respstr)))
                                        ($_ (log INFO "loop" (RESPONSE: $resp)))
@@ -121,14 +123,20 @@
                                        ($_ (messagesClear))
                                        ($sexpr (if (HandleError (quote $resp) $error)
                                                  $error
-                                                 (progn (messagesAppend (llmToolCallMessage role "assistant"
-                                                                                           calls (llmResponseCalls $response)
-                                                                                           content "[TOOL CALL]"))
+                                                 (progn (if (llmResponseIsEmpty $response)
+                                                      ()
+                                                      (messagesAppend (llmToolCallMessage role "assistant"
+                                                                                          calls (llmResponseCalls $response)
+                                                                                          content "[TOOL CALL]")))
                                                    (collapse
                                                          (let ($callid $s) (superpose $resp)
                                                            (let $result
                                                              (if (HandleError (quote $s) $error) $error
-                                                               (let $rc (catch (let $R (collapse (eval $s)) (py-call (helper.normalize_string $R))))
+                                                               (let $rc (catch (let $R (collapse (eval $s))
+                                                                 (case $R
+                                                                   ((((Error $tool_error_cmd $tool_error_msg))
+                                                                     (Error $tool_error_cmd $tool_error_msg))
+                                                                    ($else (py-call (helper.normalize_string $R)))))))
                                                                  (if (HandleError $rc $error) $error (strings-concat ("SUCCESS, RETURN: " $rc)))))
                                                              (progn
                                                                ($_ (log INFO "loop" (COMMAND_RETURN: ((quote $s) $result))))

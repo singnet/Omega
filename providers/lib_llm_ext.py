@@ -24,6 +24,8 @@ LLM_EMPTY_RESPONSE_MESSAGE = (
     "reasoning and the final answer draw from the same token limit, so higher "
     "reasoning levels need a higher token limit."
 )
+LLM_OUTPUT_LIMIT_MARKER = "LLM_MAX_OUTPUT_TOKENS_REACHED"
+_limit_notice_pending = False
 
 LLM_TIMEOUT_MESSAGE = (
     "LLM request timed out at {time}. Please try again later."
@@ -102,13 +104,31 @@ def _log_responses_completion(provider: str, model: str, response) -> None:
     )
     logger.info(line)
 
-def _llm_empty_response_tool_call() -> LLMToolCall:
-    """Return an explanatory message as a MeTTa `send` command when the LLM
-    spends the entire output token budget on reasoning and returns no content.
-    """
-    return (LLMToolCall().with_name("send")
-            .with_id(f"call_{uuid.uuid4().hex}")
-            .add_argument("content", LLM_EMPTY_RESPONSE_MESSAGE))
+def _sends_to_user(response: LLMResponse) -> bool:
+    return any(
+        call.name == "send" and not call.is_error()
+        and isinstance(call.arguments.get("content"), str)
+        for call in response.calls
+    )
+
+def _reply_or_limit_notice(request: LLMRequest, response: LLMResponse) -> LLMResponse:
+    global _limit_notice_pending
+    user = [message for message in request.messages if message.role == "user"]
+    if user and user[-1].content.strip() and NO_HUMAN_MESSAGE_MARKER not in user[-1].content:
+        _limit_notice_pending = True
+    if response.is_error():
+        return response
+    if response.calls:
+        if _sends_to_user(response):
+            _limit_notice_pending = False
+        return response
+    if response.output_limit_reached and _limit_notice_pending:
+        _limit_notice_pending = False
+        response.limit_notice = LLM_OUTPUT_LIMIT_MARKER
+    return response
+
+def llmLimitNotice(response: LLMResponse) -> str:
+    return LLM_EMPTY_RESPONSE_MESSAGE if response.limit_notice == LLM_OUTPUT_LIMIT_MARKER else ""
 
 def _is_timeout_error(error: BaseException) -> bool:
     """True when the request ran out of time rather than failing outright: the
@@ -356,7 +376,7 @@ class AIProvider(AbstractAIProvider):
             logger.warning("LLM returned an empty response")
             finish_reason = getattr(choice, "finish_reason", None)
             if finish_reason == "length":
-                response.add_tool_call(_llm_empty_response_tool_call())
+                response.output_limit_reached = True
             return response
 
         for tool_call in message.tool_calls:
@@ -388,7 +408,7 @@ class AIProvider(AbstractAIProvider):
             self._answered()
             _log_raw("LLM_RAW_RESPONSE", self._name, self._model_name, raw_response)
             _log_chat_completion(self._name, self._model_name, raw_response)
-            return self.convert_response(raw_response)
+            return _reply_or_limit_notice(request, self.convert_response(raw_response))
         except Exception as e:
             error = f"Exception while communicating with LLM: {e}"
             logger.exception(f"[AIProvider.chat]: {error}")
