@@ -1,0 +1,18 @@
+name: Python Dependency Audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pip-audit:
+    uses: singnet/security-workflows/.github/workflows/pip-audit.yml@master
