@@ -71,7 +71,10 @@ def prepare(raw, routes_path, catalog_path, embeddings="Local"):
         }
     if embeddings == "OpenAI":
         if openai_selection is None:
-            raise ValueError("OpenAI embeddings require a selected OpenAI provider")
+            token = os.environ.get("OPENAI_API_KEY")
+            if not token:
+                raise ValueError("OpenAI embeddings require an OpenAI model or OPENAI_API_KEY")
+            openai_selection = (PROVIDER_URLS["OpenAI"], token)
         routes.append(route("openai", *openai_selection))
     # Set permissions at creation, before writing any credentials.
     fd = os.open(routes_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)

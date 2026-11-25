@@ -902,7 +902,7 @@ options() {
     if [[ -n "${!api_token_var:-}" ]]; then
         api_token="${!api_token_var}"
     else
-        if [ "${command}" == "start" ]; then
+        if [[ "${command}" == "start" && "${LLM_router_switch:-none}" != "default" ]]; then
             echo "${api_token_var} is not set"
             return 1
         fi
@@ -1239,6 +1239,11 @@ start() {
     memory_export_option=()
     embedding_token_env=()
 
+    if [[ "${commchannel}" == "test" && -z "${TEST_SERVER_IP:-}" ]]; then
+        echo "TEST_SERVER_IP is not set (required by the test channel)" >&2
+        return 1
+    fi
+
     case "${embeddingprovider}" in
         Local|OpenAI|ASICloud) ;;
         *)
@@ -1248,17 +1253,28 @@ start() {
     esac
 
     case "${embeddingprovider}" in
-        OpenAI) emb_token_var="OPENAI_API_KEY" ;;
+        OpenAI)
+            if [[ "${LLM_router_switch:-none}" == "default" ]]; then
+                # The entrypoint configures OpenAI embeddings from the router catalog.
+                emb_token_var=""
+            else
+                emb_token_var="OPENAI_API_KEY"
+            fi
+            ;;
         ASICloud) emb_token_var="ASI_API_KEY" ;;
         *) emb_token_var="" ;;
     esac
 
-    if [[ -n "${emb_token_var}" && "${emb_token_var}" != "${api_token_var}" ]]; then
-        if [[ -z "${!emb_token_var:-}" ]]; then
+    if [[ -n "${emb_token_var}" &&
+          ( "${emb_token_var}" != "${api_token_var}" || "${LLM_router_switch:-none}" == "default" ) ]]; then
+        if [[ "${emb_token_var}" == "${api_token_var}" && -n "${api_token:-}" ]]; then
+            embedding_token_env=(-e "${emb_token_var}=${api_token}")
+        elif [[ -n "${!emb_token_var:-}" ]]; then
+            embedding_token_env=(-e "${emb_token_var}=${!emb_token_var}")
+        else
             echo "${emb_token_var} is not set (required by embedding provider ${embeddingprovider})" >&2
             return 1
         fi
-        embedding_token_env=(-e "${emb_token_var}=${!emb_token_var}")
     fi
 
     if [ -n "${log_config_path}" ]; then
@@ -1316,10 +1332,6 @@ if sys.argv[1]:
         fi
     fi
 
-    migrate_omegaclaw_memory || return 1
-
-    docker rm -f omega 2>/dev/null || true
-
     llm_env=()
     llm_options=()
     if [ "${LLM_router_switch:-none}" = "default" ]; then
@@ -1335,8 +1347,6 @@ if sys.argv[1]:
             llm_options+=("openaiapi_url=${openaiapi_url}")
         fi
     fi
-    ltm_precheck || echo "WARNING: Memory profile check could not be completed." >&2
-
     docker_cmd=(
         docker run -d -it
             --name omega
@@ -1350,7 +1360,6 @@ if sys.argv[1]:
             ${log_config_volume[@]+"${log_config_volume[@]}"}
             ${memory_transfer_volume[@]+"${memory_transfer_volume[@]}"}
             ${llm_env[@]+"${llm_env[@]}"}
-            -e "${api_token_var}"="${api_token}"
             ${embedding_token_env[@]+"${embedding_token_env[@]}"}
             -e "TG_BOT_TOKEN=${TG_BOT_TOKEN:-}"
             -e "SL_BOT_TOKEN=${SL_BOT_TOKEN:-}"
@@ -1393,6 +1402,9 @@ if sys.argv[1]:
       docker_cmd+=("openClawURL=${openclaw_url}")
     fi
 
+    migrate_omegaclaw_memory || return 1
+    docker rm -f omega 2>/dev/null || true
+    ltm_precheck || echo "WARNING: Memory profile check could not be completed." >&2
     "${docker_cmd[@]}"
 }
 

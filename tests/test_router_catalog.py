@@ -255,6 +255,17 @@ def test_openai_embeddings_route_with_a_single_openai_role(tmp_path):
     assert _header(blocks["openai"], "Authorization") == '"Bearer fake-token-openai"'
 
 
+def test_openai_embeddings_can_use_a_separate_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-embedding-token")
+    routes, published = _prepare(tmp_path, {"routine": _record()}, embeddings="OpenAI")
+    blocks = _blocks(routes)
+    assert _header(blocks["openai"], "Authorization") == '"Bearer fake-embedding-token"'
+    assert "fake-embedding-token" not in published
+    template = TEMPLATE.read_text(encoding="utf-8")
+    assert "openai" not in _blocks(template)
+    assert "${OPENAIAPI_URL}" not in template
+
+
 @pytest.mark.parametrize("embeddings", ["Local", "ASICloud"])
 def test_no_openai_route_unless_openai_embeddings_are_selected(tmp_path, embeddings):
     routes, _ = _prepare(tmp_path, {"routine": _record("OpenAI")}, embeddings=embeddings)
