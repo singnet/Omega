@@ -21,17 +21,24 @@ This resolves the value through the Python configuration layer, using command-li
 | `provider` | `Anthropic` | LLM provider — `Anthropic`, `OpenAI`, `ASICloud`, or `ASIOne`. |
 | `maxOutputToken` | 6000 | Output cap passed to the provider. |
 | `reasoningMode` | `medium` | Reasoning-effort hint passed to the provider. |
-| `supportsReasoningEffort` | `false` | **OpenAIAPI only:** opt in to forwarding `reasoningMode` as `reasoning_effort` when the backend/model supports that parameter. An absent or false flag preserves the previous request shape. Other providers, including Anthropic and ASICloud, are unaffected. |
+| `supportsReasoningEffort` | `false` | **OpenAIAPI and ASICloud:** opt in to forwarding `reasoningMode` as `reasoning_effort` when the backend/model supports that parameter. An absent or false flag preserves the previous request shape. Other providers, including Anthropic, are unaffected. |
 | `wakeupInterval` | 600 (seconds) | How long idle before the next scheduled wake-up. |
 | `showStartupVersion` | `true` | Send the Omega version to the communication channel on startup. Set to `false` in `config.yaml` to suppress this message; standard logging and the `version` skill are unaffected. |
 
-For `OpenAIAPI`, enable `supportsReasoningEffort` only after confirming that the
+For `OpenAIAPI` and `ASICloud`, enable `supportsReasoningEffort` only after confirming that the
 selected backend/model accepts `reasoning_effort` and the requested effort level.
 With the flag enabled, `reasoningMode: low` sends `reasoning_effort: low`;
 `reasoningMode: "none"` sends the explicit `"none"` value rather than leaving the
 backend's default in effect. A null or empty `reasoningMode` omits the parameter.
 Whether a level reduces or disables thinking depends on the backend/model; the
 flag does not detect support or guarantee that an answer fits the output budget.
+
+For the ASICloud default model, `minimax/minimax-m3.1-flash`, use
+`supportsReasoningEffort: true` with `reasoningMode: low` to request the
+lowest documented effort. MiniMax lists `low`, `medium`, `high`, `xhigh`, and
+`max`. Its hosted API requires adaptive thinking and rejects `none`. With
+`supportsReasoningEffort: false`, ASICloud chooses its own default.
+[MiniMax model documentation](https://platform.minimax.io/docs/guides/text-generation#thinking)
 
 The flag is enabled only when the resolved configuration value is boolean `true`
 or the string `"true"` (case-insensitive, so `"True"` and `"TRUE"` also enable it).
