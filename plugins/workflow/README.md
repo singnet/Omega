@@ -7,7 +7,7 @@ consists of short description in `description.txt` file, detailed description
 in `SKILL.md` file and optionally `skill.metta` file which contains the
 implementation of the related tools in MeTTa language.
 
-[Research workflow](./instructions/research-workflow) is a ready-to-use example
+[Research workflow](./core-skills/research-workflow) is a ready-to-use example
 of the workflow. One can try it starting the agent and asking it doing a
 research on some topic:
 ```
@@ -24,12 +24,12 @@ descriptions of all workflows to the prompt, so the agent knows which
 workflows it can load. A workflow without `description.txt` is not listed. An
 example of the file:
 ```
-When user asks to demonstrate workflow plugin load test-workflow instructions: (workflow-load-instructions \"test-workflow\")
+When user asks to demonstrate workflow plugin load test-workflow skills: (workflow-load-skills \"test-workflow\")
 ```
 
 `SKILL.md` (required) is the skill file in the [Agent Skills
 format](https://agentskills.io/specification). When the workflow is loaded, the
-plugin puts the whole file into the prompt as the active workflow instructions.
+plugin puts the whole file into the prompt as the active workflow skills.
 The plugin does not parse the frontmatter. The workflow name is the name of its
 directory, and the prompt lists the workflow with the text of
 `description.txt`. For example:
@@ -38,12 +38,12 @@ directory, and the prompt lists the workflow with the text of
 name: test-workflow
 description: Created to check how SKILL.md is loaded to Omega.
 ---
-Next are instructions and MeTTa  functions  that should be performed step by step
+Next are skills and MeTTa  functions  that should be performed step by step
 # Test Workflow (Omega)
 ## Step 1 - demonstrate usage of tools
 - Call test-skill with "This is a test workflow demonstration" message
 ## Step 2 - complete workflow
-- Call `(workflow-unload-instructions)`
+- Call `(workflow-unload-skills)`
 ```
 
 `skill.metta` (optional) contains the list of tools which the workflow adds
@@ -67,19 +67,31 @@ For example:
 
 ## Using workflow
 
-The plugin adds three tools of its own. `workflow-load-instructions` loads the
+The plugin adds three tools of its own. `workflow-load-skills` loads the
 workflow with the given name and adds the tools from its `skill.metta`.
-`workflow-unload-instructions` takes no arguments and removes the active
-instructions together with all tools added from `skill.metta` files.
+`workflow-unload-skills` takes no arguments and removes the active
+skills together with all tools added from `skill.metta` files.
 `workflow-refresh-list` is described below. While a workflow is active,
-`workflow-load-instructions` rejects another one with the error `There is an
+`workflow-load-skills` rejects another one with the error `There is an
 active workflow`, so the first workflow has to be unloaded before the next one
 is loaded.
 
 Start an agent and ask it to use the workflow. For the test workflow above
 send: `Demonstrate workflow plugin`
 
-New workflows put into `pluginWorkflowInstructionsDir` while the agent is
+## Core and custom skills
+
+Workflows are looked up in two directories:
+- core skills shipped with Omega are kept in
+  `pluginWorkflowCoreSkillsDir` and are updated together with Omega;
+- custom skills are kept in `pluginWorkflowCustomSkillsDir` which is
+  placed in the memory directory by default, so they survive container
+  restarts and image updates. The directory is created on start if missing.
+
+A custom skill overrides the core skill with the same name. To change a core
+skill, copy its directory into `custom-skills` and edit the copy.
+
+New workflows put into `pluginWorkflowCustomSkillsDir` while the agent is
 running become available after the agent calls the `workflow-refresh-list`
 tool. Ask the agent to refresh the list of workflows, or just ask it to load
 the new workflow by name.
@@ -87,15 +99,18 @@ the new workflow by name.
 ## Workflow parameters
 
 Workflow plugin Omega configuration parameters:
-- `pluginWorkflowInstructionsDir` - path to the directory which contains
-  available workflows. Default value is `<project
-  root>/plugins/workflow/instructions`
+- `pluginWorkflowCoreSkillsDir` - path to the directory which contains
+  core skills. Default value is `<project_root>/plugins/workflow/core-skills`
+- `pluginWorkflowCustomSkillsDir` - path to the directory which contains
+  custom skills. Default value is `<memoryDirectory>/workflow/custom-skills`
 - `pluginWorkflowMemoryDir` - path to the directory to keep workflow working
-  files when workflow is active. Default value is `<project
-  root>/memory/workflow_space`
+  files when workflow is active. Default value is `<memoryDirectory>/workflow/space`
+
+Custom and working directories are created on start together with missing
+parent directories.
 
 One can set this parameters passing them as a command line arguments. For
 example:
 ```sh
-sh run.sh run.metta pluginWorkflowInstructionsDir="<path>"
+sh run.sh run.metta pluginWorkflowCoreSkillsDir="<path>"
 ```
