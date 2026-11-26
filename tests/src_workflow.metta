@@ -7,7 +7,7 @@
 !(import! &self ./src/skills)
 !(import! &self ./plugins/workflow/workflow)
 
-(= (pluginWorkflowInstructionsDir) (joinPath ((projectRootDirectory) "plugins" "workflow" "instructions")))
+(= (pluginWorkflowInstructionsDir) (get-state &test-instructions-dir))
 
 (= (send $msg)
    (progn (change-state! &test-workflow-message $msg) ()))
@@ -16,6 +16,40 @@
 
 (= (count-test-skill)
    (expression-count-item (getSkills) (test-skill "Test skill to demonstrate workflow by sending message to the user" (message))))
+
+(= (rejected-workflow $name)
+   (let $results (collapse (workflow-load-instructions $name))
+     (= ((Error $_ "ERROR: invalid workflow name")) $results)))
+
+(= (invalid-workflow-rejected $name)
+   (let $results (collapse (workflow-load-instructions $name))
+     (let ((Error $_ $message)) $results
+       (and (contains-text $message "ERROR: invalid workflow name")
+            (contains-text $message "start with an ASCII letter or digit")))))
+
+;; Verify each fixture is a real link to an existing target before exercising
+;; discovery and loading through the same entry points used by the agent.
+!(change-state! &test-instructions-dir (joinPath ((projectRootDirectory) "tests" "res" "workflow-links")))
+(= (fixture-link-exists $relative)
+   (let $path (joinPath ((instructionsDir) $relative))
+     (and (workflow-symlink $path) (or (exists-file $path) (exists-directory $path)))))
+!(test (fixture-link-exists "linked-directory") True)
+!(test (fixture-link-exists "linked-instructions/SKILL.md") True)
+!(test (fixture-link-exists "linked-skills/skill.metta") True)
+!(test (fixture-link-exists "linked-description/description.txt") True)
+!(test (workflow-list-available) ())
+!(test (rejected-workflow "linked-directory") True)
+!(test (rejected-workflow "linked-instructions") True)
+!(test (rejected-workflow "linked-skills") True)
+
+;; No shell or metta skills are registered in this fixture.
+!(change-state! &test-instructions-dir (joinPath ((projectRootDirectory) "plugins" "workflow" "instructions")))
+!(test (invalid-workflow-rejected "../../../memory/workflow_space") True)
+!(test (invalid-workflow-rejected "./test-workflow") True)
+!(test (invalid-workflow-rejected "test-workflow;") True)
+!(test (rejected-workflow "missing-workflow") True)
+!(test (get-state &workflow_active_name) "")
+!(test (count-test-skill) 0)
 
 (= (count-research-skills)
    ((expression-count-item (getSkills) (research-start "Create research project folders" (research_name topic)))
@@ -27,7 +61,7 @@
     (expression-count-item (getSkills) (researchDir "Get research directory" ()))))
 
 !(test (progn
-         (collapse (workflow-load-instructions test-workflow))
+         (collapse (workflow-load-instructions "test-workflow"))
          (count-test-skill))
        1)
 
@@ -86,16 +120,6 @@
 !(test (let $res (nop)
          (= (cons Error (cons $_ $error)) $res))
        False)
-
-(= (invalid-workflow-rejected $name)
-   (let $results (collapse (workflow-load-instructions $name))
-     (let ((Error $_ $message)) $results
-       (and (contains-text $message "ERROR: invalid workflow name")
-            (contains-text $message "start with an ASCII letter or digit")))))
-
-!(test (invalid-workflow-rejected "./test-workflow") True)
-!(test (invalid-workflow-rejected "test-workflow;") True)
-!(test (get-state &workflow_active_name) "")
 
 !(change-state! &test-workspace (py-call (tempfile.TemporaryDirectory)))
 (= (memoryDirectory) (py-call (.__enter__ (get-state &test-workspace))))
