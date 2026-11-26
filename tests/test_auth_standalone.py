@@ -221,3 +221,44 @@ def test_a_record_written_after_an_unterminated_one_is_kept(monkeypatch, tmp_pat
 
     assert auth.revoke_channel_group("TELEGRAM", "active", "owner") == "group_unbound"
     assert auth.load_channel_auth_state("TELEGRAM") == ("owner", set())
+
+
+def test_gateway_ignores_memory_records(monkeypatch, tmp_path):
+    auth = load_auth_module(monkeypatch, gateway_url="http://gateway")
+    monkeypatch.setattr(auth, "_MEMORY_DIRECTORY", str(tmp_path))
+    directory = tmp_path / ".channel"
+    directory.mkdir()
+    (directory / "authenticated-user.json").write_text(
+        '{"channel_identifier":"IRC","user_id":"old-owner"}\n'
+    )
+    (directory / "authenticated-group.json").write_text(
+        '{"channel_identifier":"IRC","group_id":"old-group","authorized_by":"old-owner"}\n'
+    )
+
+    def state(route, channel):
+        assert (route, channel) == ("state", "IRC")
+        return {"owner_id": "current-owner", "groups": ["current-group"]}
+
+    monkeypatch.setattr(auth, "_gateway_request", state)
+    assert auth.get_channel_authenticated_user_id("IRC") == "current-owner"
+    assert auth.load_channel_auth_state("IRC") == ("current-owner", {"current-group"})
+    assert not auth.get_channel_saved_group_id("IRC", "old-group")
+
+
+@pytest.mark.parametrize("code", [400, 413, 422, 431, 429, 503])
+def test_gateway_mutation_retries_only_recoverable_errors(monkeypatch, code):
+    from urllib.error import HTTPError
+
+    auth = load_auth_module(monkeypatch, gateway_url="http://gateway")
+    def reject(request, timeout):
+        raise HTTPError(request.full_url, code, "rejected", {}, None)
+
+    monkeypatch.setattr(auth.urllib.request, "urlopen", reject)
+    if code in (429, 503):
+        with pytest.raises(HTTPError):
+            auth.revoke_channel_group("TELEGRAM", "-123", "1", update_id=7)
+    else:
+        assert auth.revoke_channel_group("TELEGRAM", "-123", "1", update_id=7) == "ignore"
+
+    with pytest.raises(HTTPError):
+        auth.load_channel_auth_state("TELEGRAM")

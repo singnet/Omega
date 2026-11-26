@@ -31,13 +31,13 @@ def load_telegram(monkeypatch, auth_enabled=True):
         state["owner"] = str(user)
         return "auth_bound"
 
-    def authorize_channel_group(channel, group, requester):
+    def authorize_channel_group(channel, group, requester, update_id=None):
         if str(requester) != state["owner"]:
             return "ignore"
         state["groups"].add((channel, str(group)))
         return "group_bound"
 
-    def revoke_channel_group(channel, group, requester):
+    def revoke_channel_group(channel, group, requester, update_id=None):
         key = (channel, str(group))
         if str(requester) != state["owner"] or key not in state["groups"]:
             return "ignore"
@@ -364,11 +364,11 @@ def test_owner_can_unbind_group_from_dm(monkeypatch):
     telegram = load_telegram(monkeypatch)
 
     assert telegram._is_allowed_message("dm", "1", "private", "auth secret") == "auth_bound"
-    assert telegram._is_allowed_message("group", "1", "group", "/bind") == "group_bound"
-    assert telegram._is_allowed_message("dm", "1", "private", "/unbind group") == "group_unbound"
-    assert "group" not in telegram._authorized_groups
-    assert "group" not in telegram._admin_allowed_chats
-    assert telegram._is_allowed_message("group", "2", "group", "hello") == "ignore"
+    assert telegram._is_allowed_message("-202", "1", "group", "/bind") == "group_bound"
+    assert telegram._is_allowed_message("dm", "1", "private", "/unbind -202") == "group_unbound"
+    assert "-202" not in telegram._authorized_groups
+    assert "-202" not in telegram._admin_allowed_chats
+    assert telegram._is_allowed_message("-202", "2", "group", "hello") == "ignore"
 
 
 def test_configured_chats_are_a_hard_boundary_when_auth_is_disabled(monkeypatch):
@@ -399,3 +399,23 @@ def test_owner_bind_can_expand_configured_runtime_allowlist(monkeypatch):
     assert telegram._is_allowed_message("new-group", "1", "group", "/bind") == "group_bound"
     assert "new-group" in telegram._admin_allowed_chats
     assert "new-group" in telegram._authorized_groups
+
+
+def test_invalid_unbind_does_not_block_following_update(monkeypatch):
+    telegram = load_telegram(monkeypatch)
+    telegram._owner_id = "101"
+    telegram._running = True
+    monkeypatch.setattr(telegram.auth, "revoke_channel_group",
+                        lambda *args, **kwargs: pytest.fail("invalid group reached auth backend"))
+
+    def poll(*args, **kwargs):
+        telegram._running = False
+        return [{"update_id": index, "message": {
+            "message_id": index, "text": text, "from": {"id": 101, "username": "alice"},
+            "chat": {"id": 101, "type": "private"}}}
+            for index, text in enumerate(("/unbind " + "я" * 4000, "hello"), start=7)]
+
+    monkeypatch.setattr(telegram, "_api_call", poll)
+    telegram._poll_loop()
+    assert telegram._offset == 9
+    assert telegram.getLastMessage() == "[101] [8] @alice: hello"
