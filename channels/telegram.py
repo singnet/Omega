@@ -234,7 +234,7 @@ def _command_argument(msg):
     return parts[1].strip() if len(parts) == 2 else ""
 
 
-def _is_allowed_message(chat_id, user_id, chat_type, msg):
+def _is_allowed_message(chat_id, user_id, chat_type, msg, update_id=None):
     global _auto_bound_chat, _owner_id, _default_chat_id
 
     auth_enabled = auth.is_auth_enabled()
@@ -282,18 +282,19 @@ def _is_allowed_message(chat_id, user_id, chat_type, msg):
         if is_owner_bootstrap:
             candidate = _parse_auth_candidate(msg)
             state = auth.authenticate_channel_user("TELEGRAM", user_id, candidate)
-            if state == "auth_bound":
+            if state in {"auth_bound", "allow"}:
                 with _state_lock:
                     _owner_id = user_id
                     _default_chat_id = chat_id
+                return "auth_bound"
             return state
         return "ignore"
 
     if chat_type == "private":
         if user_id == owner_id and _is_unbind_command(msg):
             group_id = _command_argument(msg)
-            if group_id:
-                state = auth.revoke_channel_group("TELEGRAM", group_id, user_id)
+            if re.fullmatch(r"-[1-9][0-9]{0,18}", group_id):
+                state = auth.revoke_channel_group("TELEGRAM", group_id, user_id, update_id=update_id)
                 if state == "group_unbound":
                     _authorized_groups.discard(group_id)
                     _admin_allowed_chats.discard(group_id)
@@ -304,7 +305,7 @@ def _is_allowed_message(chat_id, user_id, chat_type, msg):
     # Anything that isn't "private" is a group/supergroup chat.
     if _is_unbind_command(msg):
         if user_id == owner_id:
-            state = auth.revoke_channel_group("TELEGRAM", chat_id, user_id)
+            state = auth.revoke_channel_group("TELEGRAM", chat_id, user_id, update_id=update_id)
             if state == "group_unbound":
                 _authorized_groups.discard(chat_id)
                 _admin_allowed_chats.discard(chat_id)
@@ -315,7 +316,7 @@ def _is_allowed_message(chat_id, user_id, chat_type, msg):
         return "allow"
 
     if user_id == owner_id and _is_bind_command(msg):
-        state = auth.authorize_channel_group("TELEGRAM", chat_id, user_id)
+        state = auth.authorize_channel_group("TELEGRAM", chat_id, user_id, update_id=update_id)
         if state in {"allow", "group_bound"}:
             _authorized_groups.add(chat_id)
             _admin_allowed_chats.add(chat_id)
@@ -402,7 +403,7 @@ def _process_update(update):
     if not chat_id or not user_id:
         return
 
-    state = _is_allowed_message(chat_id, user_id, chat_type, text)
+    state = _is_allowed_message(chat_id, user_id, chat_type, text, update.get("update_id"))
     display_name = _display_name(user, chat)
 
     if state == "allow":

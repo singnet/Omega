@@ -2,6 +2,7 @@ import hmac
 import json
 import os
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 from config import config_get_by_key
@@ -28,6 +29,26 @@ def get_proxy_url():
     return _proxy_url
 
 
+def _gateway_request(route, channel_identifier, token=None, **fields):
+    payload = {"channel_identifier": str(channel_identifier).strip(), **fields}
+    request = urllib.request.Request(
+        f"{get_proxy_url()}/auth/{route}", data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    if token is not None:
+        request.add_header("X-Auth-Token", str(token))
+    # Telegram group commands can require both getUpdates and getMe.
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as exc:
+        # Retrying a malformed mutation would block subsequent Telegram updates.
+        if route != "state" and exc.code in (400, 413, 414, 422, 431):
+            exc.close()
+            return {"result": "ignore"}
+        raise
+
+
 def _local_auth_secret():
     return os.environ.get("OMEGA_AUTH_SECRET", "").strip()
 
@@ -46,8 +67,8 @@ def is_auth_enabled():
             data = json.loads(resp.read())
             _auth_enabled = data.get("enabled", False)
     except Exception as e:
-        logger.warning(f"Could not read auth status from proxy, assuming auth is disabled: {e}")
-        _auth_enabled = False
+        logger.warning(f"Could not read auth status from proxy, requiring authentication: {e}")
+        return True
     return _auth_enabled
 
 
@@ -77,10 +98,10 @@ def _channel_auth_user_path():
 # ---------------------------------------------------------------------------
 # Single-user (owner) authentication.
 
-def store_channel_authenticated_user_id(channel_identifier, user_id):
+def store_channel_authenticated_user_id(channel_identifier, user_id, token=None):
     # For any single run of Omega, allow only a single save of a user-id or verification    
     global _user_ID_processed
-    if _user_ID_processed:
+    if not get_proxy_url() and _user_ID_processed:
         logger.warning(f"[{channel_identifier}] Warning: a user already was validated, ignoring")
         return False
     channel_identifier = str(channel_identifier or "").strip()
@@ -90,7 +111,16 @@ def store_channel_authenticated_user_id(channel_identifier, user_id):
     if not user_id:
         raise ValueError("user_id is required")
 
-    """Record an authenticated channel user ID in the memory directory."""
+    if get_proxy_url():
+        try:
+            result = _gateway_request("bind", channel_identifier, token, user_id=user_id)
+        except (ValueError, OSError) as exc:
+            if channel_identifier == "TELEGRAM" and isinstance(exc, OSError):
+                raise  # Retry the pending Telegram update before advancing its offset.
+            logger.warning(f"Gateway owner binding failed ({type(exc).__name__})")
+            return False
+        return result["result"] == "auth_bound"
+
     payload = {
         "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "channel_identifier": channel_identifier,
@@ -134,9 +164,9 @@ def authenticate_channel_user(channel_identifier, user_id, auth_candidate=None):
         return "allow" if saved_user_id == user_id else "ignore"
 
     # The secret can establish an owner only before an owner has been saved.
-    if auth_candidate is not None and verify_token(auth_candidate):
+    if auth_candidate is not None and (get_proxy_url() or verify_token(auth_candidate)):
         label = channel_identifier.upper()
-        if store_channel_authenticated_user_id(channel_identifier, user_id):
+        if store_channel_authenticated_user_id(channel_identifier, user_id, auth_candidate):
             logger.info(f"[{label}] Saved authenticated user ID")
             return "auth_bound"
         logger.error(f"[{label}] ERROR -- Unable to save user ID")
@@ -152,6 +182,8 @@ def get_channel_authenticated_user_id(channel_identifier):
     channel_identifier = str(channel_identifier or "").strip()
     if not channel_identifier:
         return None
+    if get_proxy_url():
+        return _gateway_request("state", channel_identifier)["owner_id"]
     try:
         path = _channel_auth_user_path()
         with open(path, "r", encoding="utf-8") as f:
@@ -200,6 +232,10 @@ def load_channel_auth_state(channel_identifier):
     channel_identifier = str(channel_identifier or "").strip()
     if not channel_identifier:
         raise ValueError("channel_identifier is required")
+
+    if get_proxy_url():
+        state = _gateway_request("state", channel_identifier)
+        return state["owner_id"], set(state["groups"])
 
     def read_records(path, label):
         try:
@@ -272,6 +308,9 @@ def store_channel_authenticated_group_id(channel_identifier, group_id, authorize
     if not authorized_by_user_id:
         raise ValueError("authorized_by_user_id is required")
 
+    if get_proxy_url():
+        return authorize_channel_group(channel_identifier, group_id, authorized_by_user_id) in ("group_bound", "allow")
+
     payload = {
         "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "channel_identifier": channel_identifier,
@@ -292,6 +331,8 @@ def get_channel_saved_group_id(channel_identifier, group_id):
     group_id = str(group_id or "").strip()
     if not channel_identifier or not group_id:
         return False
+    if get_proxy_url():
+        return group_id in load_channel_auth_state(channel_identifier)[1]
     owner_id = get_channel_authenticated_user_id(channel_identifier)
     if owner_id is None:
         return False
@@ -321,11 +362,14 @@ def get_channel_saved_group_id(channel_identifier, group_id):
     return authorized
 
 
-def authorize_channel_group(channel_identifier, group_id, requester_user_id):
+def authorize_channel_group(channel_identifier, group_id, requester_user_id, update_id=None):
     """
     Open a group chat to all its members -- but ONLY when requester_user_id
     matches the persisted owner for this channel
     """
+    if get_proxy_url():
+        return _gateway_request("group/authorize", channel_identifier, group_id=str(group_id or ""),
+                                requester_user_id=str(requester_user_id or ""), update_id=update_id)["result"]
     if get_channel_saved_group_id(channel_identifier, group_id):
         return "allow"
 
@@ -345,7 +389,7 @@ def authorize_channel_group(channel_identifier, group_id, requester_user_id):
     return "ignore"
 
 
-def revoke_channel_group(channel_identifier, group_id, requester_user_id):
+def revoke_channel_group(channel_identifier, group_id, requester_user_id, update_id=None):
     """Remove a trusted group when requested by the persisted channel owner."""
     channel_identifier = str(channel_identifier or "").strip()
     group_id = str(group_id or "").strip()
@@ -353,6 +397,9 @@ def revoke_channel_group(channel_identifier, group_id, requester_user_id):
     if not channel_identifier or not group_id:
         return "ignore"
 
+    if get_proxy_url():
+        return _gateway_request("group/revoke", channel_identifier, group_id=str(group_id or ""),
+                                requester_user_id=str(requester_user_id or ""), update_id=update_id)["result"]
     owner_id = get_channel_authenticated_user_id(channel_identifier)
     if owner_id is None or requester_user_id != owner_id:
         return "ignore"

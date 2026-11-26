@@ -108,6 +108,11 @@ and OpenAI, with `OPENAI_API_KEY`, `TG_BOT_TOKEN` and `OMEGA_AUTH_SECRET`
 exported in your shell:
 
 ```sh
+docker volume create --label org.singnet.omega.channel-state=1 omega-state
+if [ "$(docker volume inspect --format '{{with .Labels}}{{index . "org.singnet.omega.channel-state"}}{{end}}' omega-state)" != 1 ]; then
+  echo "Existing omega-state volume is not labeled as Omega channel state." >&2
+  exit 1
+fi
 docker rm -f omega
 docker run -d -it \
   --name omega \
@@ -118,6 +123,7 @@ docker run -d -it \
   --tmpfs /var/tmp:size=64m,mode=1777 \
   --tmpfs /run:size=16m,mode=755 \
   --volume omega-memory:/PeTTa/repos/Omega/memory \
+  --volume omega-state:/var/lib/omega-state \
   --device nvidia.com/gpu=all \
   -e OPENAI_API_KEY \
   -e TG_BOT_TOKEN \

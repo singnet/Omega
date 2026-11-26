@@ -178,6 +178,14 @@ http {
         # After envsubst, ${OMEGA_AUTH_SECRET} becomes the literal secret.
         set $auth_secret_value "${OMEGA_AUTH_SECRET}";
 
+        location ~ ^/auth/(state|bind|group/(authorize|revoke))$ {
+            allow 127.0.0.1;
+            allow ::1;
+            deny all;
+            client_max_body_size 8k;
+            proxy_pass http://unix:/opt/nginx/auth-state.sock;
+        }
+
         location = /auth/status {
             default_type application/json;
             if ($auth_secret_value = "") {
