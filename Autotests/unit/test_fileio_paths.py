@@ -1,11 +1,14 @@
 """Unit tests for the filesystem primitives used by the research workflow."""
 import errno
+import fcntl
 import os
 import stat
 import struct
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Event
 
 import pytest
 
@@ -196,6 +199,57 @@ def test_research_write_keeps_inode_when_replacement_permissions_fail(tmp_path, 
     assert topic.read_text() == ("Original topic" if fail_sync else "Updated")
     assert os.path.samestat(before, topic.stat())
     assert not list(topic.parent.glob(".research-*.tmp"))
+
+
+@pytest.mark.parametrize("fail_update", [False, True], ids=["commit", "rollback"])
+def test_plan_load_waits_for_in_place_write(tmp_path, workflow_dir, monkeypatch, fail_update):
+    plan_args = (tmp_path, workflow_dir, "study", "02_plan.md")
+    old_plan = "Original complete plan"
+    new_plan = "Updated complete plan"
+    assert fileio.start_research(tmp_path, workflow_dir, "study", "Topic").startswith("Created project:")
+    assert fileio.write_research_file(*plan_args, old_plan).startswith("WRITE-VERIFIED")
+
+    partial_written = Event()
+    reader_blocked = Event()
+    resume_writer = Event()
+    overwrite = fileio._overwrite_open_file
+    flock = fcntl.flock
+
+    def deny_replacement(*args, **kwargs):
+        raise PermissionError(errno.EPERM, "cannot replace this file")
+
+    def pause_partial_write(fd, source):
+        if not partial_written.is_set():
+            os.pwrite(fd, b"Incomplete", 0)
+            partial_written.set()
+            assert resume_writer.wait(10)
+            if fail_update:
+                raise OSError(errno.EIO, "in-place write failed")
+        overwrite(fd, source)
+
+    def observe_shared_lock(fd, operation):
+        if operation == fcntl.LOCK_SH:
+            with pytest.raises(BlockingIOError):
+                flock(fd, operation | fcntl.LOCK_NB)
+            reader_blocked.set()
+        return flock(fd, operation)
+
+    monkeypatch.setattr(os, "replace", deny_replacement)
+    monkeypatch.setattr(fileio, "_overwrite_open_file", pause_partial_write)
+    monkeypatch.setattr(fcntl, "flock", observe_shared_lock)
+
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        writer = workers.submit(fileio.write_research_file, *plan_args, new_plan)
+        try:
+            assert partial_written.wait(10)
+            reader = workers.submit(fileio.read_research_instructions, *plan_args)
+            assert reader_blocked.wait(10)
+            assert not reader.done()
+        finally:
+            resume_writer.set()
+
+        assert writer.result(timeout=10).startswith("WRITE-FAILED" if fail_update else "WRITE-VERIFIED")
+        assert reader.result(timeout=10) == ["ok", old_plan if fail_update else new_plan]
 
 
 def test_research_files_support_local_links_and_nested_paths(tmp_path, workflow_dir):

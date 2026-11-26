@@ -308,6 +308,8 @@ def read_research_instructions(memory_dir, workflow_dir, project, filename):
         with _research_project(memory_dir, workflow_dir, project) as (path, fd):
             with _research_target(path, fd, filename) as (_, parent_fd, name):
                 with _regular_file(parent_fd, name, os.O_RDONLY) as stream:
+                    # Wait for an in-place update or its rollback before loading the plan.
+                    fcntl.flock(stream.fileno(), fcntl.LOCK_SH)
                     return ["ok", stream.read().decode("utf-8")]
     except FileNotFoundError:
         return ["error", f"ERROR: file not found: {project}/{filename}"]
