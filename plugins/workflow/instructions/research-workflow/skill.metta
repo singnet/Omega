@@ -6,64 +6,41 @@
 (skill research-checkpoint "Pause for user approval" (researchname message))
 (skill research-complete "Finish research and unload workflow" (researchname))
 (skill load-research-dynamic-instructions " Load a generated file into active context" (researchname_in_quotes filename_in_quotes))
+(skill research-write-file "Write a UTF-8 file inside an existing research project" (research_name relative_path content))
 (skill researchDir "Get research directory" ())
 
 ;; Actual skills implementation
 
-;; Build a safe path or empty string if validation fails
-(= (safe-instruction-path $project_dir $research-name $filename)
-   ; TODO: calling Python validation code is replaced by stub.
-   ; Can be returned back when https://github.com/trueagi-io/PeTTa/issues/196 is
-   ; fixed.
-   ;(py-call (utils.safe_path $project_dir $research-name $filename)))
-   (joinPath ($project_dir $research-name $filename)))
+(= (research-name-error $kind)
+   (strings-concat ("ERROR: invalid " $kind
+                    ". Use 1 to 128 characters, start with an ASCII letter or digit, "
+                    "and use only a-z, A-Z, 0-9, _, -, and . without consecutive dots (..).")))
 
-(= (load-research-dynamic-instructions  $research-name $filename)
-    (let $d (researchDir) (load-dynamic-instructions $d $research-name $filename)))
-
-; loads instructions created during workflow
-(= (load-dynamic-instructions $project_dir $research-name $filename)
+(= (load-research-dynamic-instructions $research-name $filename)
    (if (not (valid-file-or-folder-name $research-name))
-       (send (strings-concat ("ERROR: invalid name: " $research-name)))
+       (send (research-name-error "research name"))
        (if (not (valid-file-or-folder-name $filename))
-           (send (strings-concat ("ERROR: invalid filename: " $filename)))
-           (let $path (safe-instruction-path $project_dir $research-name $filename)
-                (if (== $path "")
-                    (send (strings-concat ("ERROR: path traversal rejected for " $research-name "/" $filename)))
-                    (load-dynamic-instructions-safe $path $research-name $filename))))))
+           (send (research-name-error "filename"))
+           (let $result (py-call (fileio.read_research_instructions (pluginWorkflowMemoryDir) $research-name $filename))
+             (let $message (string_concat "" (car-atom (cdr-atom $result)))
+               (if (== (car-atom $result) ok)
+                 (progn
+                   (workflow-change-active-instructions $message)
+                   (send (strings-concat ("Loaded " $filename " for " $research-name ". Following instructions."))))
+                 (send $message)))))))
 
-; actually loads the file (internal). Only called after validation.
-(= (load-dynamic-instructions-safe $path $research-name $filename)
-   (if (not (exists-file $path))
-       (send (strings-concat ("ERROR: file not found: " $path)))
-       (let $content (read-file $path)
-            (progn
-              (log INFO "workflow-research" (strings-concat "Loading file into prompt: " $path))
-              (workflow-change-active-instructions $content)
-              (send (strings-concat ("Loaded " $filename " for " $research-name ". Following instructions.")))
-             ))))
-
-
+; Returning no value stops callers that compose this path with a filename.
 (= (researchDir)
-   (let $dir (get-existing-dir (pluginWorkflowMemoryDir))
-     (joinPath ($dir "research"))))
+   (let $path (safe-subpath (pluginWorkflowMemoryDir) "research")
+     (get-existing-dir $path)))
 
-
-;; LLM decides to start research
-;; creates folders for research and asks to create 00_problem.md then search online
 (= (research-start $research-name $topic)
-    (if (valid-file-or-folder-name $research-name)
-       (progn (shell (strings-concat ("mkdir -p " (researchDir) "/" $research-name "/src")))
-              (shell (strings-concat ("mkdir -p " (researchDir) "/" $research-name "/data")))
-              (shell (strings-concat ("mkdir -p " (researchDir) "/" $research-name "/runs")))
-              (shell (strings-concat ("mkdir -p " (researchDir) "/" $research-name "/figures")))
-              (write-file (strings-concat ((researchDir) "/" $research-name "/topic.txt")) $topic)
-              (send (strings-concat ("Created project: " (researchDir) "/" $research-name "\n"
-                             "Folders: src/ data/ runs/ figures/")))
-              )
-        (send (strings-concat ("Invalid name: " $research-name ". Only a-z, 0-9, - and _ allowed.")))
-     )
-)
+   (if (valid-file-or-folder-name $research-name)
+       (send (string_concat "" (py-call (fileio.start_research (pluginWorkflowMemoryDir) $research-name $topic))))
+       (send (research-name-error "research name"))))
+
+(= (research-write-file $research-name $filename $content)
+   (py-call (fileio.write_research_file (pluginWorkflowMemoryDir) $research-name $filename $content)))
 
 ;; update current step
 (= (research-step $research-name $step $result $next)
@@ -71,7 +48,7 @@
         (progn
             (send (strings-concat ("[" $research-name "] done: " $step)))
             (strings-concat ("Done: " $step)))
-        (send (strings-concat ("Invalid name: " $research-name ". Only a-z, 0-9, - and _ allowed.")))
+        (send (research-name-error "research name"))
      )
 )
 
@@ -83,18 +60,18 @@
               (send (strings-concat ("CHECKPOINT [" $research-name "]\n" $message "\n"
                              "Reply to continue.")))
               "Waiting for user")
-        (send (strings-concat ("Invalid name: " $research-name ". Only a-z, 0-9, - and _ allowed.")))
+        (send (research-name-error "research name"))
      )
 )
 
 ;; Unload research skill
 (= (research-complete $research-name)
-    (if (valid-file-or-folder-name $research-name)
-        (progn (workflow-unload-instructions)
-              (send (strings-concat ("Research complete: " $research-name
-                             "\nResults in " (researchDir) "/" $research-name "/"
-                             "\nWorkflow unloaded from context.")))
-              "Research complete, workflow unloaded")
-         (send (strings-concat ("Invalid name: " $research-name ". Only a-z, 0-9, - and _ allowed.")))
-      )
-)
+   (if (valid-file-or-folder-name $research-name)
+       (let $dirs (collapse (researchDir))
+         (let $location (if (== $dirs ()) "Research directory is unavailable."
+                           (strings-concat ("Results in " (car-atom $dirs) "/" $research-name "/")))
+           (progn (workflow-unload-instructions)
+                  (send (strings-concat ("Research complete: " $research-name "\n" $location
+                                         "\nWorkflow unloaded from context.")))
+                  "Research complete, workflow unloaded")))
+       (send (research-name-error "research name"))))

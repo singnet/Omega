@@ -30,19 +30,8 @@
      $dir
      (empty)))
 
-;; Validate name
-; TODO: calling Python validation code is replaced by stub.
-; Can be returned back when https://github.com/trueagi-io/PeTTa/issues/196 is
-; fixed.
-(= (valid-file-or-folder-name $filename) True)
-
-;!(import! &self utils.py)
-
-;(= (valid-file-or-folder-name $filename)
-;   (if (== (strings-concat ("valid")) (py-call
-;   (utils.validate_file_or_folder_name(strings-concat ($filename)))))
-;       True
-;       False))
+(= (valid-file-or-folder-name $name)
+   (py-call (fileio.validate_file_or_folder_name $name)))
 
 (= (instructionsDir) (get-existing-dir (pluginWorkflowInstructionsDir)))
 (= (workflow-load-instructions $name)
@@ -141,7 +130,7 @@
           (let* (
                  ($fullpath (joinPath ($dir $first)))
                  ($rest     (filter-dirs $tail $dir)))
-            (if (or (== $first ".") (== $first ".."))
+            (if (not (valid-file-or-folder-name $first))
               $rest
               (if (exists-directory $fullpath)
                 (cons-atom $first $rest)

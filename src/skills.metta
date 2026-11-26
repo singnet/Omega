@@ -89,6 +89,17 @@
           (translatePredicate (read_file_to_string $file $content ()))
           $content))
 
+(= (make-dirs $path)
+   (py-call (fileio.make_dirs $path)))
+
+; Janus returns Python strings as Prolog atoms by default. Normalize paths
+; so an empty result compares equal to the MeTTa string "".
+(= (safe-subpath $base $folder)
+   (string_concat "" (py-call (fileio.safe_subpath $base $folder))))
+
+(= (safe-subpath $base $folder $filename)
+   (string_concat "" (py-call (fileio.safe_subpath $base $folder $filename))))
+
 (= (write-file $file $str)
    (py-call (fileio.write_file $file $str)))
 
