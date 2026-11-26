@@ -64,7 +64,7 @@ def _recv_contains(comm, needle, timeout=60):
 def test_workflow_reload_tools_mock(llm, comm):
     with Checker("Reloading a workflow does not duplicate tools (mock)") as c:
         print(f"\n=== Omega: workflow reload tools (run-id {c.run_id}) ===", flush=True)
-        ids = [c.run_id + n for n in range(8)]
+        ids = [c.run_id + n for n in range(9)]
         for run_id in ids:
             c.add_cleanup_marker(str(run_id))
         loaded = False
@@ -107,6 +107,15 @@ def test_workflow_reload_tools_mock(llm, comm):
         c.ok("clean start", "no active workflow")
 
         try:
+            c.step("reject a path to the bundled workflow before loading it by name")
+            prompt = make_prompt(ids[8], "Load the workflow using its relative path.")
+            llm.set_answer(prompt, [("workflow-load-instructions", {"workflow_name": f"./{WORKFLOW}"})])
+            assert comm.send_message(prompt)
+            request = wait_request_after(f"REQ-{ids[8]}")
+            assert request is not None, "missing tool response after the rejected load"
+            assert "ERROR: invalid workflow name" in request
+            assert WORKFLOW_SKILL not in tool_names(request)
+
             c.step("load the workflow and read the tools of the next request")
             load(ids[0])
             first = tool_names_after(f"REQ-{ids[0]}")

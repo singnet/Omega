@@ -1,0 +1,1 @@
+../../../../plugins/workflow/instructions/test-workflow/skill.metta
