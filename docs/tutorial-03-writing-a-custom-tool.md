@@ -17,7 +17,7 @@ A tool is three things:
 
 No other file needs an edit. The loop collects the registered tools before each request, so a new tool is visible to the LLM from the next iteration, and a call to a name that is not registered is rejected with `Unknown tool`.
 
-A MeTTa plugin registers a tool the same way from its `loadOmegaPlugin`, without editing `src/skills.metta` (see [reference-plugin-api.md](./reference-plugin-api.md#other-agent-related-apis)). The [OpenClaw plugin](/plugins/openclaw/openclaw.metta) calls `add-skill` for `delegate-task-to-openclaw-agent` and defines the function in the same file, and the [workflow plugin](/plugins/workflow/workflow.metta) registers `workflow-load-instructions`, `workflow-unload-instructions` and `workflow-refresh-list` the same way.
+A MeTTa plugin registers a tool the same way from its `loadOmegaPlugin`, without editing `src/skills.metta` (see [reference-plugin-api.md](./reference-plugin-api.md#other-agent-related-apis)). The [OpenClaw plugin](/plugins/openclaw/openclaw.metta) calls `add-skill` for `delegate-task-to-openclaw-agent` and defines the function in the same file, and the [workflow plugin](/plugins/workflow/workflow.metta) registers `workflow-load-skills`, `workflow-unload-skills` and `workflow-refresh-list` the same way.
 
 ## Example: a `word-count` tool
 
