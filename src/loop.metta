@@ -125,7 +125,8 @@
                                                                                           calls (llmResponseCalls $response)
                                                                                           content "[TOOL CALL]")))
                                                    (collapse
-                                                         (let ($callid $s) (superpose $resp)
+                                                         (let* ((($callid $raw) (superpose $resp))
+                                                                ($s (toolCallCommand $raw)))
                                                            (let $result
                                                              (if (HandleError (quote $s) $error) $error
                                                                (let $rc (catch (let $R (collapse (eval $s))
