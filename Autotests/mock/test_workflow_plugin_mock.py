@@ -15,6 +15,9 @@ agent and their output is observed on the test comm channel.
                   skill is registered and executed.
   - unload:       load test-workflow, unload it, then confirm the
                   workflow-only skill no longer runs.
+  - workflow list: the request the agent sends to the LLM lists every
+                  shipped workflow with the description from the frontmatter
+                  of its SKILL.md.
   - research-workflow: load research-workflow and run its research-start
                   skill; the confirmation on the channel and the project tree
                   written under the memory volume prove a second MarkDown
@@ -23,13 +26,20 @@ agent and their output is observed on the test comm channel.
 Run:
     pytest test_workflow_plugin_mock.py -s
 """
+import subprocess
 import time
 
-from helpers import Checker, dexec, make_prompt
+from helpers import CONTAINER, Checker, dexec, make_prompt
 
 WORKFLOW = "test-workflow"
 WORKFLOW_SKILL = "test-skill"
 DEMO_MESSAGE = "This is a test workflow demonstration"
+
+# Start of each workflow's entry in the list, taken from its SKILL.md frontmatter
+WORKFLOW_ENTRIES = (
+    "<skill><name>test-workflow</name><description>Demonstrates the workflow plugin",
+    "<skill><name>research-workflow</name><description>End-to-end research workflow.",
+)
 
 RESEARCH_WORKFLOW = "research-workflow"
 RESEARCH_DIR = "/PeTTa/repos/Omega/memory/workflow_space/research"
@@ -40,6 +50,20 @@ def _flush(comm):
     """Drop any messages left in the shared queue by earlier turns/tests."""
     while comm.getLastMessage():
         pass
+
+
+def _request_with(tag, timeout=60):
+    """Poll the container log for the LLM request that carries tag.
+    Returns the logged REQUEST line, or None on timeout."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        res = subprocess.run(["docker", "logs", CONTAINER], capture_output=True,
+                             text=True, errors="replace")
+        for line in ((res.stdout or "") + (res.stderr or "")).split("\n"):
+            if "REQUEST:" in line and tag in line:
+                return line
+        time.sleep(2)
+    return None
 
 
 def _recv_contains(comm, needle, timeout=60):
@@ -102,6 +126,38 @@ class TestWorkflowPlugin:
                        f"{WORKFLOW_SKILL} did not deliver its message; the "
                        "workflow skill was not registered/executed")
             c.ok("test-skill executed", f"{echoed[:80]!r}")
+
+            c.done()
+
+    def test_workflow_list_in_prompt(self, llm, comm):
+        # The list of workflows comes from the SKILL.md frontmatter, so the
+        # request that reaches the LLM must carry each frontmatter description.
+        with Checker("workflow list from SKILL.md frontmatter (mock)") as c:
+            print(f"\n=== Omega: workflow list (run-id {c.run_id}) ===",
+                  flush=True)
+            c.add_cleanup_marker(str(c.run_id))
+            _flush(comm)
+
+            c.step("turn 1: any message, to capture the request the LLM gets")
+            prompt = make_prompt(c.run_id, f"Reply with: listed {c.run_id}")
+            llm.set_answer(prompt, [("send", {"content": f"listed {c.run_id}"})])
+            if not comm.send_message(prompt):
+                c.fail("comm-1", "could not deliver turn 1 prompt within 60s")
+            if _recv_contains(comm, f"listed {c.run_id}", timeout=60) is None:
+                c.fail("turn 1", "the agent never answered")
+            request = _request_with(f"REQ-{c.run_id}")
+            if request is None:
+                c.fail("request", "no REQUEST line carries the prompt")
+            assert request is not None
+            c.ok("request", "found in the container log")
+
+            c.step("the request lists the workflows with their frontmatter descriptions")
+            if "<available_skills>" not in request:
+                c.fail("workflow list", "the request has no <available_skills> list")
+            missing = [entry for entry in WORKFLOW_ENTRIES if entry not in request]
+            if missing:
+                c.fail("workflow list", f"entries missing from the request: {missing}")
+            c.ok("workflow list", f"{len(WORKFLOW_ENTRIES)} workflows listed")
 
             c.done()
 

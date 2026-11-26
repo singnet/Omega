@@ -1,6 +1,8 @@
 ---
 name: test-workflow
-description: Created to check how SKILL.md is loaded to Omega.
+description: Demonstrates the workflow plugin by sending a message with a tool
+  that exists only while the workflow is active. Use when the user asks to
+  demonstrate or test the workflow plugin.
 ---
 Next are instructions and MeTTa  functions  that should be performed step by step
 # Test Workflow (Omega)

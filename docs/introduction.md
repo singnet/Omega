@@ -292,11 +292,11 @@ A tool call is the LLM's request to run a tool. The request requires the model t
 
 ### Skills
 
-A skill is a directory with a `SKILL.md` file in the [Agent Skills](https://agentskills.io/specification) format. The file holds Markdown instructions that tell the agent how to carry out a task step by step, and the directory can also hold a `skill.metta` file with the tools the skill needs. The workflow plugin loads skills and refers to a loaded skill as the active workflow. While a skill is loaded, its instructions are part of the prompt and its tools are added to the request. See [plugins/workflow/README.md](../plugins/workflow/README.md).
+A skill is a directory with a `SKILL.md` file in the [Agent Skills](https://agentskills.io/specification) format. The file holds Markdown instructions that tell the agent how to carry out a task step by step, and the directory can also hold a `skill.metta` file with the tools the skill needs. The workflow plugin lists the skills in the prompt with the `description` from the frontmatter of their `SKILL.md`, loads them, and refers to a loaded skill as the active workflow. A skill with no valid frontmatter `description`, or one that is too big for the prompt, is neither listed nor loaded. While a skill is loaded, its instructions are part of the prompt and its tools are added to the request. See [plugins/workflow/README.md](../plugins/workflow/README.md).
 
 The word `skill` means a tool in some identifiers from the code: `add-skill`, `remove-skill`, `dynamic-skill`, `getSkills`, `getSkillRules`, `src/skills.metta`, `src/skills.pl`, `skill.metta` with its `(skill ...)` entries, `&workflow_skills`, the `SKILLS:` label in the prompt, and the log lines `Add skill:`. The documentation quotes these names as they are.
 
-The texts the model reads at run time (`memory/prompt*.txt`, `memory/tg_prompt.txt`, the `SKILLS:` section of the prompt, and the workflow `description.txt` files) sometimes use `skill` for a tool as well. The documentation quotes them unchanged.
+The texts the model reads at run time (`memory/prompt*.txt`, `memory/tg_prompt.txt` and the `SKILLS:` section of the prompt) sometimes use `skill` for a tool as well. The documentation quotes them unchanged.
 
 ### Channels
 
