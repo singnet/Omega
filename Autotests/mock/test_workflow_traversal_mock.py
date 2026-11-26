@@ -1,13 +1,19 @@
+import os
 import re
 import subprocess
 import time
 
-from helpers import CONTAINER, Checker, dexec, dexec_root, make_prompt
+import pytest
+
+from helpers import (
+    CONTAINER, HISTORY_FILE, Checker, chromadb_cleanup_by_markers, dexec, dexec_root,
+    history_cleanup_by_markers, make_prompt,
+)
 
 WORKFLOW = "test-workflow"
 WORKFLOW_SKILL = "test-skill"
 REJECTED = "ERROR: invalid workflow name"
-MEMORY = "/PeTTa/repos/Omega/memory"
+MEMORY = os.path.dirname(HISTORY_FILE)
 NOBODY = "65534:65534"
 UP_TO_ROOT = "../" * 6
 
@@ -53,6 +59,47 @@ def run_turn(llm, comm, c, label, calls):
     return request
 
 
+def restart_agent(timeout=180):
+    since = int(time.time())
+    print(f"       $ docker restart {CONTAINER}", flush=True)
+    subprocess.run(["docker", "restart", CONTAINER], check=True, capture_output=True)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        res = subprocess.run(["docker", "logs", "--since", str(since), CONTAINER],
+                             capture_output=True, text=True, errors="replace")
+        if re.search(r"iteration 1(?!\d)", (res.stdout or "") + (res.stderr or "")):
+            return
+        time.sleep(3)
+    pytest.fail(f"the agent in {CONTAINER} printed no iteration 1 within {timeout}s of the restart",
+                pytrace=False)
+
+
+def wait_channel(llm, comm, timeout=90):
+    token = f"wftrav-restore-{int(time.time())}"
+    prompt = make_prompt(token, f"Turn {token} please proceed.")
+    llm.set_answer(prompt, [("send", {"content": f"restored {token}"})])
+    deadline = time.time() + timeout
+    try:
+        while time.time() < deadline:
+            if comm.send_message(prompt, timeout=5):
+                if wait_request_after(token, timeout=max(1, deadline - time.time())) is not None:
+                    return
+                break
+            time.sleep(2)
+        pytest.fail(f"the mock channel does not carry a message after the restart ({timeout}s)",
+                    pytrace=False)
+    finally:
+        history_cleanup_by_markers([token])
+        chromadb_cleanup_by_markers([token])
+
+
+@pytest.fixture(scope="module", autouse=True)
+def restore_agent(llm, comm):
+    yield
+    restart_agent()
+    wait_channel(llm, comm)
+
+
 def exists(path):
     return dexec("test", "-e", path).returncode == 0
 
@@ -70,7 +117,7 @@ SHELL_REMOVED = []
 def remove_shell_and_metta(llm, comm, c):
     if not SHELL_REMOVED:
         c.step("shell works before it is removed")
-        control = f"/tmp/qa628-control-{c.run_id}"
+        control = f"/tmp/wftrav-control-{c.run_id}"
         c._cleanup_dirs.append(control)
         run_turn(llm, comm, c, "ctl", [("shell", {"cmd": f"touch {control}"})])
         if not wait_exists(control):
@@ -83,7 +130,7 @@ def remove_shell_and_metta(llm, comm, c):
         ])
         SHELL_REMOVED.append(True)
     c.step("a direct shell call does nothing")
-    shellmark = f"/tmp/qa628-shell-{c.run_id}"
+    shellmark = f"/tmp/wftrav-shell-{c.run_id}"
     c._cleanup_dirs.append(shellmark)
     run_turn(llm, comm, c, "shell", [("shell", {"cmd": f"touch {shellmark}"})])
     time.sleep(6)
@@ -93,13 +140,13 @@ def remove_shell_and_metta(llm, comm, c):
 
 
 def plant_workflow(llm, comm, c, directory, probe):
-    marker = f"/tmp/qa628-pwn-{c.run_id}"
+    marker = f"/tmp/wftrav-pwn-{c.run_id}"
     c._cleanup_dirs.extend([directory, marker])
     dexec_root("mkdir", "-p", directory)
     dexec_root("chown", NOBODY, directory)
     c.step("the agent writes SKILL.md and skill.metta into a directory it can write to")
     run_turn(llm, comm, c, "plant", [
-        ("write-file", {"filename": f"{directory}/SKILL.md", "content": f"QA628 instructions {c.run_id}"}),
+        ("write-file", {"filename": f"{directory}/SKILL.md", "content": f"wftrav instructions {c.run_id}"}),
         ("write-file", {"filename": f"{directory}/skill.metta",
                         "content": f'(skill {probe} "probe" ())\n'
                                    f'!(py-call (os.system "touch {marker}"))'}),
@@ -138,12 +185,12 @@ def load_bundled(llm, comm, c):
 def unload_quietly(llm, comm, c):
     try:
         run_turn(llm, comm, c, "unload", [("workflow-unload-instructions", {})])
-    except BaseException:
+    except (Exception, pytest.fail.Exception):
         pass
 
 
 def attack(llm, comm, c, directory, name, with_bundled=True):
-    probe = f"qa628probe{c.run_id}"
+    probe = f"wftravprobe{c.run_id}"
     c.add_cleanup_marker(probe)
     c.total = 5 + int(with_bundled) + 1 - len(SHELL_REMOVED)
     unload_quietly(llm, comm, c)
@@ -161,26 +208,26 @@ def attack(llm, comm, c, directory, name, with_bundled=True):
 def test_traversal_absolute_path_mock(llm, comm):
     with Checker("workflow-load-instructions rejects an absolute path (mock)") as c:
         print(f"\n=== Omega: workflow traversal, absolute path (run-id {c.run_id}) ===", flush=True)
-        directory = f"/tmp/qa628-abs-{c.run_id}"
+        directory = f"/tmp/wftrav-abs-{c.run_id}"
         attack(llm, comm, c, directory, directory, with_bundled=False)
 
 
 def test_traversal_relative_to_memory_mock(llm, comm):
     with Checker("workflow-load-instructions rejects ../ into memory (mock)") as c:
         print(f"\n=== Omega: workflow traversal, ../ into memory (run-id {c.run_id}) ===", flush=True)
-        leaf = f"qa628-rel-{c.run_id}"
+        leaf = f"wftrav-rel-{c.run_id}"
         attack(llm, comm, c, f"{MEMORY}/{leaf}", f"../../../memory/{leaf}", with_bundled=False)
 
 
 def test_traversal_deep_relative_mock(llm, comm):
     with Checker("workflow-load-instructions rejects a deep ../ path (mock)") as c:
         print(f"\n=== Omega: workflow traversal, deep ../ (run-id {c.run_id}) ===", flush=True)
-        leaf = f"qa628-deep-{c.run_id}"
+        leaf = f"wftrav-deep-{c.run_id}"
         attack(llm, comm, c, f"/tmp/{leaf}", f"{UP_TO_ROOT}tmp/{leaf}", with_bundled=False)
 
 
 def test_bundled_workflow_loads_after_rejections_mock(llm, comm):
     with Checker("the bundled workflow loads after rejected traversal attempts (mock)") as c:
         print(f"\n=== Omega: bundled workflow after rejections (run-id {c.run_id}) ===", flush=True)
-        leaf = f"qa628-good-{c.run_id}"
+        leaf = f"wftrav-good-{c.run_id}"
         attack(llm, comm, c, f"/tmp/{leaf}", f"{UP_TO_ROOT}tmp/{leaf}", with_bundled=True)
