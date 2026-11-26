@@ -44,9 +44,13 @@ def containers_using(name):
 
 
 if args[:2] == ["volume", "inspect"]:
-    sys.exit(0 if volume(args[2]).is_dir() else 1)
+    if "--format" in args and (root / "state-volume-label").exists():
+        print((root / "state-volume-label").read_text())
+    sys.exit(0 if volume(args[-1]).is_dir() else 1)
 if args[:2] == ["volume", "create"]:
-    volume(args[2]).mkdir(parents=True, exist_ok=True)
+    if "--label" in args and not volume(args[-1]).exists():
+        (root / "state-volume-label").write_text(args[args.index("--label") + 1].split("=")[1])
+    volume(args[-1]).mkdir(parents=True, exist_ok=True)
     print(args[2])
     sys.exit(0)
 if args[:2] == ["volume", "rm"]:
@@ -318,6 +322,7 @@ def test_first_start_copies_old_memory_except_prompts(docker_root):
     assert _read(new / "prompt.txt") == "omega prompt\n"
     assert _read(new / "prompt_ASICloud.txt") == "omega asicloud prompt\n"
     assert _read(new / "tg_prompt.txt") == "omega telegram prompt\n"
+    assert any("--volume omega-state:/var/lib/omega-state" in call for call in _calls(docker_root))
     assert _started_agent(docker_root)
 
 
@@ -356,7 +361,9 @@ def test_stopped_old_container_stays_stopped(docker_root):
 def test_start_after_clean_does_not_bring_old_memory_back(docker_root):
     _install_omegaclaw(docker_root)
     assert _launcher(docker_root, "start", "-d", IMAGE).returncode == 0
+    assert (docker_root / "volumes" / "omega-state").exists()
     assert _launcher(docker_root, "clean").returncode == 0
+    assert not (docker_root / "volumes" / "omega-state").exists()
 
     result = _launcher(docker_root, "start", "-d", IMAGE)
 
@@ -823,3 +830,32 @@ def test_interrupted_copy_keeps_memory_that_is_not_a_partial_copy(docker_root, h
     assert (old / ".migration-started").exists()
     assert _container_state(docker_root, "omega") == "exited"
     assert not _started_agent(docker_root)
+
+
+def test_unlabeled_state_volume_is_preserved(docker_root):
+    archive = docker_root / "volumes" / "omega-state" / "backup.tar.gz"
+    archive.parent.mkdir()
+    archive.write_bytes(b"archive")
+    (docker_root / "volumes" / "omega-memory").mkdir()
+    assert _launcher(docker_root, "start", "-d", IMAGE).returncode != 0
+    assert not _started_agent(docker_root)
+    assert _launcher(docker_root, "clean").returncode == 0
+    assert archive.read_bytes() == b"archive"
+
+
+def test_start_selects_binding_secret(docker_root, monkeypatch):
+    def start_secret(*options):
+        result = _launcher(docker_root, "start", "-d", IMAGE, *options)
+        assert result.returncode == 0, result.stderr
+        run = next(call for call in reversed(_calls(docker_root)) if call.startswith("run -d"))
+        return run.split("OMEGA_AUTH_SECRET=", 1)[1].split()[0]
+
+    monkeypatch.delenv("OMEGA_AUTH_SECRET", raising=False)
+    first = start_secret()
+    second = start_secret()
+    assert first != second
+    assert len(bytes.fromhex(first)) == len(bytes.fromhex(second)) == 16
+
+    monkeypatch.setenv("OMEGA_AUTH_SECRET", "configured-secret")
+    assert start_secret() == "configured-secret"
+    assert start_secret("-s", "command-line-secret") == "command-line-secret"

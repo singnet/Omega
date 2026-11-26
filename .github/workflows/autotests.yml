@@ -126,6 +126,7 @@ jobs:
 
       - name: MeTTa and Python unit tests
         env:
+          OMEGA_AUTH_TEST_IMAGE: singularitynet/omega:${{ env.AUTOTESTS_OMEGA_TAG }}
           PETTA_PATH: '/PeTTa'
           PROJECT_ROOT: '/PeTTa/repos/Omega'
         run: |

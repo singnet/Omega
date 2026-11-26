@@ -15,8 +15,6 @@ chmod 0600 "$tmp_py_file"
 cat >"$tmp_py_file" <<'PY'
 import getpass
 import json
-import secrets
-import string
 import shlex
 import shutil
 import sys
@@ -335,7 +333,6 @@ def config_run_omega(
     with open(config_output_path, "w", encoding="utf-8") as f:
         _write_kv(f, "api_token_var", api_token_var)
         _write_kv(f, "api_token", token)
-        _write_kv(f, "OMEGA_AUTH_SECRET", "".join(secrets.choice(string.digits) for _ in range(6)))
         _write_kv(f, "provider", provider)
         _write_kv(f, "embeddingprovider", embeddingprovider)
         _write_kv(f, "model", model)
@@ -355,6 +352,7 @@ python3 "$tmp_py_file" "$tmp_config_file" \
     "${memory_transfer_volume_name}" "${memory_export_enabled:-0}" </dev/tty
 
 . "$tmp_config_file"
+ensure_channel_secret || return 1
 
 cat <<EOF
 
@@ -646,14 +644,14 @@ help() {
     echo -e "Commands:"
     echo -e "\tstart start new docker container"
     echo -e "\tstop stop docker container"
-    echo -e "\tclean remove container and live memory (preserves memory archives)"
+    echo -e "\tclean remove container, live memory, and channel bindings (preserves memory archives)"
     echo -e "\tmemory-list list available memory archives"
     echo -e "\tmemory-upload <host-archive> copy an archive into the transfer volume"
     echo -e "\tmemory-download <filename> <host-destination> copy an archive to your computer"
     echo -e "\tmemory-delete <filename> delete an archive from the transfer volume"
     echo
     echo -e "Options:"
-    echo -e "\t-s <auth secret> set secret for the communication channel (default is 0000)"
+    echo -e "\t-s <auth secret> set secret for the communication channel (defaults to OMEGA_AUTH_SECRET or a generated secret)"
     echo -e "\t-p <provider> set LLM API provider (default is ASICloud)."
     echo -e "\t              Pass API token via environment variable."
     echo -e "\t-m <model> set LLM model to use with provider (default depends on provider)."
@@ -686,7 +684,7 @@ require_option_value() {
 }
 
 options() {
-    OMEGA_AUTH_SECRET=0000
+    OMEGA_AUTH_SECRET="${OMEGA_AUTH_SECRET:-}"
     provider=ASICloud
     image=singularitynet/omega:latest
     commchannel=irc
@@ -794,6 +792,7 @@ options() {
         return 1
     fi
     if [[ "${memory_transfer_volume_name}" == "omega-memory" ||
+          "${memory_transfer_volume_name}" == "omega-state" ||
           "${memory_transfer_volume_name}" == "omegaclaw-memory" ]]; then
         echo "--memory-transfer-volume must not use a live memory volume: ${memory_transfer_volume_name}" >&2
         return 1
@@ -1180,7 +1179,17 @@ rag.check_embedding_profile()
 ' "$embeddingprovider"
 }
 
+ensure_channel_secret() {
+    if [[ -z "${OMEGA_AUTH_SECRET}" ]]; then
+        OMEGA_AUTH_SECRET=$(python3 -c 'import secrets; print(secrets.token_hex(16))') || return 1
+    fi
+}
+
 start() {
+    if [[ -z "${OMEGA_AUTH_SECRET}" ]]; then
+        ensure_channel_secret || return 1
+        echo "To view the generated channel binding secret after startup, run: docker exec omega printenv OMEGA_AUTH_SECRET" >&2
+    fi
     container_log_config_path=""
     log_config_volume=()
     memory_transfer_volume=()
@@ -1265,6 +1274,12 @@ if sys.argv[1]:
         fi
     fi
 
+    docker volume create --label org.singnet.omega.channel-state=1 omega-state >/dev/null || return 1
+    if ! is_channel_state_volume; then
+        echo "Existing omega-state volume is not labeled as Omega channel state. Preserve or rename its contents before starting Omega." >&2
+        return 1
+    fi
+
     migrate_omegaclaw_memory || return 1
 
     docker rm -f omega 2>/dev/null || true
@@ -1281,6 +1296,7 @@ if sys.argv[1]:
             --tmpfs /var/tmp:size=64m,mode=1777
             --tmpfs /run:size=16m,mode=755
             --volume omega-memory:/PeTTa/repos/Omega/memory
+            --volume omega-state:/var/lib/omega-state
             ${log_config_volume[@]+"${log_config_volume[@]}"}
             ${memory_transfer_volume[@]+"${memory_transfer_volume[@]}"}
             -e "${api_token_var}"="${api_token}"
@@ -1341,9 +1357,18 @@ stop() {
     docker stop omega
 }
 
+is_channel_state_volume() {
+    local label
+    label=$(docker volume inspect --format '{{with .Labels}}{{index . "org.singnet.omega.channel-state"}}{{end}}' omega-state) || return 1
+    [[ "$label" == "1" ]]
+}
+
 clean() {
     docker rm -f omega
     docker volume rm omega-memory
+    if is_channel_state_volume; then
+        docker volume rm omega-state
+    fi
 }
 
 set -euo pipefail
