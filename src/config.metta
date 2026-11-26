@@ -9,8 +9,40 @@
 ; function to the atomspace to allow using MeTTa call for getting the
 ; parameter's value.
 (= (configure $key $default)
-   (let $value (configGetByKey $key $default)
-     (add-atom &self (= ($key) $value))))
+   (case $key 
+      (
+      ;convert the input JSON router catalog, if provided into a MeTTa expression.
+      (routerCatalogFile
+         (let $filename (configGetByKey routerCatalogFile $default)
+            (if (== $filename none)
+               ; for backward compatibility, if no router catalog, 
+               ; create a single record in the router catalog to be used for all LLM calls.
+               (let $model_init (configGetByKey model none) 
+                  (let $provider (provider) 
+                     (let*
+                       (($model (if (== $model_init none)
+                           (lookup_default_model $provider)
+                           $model_init))
+                        ($api_token_var (lookup_api_token_var $provider))
+                        ($openaiurl (configGetByKey openaiapi_url http://localhost:11434/v1/)))
+                        (add-atom &self (routerCatalog ((routine ((provider $provider) 
+                                                                  (model $model) 
+                                                                  (api_token_var $api_token_var)
+                                                                  (openaiapi_url $openaiurl)))))))))
+
+               ; else the user has input an LLM router file
+               (let $text (py-call (config.read_router_catalog $filename)) 
+                   (let* ( 
+                          ($catalog (sread $text)) 
+                         )
+                         (progn 
+                           (add-atom &self $catalog)
+                           (add-atom &self (= ($key) $filename))))
+                           ))))
+
+      ($_ (let $value (configGetByKey $key $default)
+               (add-atom &self (= ($key) $value))))
+      )))
 
 ; Get configuration parameter from the list of sources: (1) command line
 ; parameters, (2) environment variable with OMEGA_$key name, (3)

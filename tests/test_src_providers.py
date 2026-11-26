@@ -169,3 +169,126 @@ def test_request_matches_a_result_whose_call_id_is_not_a_string():
                         llmToolCallResponseMessage("tool", 7, "PIN-SUCCESS"),
                         llmRequestMessage("user", "next")])
     assert [content for _, content in _tool_results(request)] == ["PIN-SUCCESS"]
+
+
+class _Delegate:
+    def __init__(self):
+        self._model_name = "default-model"
+        self._var_name = "DEFAULT_TOKEN_VAR"
+        self._base_url = "http://default.example/v1"
+        self._gateway_route = None
+
+
+class _RecordingProvider:
+    def __init__(self):
+        self.delegate = _Delegate()
+        self.starts = 0
+        self.requests = []
+
+    def start(self):
+        self.starts += 1
+
+    def chat(self, request):
+        self.requests.append(request)
+        return LLMResponse()
+
+
+@pytest.fixture
+def registry(monkeypatch):
+    prototypes = {"Recording": _RecordingProvider(), "OpenAIAPI": _RecordingProvider()}
+    monkeypatch.setattr(providers, "_llmProviderRegistry", prototypes)
+    monkeypatch.setattr(providers, "_llmproviders", {})
+    return prototypes
+
+
+def _normalized(*messages):
+    return providers.llmRequestContentsNormalized(
+        llmRequest(llmRequestMessage("system", "prompt"), list(messages), 100, "medium", []))
+
+
+def test_normalized_contents_of_all_message_kinds_are_one_exact_string():
+    contents = _normalized(
+        llmRequestMessage("user", "Hello, World"),
+        llmToolCallMessage("assistant", [_call("call_a", "pin", message="x")], "(pin x)"),
+        llmToolCallResponseMessage("tool", "call_a", "ALERT_FAILED(Error (x, y))"),
+        llmRequestMessage("user", "Done"),
+    )
+    assert contents == (
+        "segment_user hello  world "
+        "segment_assistant  pin x  "
+        "segment_tool alert_failed error  x  y   "
+        "segment_user done"
+    )
+
+
+def test_normalized_contents_replace_every_listed_punctuation_mark_and_only_those():
+    assert _normalized(llmRequestMessage("user", "a[b]c(d)e,f.g:h;i!j-k_l")) == \
+        "segment_user a b c d e f g h;i!j-k_l"
+
+
+def test_normalized_contents_are_lowercase():
+    assert _normalized(llmRequestMessage("user", "/PREMIUM Alert_Failed")) == \
+        "segment_user /premium alert_failed"
+
+
+def test_normalized_contents_skip_system_and_plain_assistant_messages():
+    contents = _normalized(
+        llmRequestMessage("system", "/premium alert_failed"),
+        llmRequestMessage("assistant", "alert_failed from assistant"),
+        llmRequestMessage("user", "hi"),
+    )
+    assert contents == "segment_user hi"
+
+
+
+def test_started_roles_are_independent_instances_with_their_own_settings(registry):
+    providers.llmProviderStart("routine", "Recording", "model-r", "VAR_R", "none")
+    providers.llmProviderStart("premium", "Recording", "model-p", "VAR_P", "none")
+    routine, premium = providers._llmproviders["routine"], providers._llmproviders["premium"]
+    assert routine is not premium
+    assert routine.delegate is not premium.delegate
+    assert (routine.delegate._model_name, routine.delegate._var_name) == ("model-r", "VAR_R")
+    assert (premium.delegate._model_name, premium.delegate._var_name) == ("model-p", "VAR_P")
+    assert routine.delegate._gateway_route == "catalog/routine"
+    assert premium.delegate._gateway_route == "catalog/premium"
+    assert (routine.starts, premium.starts) == (1, 1)
+
+
+def test_starting_roles_leaves_the_registered_prototype_unchanged(registry):
+    providers.llmProviderStart("routine", "Recording", "model-r", "VAR_R", "none")
+    prototype = registry["Recording"]
+    assert prototype.starts == 0
+    assert prototype.delegate._model_name == "default-model"
+    assert prototype.delegate._var_name == "DEFAULT_TOKEN_VAR"
+    assert prototype.delegate._gateway_route is None
+
+
+def test_openaiapi_url_is_applied_to_the_openaiapi_provider_only(registry):
+    providers.llmProviderStart("routine", "OpenAIAPI", "m", "V", "http://stub.example:19101/v1")
+    providers.llmProviderStart("premium", "Recording", "m", "V", "http://stub.example:19101/v1")
+    assert providers._llmproviders["routine"].delegate._base_url == "http://stub.example:19101/v1"
+    assert providers._llmproviders["premium"].delegate._base_url == "http://default.example/v1"
+
+
+
+def test_a_role_started_twice_is_rejected(registry):
+    providers.llmProviderStart("routine", "Recording", "m", "V", "none")
+    with pytest.raises(ValueError, match="Duplicate provider role: routine"):
+        providers.llmProviderStart("routine", "Recording", "other", "V", "none")
+    assert providers._llmproviders["routine"].delegate._model_name == "m"
+
+
+def test_an_unknown_provider_is_rejected_when_the_role_starts_not_when_it_is_asked(registry):
+    with pytest.raises(RuntimeError, match="Nonexistent is not registered"):
+        providers.llmProviderStart("routine", "Nonexistent", "m", "V", "none")
+    assert "routine" not in providers._llmproviders
+
+
+def test_a_new_start_sequence_does_not_see_the_roles_of_the_previous_one(registry):
+    providers.llmProviderStart("routine", "Recording", "old", "V", "none")
+    providers.llmProviderStart("premium", "Recording", "old", "V", "none")
+    providers.llmProvidersInitDict()
+    assert providers._llmproviders == {}
+    providers.llmProviderStart("routine", "Recording", "new", "V", "none")
+    assert list(providers._llmproviders) == ["routine"]
+    assert providers._llmproviders["routine"].delegate._model_name == "new"

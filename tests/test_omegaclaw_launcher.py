@@ -1,3 +1,5 @@
+import io
+import json
 import os
 import re
 import shlex
@@ -16,6 +18,18 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 LAUNCHER = REPO_ROOT / "scripts" / "omega"
 CONTAINER_TEST_IMAGE = os.environ.get("OMEGA_LAUNCHER_TEST_IMAGE", "")
 UPLOAD_PREFIX_SIZE = 1024
+PROMPT_LICENSE = "Type 'accept'"
+PROMPT_CHANNEL = "Enter 1-4 or 'q'"
+PROMPT_IRC_CHANNEL = "Enter IRC channel"
+PROMPT_TWO_MODELS = "Use both a budget and a premium model?"
+PROMPT_PROVIDER = "Enter 1-6 or 'q'"
+PROMPT_TOKEN = "paste your LLM token"
+PROMPT_SINGLE_MODEL = "Enter LLM model"
+PROMPT_ROUTINE_MODEL = "Enter routine LLM model"
+PROMPT_PREMIUM_MODEL = "Enter premium LLM model"
+PROMPT_API_URL = "Enter LLM API URL"
+PROMPT_IMPORT_KB = "Import knowledge base on startup?"
+PROMPT_MEMORY_EXPORT = "Enable memory export"
 FAKE_DOCKER = """\
 #!/bin/sh
 version_path=""
@@ -104,9 +118,15 @@ def _run_launcher(
     image_version: str | None = None,
     legacy_version: str | None = None,
     script_version: str | None = None,
+    environment_overrides: dict | None = None,
 ) -> subprocess.CompletedProcess:
     import_options = ["--memory-import", "memory.tar.gz"] if memory_import else []
     environment = _stub_docker_environment(tmp_path, script_version=script_version)
+    for name, value in (environment_overrides or {}).items():
+        if value is None:
+            environment.pop(name, None)
+        else:
+            environment[name] = value
     if legacy_version is not None:
         environment["OMEGA_TEST_OMEGA_VERSION"] = ""
         environment["OMEGA_TEST_LEGACY_VERSION"] = legacy_version
@@ -158,24 +178,65 @@ def pending_upload(tmp_path):
 
 
 @pytest.mark.parametrize("enabled", ["0", "1"])
-def test_installer_preserves_volume_and_explicit_export_setting(tmp_path, monkeypatch, enabled):
+@pytest.mark.parametrize("dual_model", [False, True], ids=["single-model", "budget-premium"])
+def test_installer_preserves_volume_and_explicit_export_setting(monkeypatch, enabled, dual_model):
     installer = _load_installer_namespace()
     monkeypatch.setitem(installer, "require_license_acceptance", lambda: None)
     monkeypatch.setitem(installer, "_choose_channel", lambda: {"commchannel": "test"})
-    monkeypatch.setitem(
-        installer, "_choose_provider", lambda: ("Test", "Local", "TEST_SERVER_IP", "", "", "localhost")
-    )
+    selections = {
+        "routine": {
+            "provider": "OpenAIAPI",
+            "api_token_var": "OPENAIAPI_API_KEY",
+            "model": "budget-model",
+            "openaiapi_url": "http://localhost:11434/v1",
+            "token": "routine-test-token",
+        },
+        "premium": {
+            "provider": "OpenAI",
+            "api_token_var": "OPENAI_API_KEY",
+            "model": "premium-model",
+            "openaiapi_url": "",
+            "token": "premium-test-token",
+        },
+    }
+    provider_calls = []
+
+    def choose_provider(role=None):
+        provider_calls.append(role)
+        return selections[role or "routine"].copy()
+
+    monkeypatch.setitem(installer, "_choose_provider", choose_provider)
     monkeypatch.setitem(installer, "_choose_import_kb", lambda: "0")
-    monkeypatch.setattr(
-        "builtins.input", lambda _: "n" if enabled == "0" else pytest.fail("unexpected prompt")
-    )
-    output = tmp_path / "config"
+    answers = ["y" if dual_model else "n"]
+    if enabled == "0":
+        answers.append("n")
 
-    installer["config_run_omega"](str(output), "test-archives", enabled)
+    def answer_prompt(prompt):
+        if not answers:
+            pytest.fail(f"unexpected prompt: {prompt}")
+        return answers.pop(0)
 
-    config = output.read_text(encoding="utf-8")
-    assert "memory_transfer_volume_name=test-archives\n" in config
-    assert f"memory_export_enabled={enabled}\n" in config
+    monkeypatch.setattr("builtins.input", answer_prompt)
+    output = io.StringIO()
+
+    installer["config_run_omega"](output, "test-archives", enabled)
+
+    config = dict(shlex.split(line)[0].split("=", 1) for line in output.getvalue().splitlines())
+    assert not answers
+    assert provider_calls == (["routine", "premium"] if dual_model else [None])
+    assert config["memory_transfer_volume_name"] == "test-archives"
+    assert config["memory_export_enabled"] == enabled
+    expected_catalog = selections if dual_model else {"routine": selections["routine"]}
+    assert json.loads(config["router_catalog"]) == expected_catalog
+    assert config["LLM_router_switch"] == ("default" if dual_model else "none")
+    assert config["embeddingprovider"] == ("OpenAI" if dual_model else "Local")
+    for key, value in selections["routine"].items():
+        config_key = "api_token" if key == "token" else key
+        assert config[config_key] == value
+    for role, selection in expected_catalog.items():
+        for key, value in selection.items():
+            config_key = "api_token" if key == "token" else key
+            assert config[f"{role}_{config_key}"] == value
 
 
 @pytest.mark.parametrize("export_enabled", [False, True])
@@ -607,3 +668,292 @@ def test_legacy_image_path_version_is_compared(tmp_path):
     assert "Omega version=v0.0.0-test" in result.stderr
     assert "Could not determine the Docker image version" not in result.stderr
     assert "docker <rm>" not in result.stdout
+
+
+PROVIDER_TOKEN_VARS = {
+    "Anthropic": "ANTHROPIC_API_KEY",
+    "OpenAI": "OPENAI_API_KEY",
+    "ASICloud": "ASI_API_KEY",
+    "ASIOne": "ASIONE_API_KEY",
+    "OpenRouter": "OPENROUTER_API_KEY",
+    "OpenAIAPI": "OPENAIAPI_API_KEY",
+}
+ALL_TOKEN_VARS = tuple(PROVIDER_TOKEN_VARS.values())
+
+
+def _docker_run_arguments(output: str) -> list[str]:
+    line = next(
+        line for line in output.replace("\r", "").splitlines()
+        if line.startswith("docker <run> ") and "<--name> <omega>" in line
+    )
+    return line[len("docker <"):-1].split("> <")
+
+
+def _environment_values(arguments: list[str]) -> dict[str, str]:
+    return dict(
+        argument.split("=", 1)
+        for previous, argument in zip(arguments, arguments[1:])
+        if previous == "-e" and "=" in argument
+    )
+
+
+def _clean_token_environment(**tokens):
+    environment = {var: None for var in ALL_TOKEN_VARS}
+    environment.update(tokens)
+    return environment
+
+
+def test_noninteractive_start_passes_provider_model_and_key_without_a_catalog(tmp_path):
+    result = _run_launcher(
+        tmp_path, "-p", "Anthropic", "-m", "model-x", memory_import=False,
+        environment_overrides=_clean_token_environment(ANTHROPIC_API_KEY="fake-token-59"),
+    )
+
+    assert result.returncode == 0, result.stderr
+    arguments = _docker_run_arguments(result.stdout)
+    environment = _environment_values(arguments)
+    assert environment["ANTHROPIC_API_KEY"] == "fake-token-59"
+    assert "OMEGA_ROUTER_CATALOG" not in environment
+    assert {"router=none", "provider=Anthropic", "model=model-x"} <= set(arguments)
+    assert "router=default" not in arguments
+    assert not any(argument.startswith("OMEGA_ROUTER_CATALOG") for argument in arguments)
+
+
+def test_noninteractive_start_passes_the_openaiapi_url(tmp_path):
+    result = _run_launcher(
+        tmp_path, "-p", "OpenAIAPI", "-m", "model-x", "-u", "http://stub.example:19101/v1", memory_import=False,
+        environment_overrides=_clean_token_environment(OPENAIAPI_API_KEY="fake-token-59"),
+    )
+
+    assert result.returncode == 0, result.stderr
+    arguments = _docker_run_arguments(result.stdout)
+    assert {"router=none", "provider=OpenAIAPI", "model=model-x",
+            "openaiapi_url=http://stub.example:19101/v1"} <= set(arguments)
+
+
+def test_noninteractive_start_without_a_model_passes_no_model_argument(tmp_path):
+    result = _run_launcher(
+        tmp_path, "-p", "Anthropic", memory_import=False,
+        environment_overrides=_clean_token_environment(ANTHROPIC_API_KEY="fake-token-59"),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert not any(argument.startswith("model=") for argument in _docker_run_arguments(result.stdout))
+
+
+@pytest.mark.parametrize("provider, token_var", sorted(PROVIDER_TOKEN_VARS.items()))
+def test_noninteractive_start_without_the_provider_key_stops_before_docker_run(tmp_path, provider, token_var):
+    result = _run_launcher(
+        tmp_path, "-p", provider, memory_import=False,
+        environment_overrides=_clean_token_environment(),
+    )
+
+    assert result.returncode != 0
+    assert f"{token_var} is not set" in result.stdout
+    assert "docker <run>" not in result.stdout
+    assert "docker <rm>" not in result.stdout
+
+
+@pytest.mark.parametrize("provider, token_var", sorted(PROVIDER_TOKEN_VARS.items()))
+def test_noninteractive_start_picks_the_embedding_provider_from_the_llm_provider(tmp_path, provider, token_var):
+    result = _run_launcher(
+        tmp_path, "-p", provider, memory_import=False,
+        environment_overrides=_clean_token_environment(**{token_var: "fake-token-61"}),
+    )
+
+    assert result.returncode == 0, result.stderr
+    expected = "embeddingprovider=OpenAI" if provider == "OpenAI" else "embeddingprovider=Local"
+    assert expected in _docker_run_arguments(result.stdout)
+
+
+def _installer_selections(routine_provider, premium_provider=None):
+    def selection(provider, token):
+        return {
+            "provider": provider,
+            "api_token_var": PROVIDER_TOKEN_VARS[provider],
+            "model": "model-x",
+            "openaiapi_url": "",
+            "token": token,
+        }
+    selections = {"routine": selection(routine_provider, "fake-token-routine")}
+    if premium_provider:
+        selections["premium"] = selection(premium_provider, "fake-token-premium")
+    return selections
+
+
+@pytest.mark.parametrize("routine, premium, expected", [
+    ("Anthropic", None, "Local"),
+    ("OpenAI", None, "OpenAI"),
+    ("Anthropic", "ASICloud", "Local"),
+    ("OpenAIAPI", "OpenRouter", "Local"),
+    ("OpenAI", "Anthropic", "OpenAI"),
+    ("Anthropic", "OpenAI", "OpenAI"),
+    ("OpenAI", "OpenAI", "OpenAI"),
+])
+def test_installer_selects_openai_embeddings_when_any_role_uses_openai(monkeypatch, routine, premium, expected):
+    installer = _load_installer_namespace()
+    monkeypatch.setitem(installer, "require_license_acceptance", lambda: None)
+    monkeypatch.setitem(installer, "_choose_channel", lambda: {"commchannel": "test"})
+    monkeypatch.setitem(installer, "_choose_import_kb", lambda: "0")
+    selections = _installer_selections(routine, premium)
+    monkeypatch.setitem(installer, "_choose_provider", lambda role=None: selections[role or "routine"].copy())
+    answers = iter(["y" if premium else "n", "n"])
+    monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
+    output = io.StringIO()
+
+    installer["config_run_omega"](output, "test-archives", "0")
+
+    config = dict(shlex.split(line)[0].split("=", 1) for line in output.getvalue().splitlines())
+    assert config["embeddingprovider"] == expected
+
+
+def _run_interactive(tmp_path: Path, dialogue: list[tuple[str, str]]) -> str:
+    pty = pytest.importorskip("pty")
+    import select
+
+    environment = _stub_docker_environment(tmp_path)
+    environment["OMEGA_TEST_IMAGE_VERSION"] = _host_omega_version()
+    for var in ALL_TOKEN_VARS:
+        environment.pop(var, None)
+    pid, master = pty.fork()
+    if pid == 0:
+        os.chdir(REPO_ROOT)
+        os.execve(str(LAUNCHER), [str(LAUNCHER), "router-test-image:test"], environment)
+    transcript = ""
+    position = 0
+    steps = list(dialogue)
+    deadline = time.monotonic() + 120
+    try:
+        while True:
+            if steps and steps[0][0] in transcript[position:]:
+                expected, reply = steps.pop(0)
+                position += transcript[position:].index(expected) + len(expected)
+                os.write(master, (reply + "\n").encode())
+                continue
+            if time.monotonic() > deadline:
+                pytest.fail(f"interactive launcher did not reach {steps[0][0]!r}:\n{transcript}")
+            ready, _, _ = select.select([master], [], [], 1)
+            if not ready:
+                continue
+            try:
+                chunk = os.read(master, 65536)
+            except OSError:
+                break
+            if not chunk:
+                break
+            transcript += chunk.decode(errors="replace").replace("\r", "")
+    finally:
+        os.close(master)
+        try:
+            _, status = os.waitpid(pid, 0)
+        except ChildProcessError:
+            status = 0
+    assert not steps, f"unanswered prompts {[step[0] for step in steps]}:\n{transcript}"
+    assert os.waitstatus_to_exitcode(status) == 0, transcript
+    return transcript
+
+
+def _common_dialogue():
+    return [
+        (PROMPT_LICENSE, "accept"),
+        (PROMPT_CHANNEL, ""),
+        (PROMPT_IRC_CHANNEL, "##routertest"),
+    ]
+
+
+def _closing_dialogue():
+    return [
+        (PROMPT_IMPORT_KB, "n"),
+        (PROMPT_MEMORY_EXPORT, "n"),
+    ]
+
+
+SINGLE_TOKEN = "fake-token-62"
+ROUTINE_TOKEN = "fake-token-63r"
+PREMIUM_TOKEN = "fake-token-63p"
+
+
+def _single_role_dialogue():
+    return (
+        _common_dialogue()
+        + [(PROMPT_TWO_MODELS, "n"),
+           (PROMPT_PROVIDER, "1"),
+           (PROMPT_TOKEN, SINGLE_TOKEN),
+           (PROMPT_SINGLE_MODEL, "single-model")]
+        + _closing_dialogue()
+    )
+
+
+def _two_role_dialogue():
+    return (
+        _common_dialogue()
+        + [(PROMPT_TWO_MODELS, "y"),
+           (PROMPT_PROVIDER, "6"),
+           (PROMPT_TOKEN, ROUTINE_TOKEN),
+           (PROMPT_ROUTINE_MODEL, "routine-model"),
+           (PROMPT_API_URL, "http://stub.example:19101/v1"),
+           (PROMPT_PROVIDER, "2"),
+           (PROMPT_TOKEN, PREMIUM_TOKEN),
+           (PROMPT_PREMIUM_MODEL, "premium-model")]
+        + _closing_dialogue()
+    )
+
+
+def test_interactive_single_model_start_runs_the_container_with_one_provider(tmp_path):
+    output = _run_interactive(tmp_path, _single_role_dialogue())
+
+    arguments = _docker_run_arguments(output)
+    assert {"router=none", "provider=Anthropic", "model=single-model", "embeddingprovider=Local"} <= set(arguments)
+    assert _environment_values(arguments)["ANTHROPIC_API_KEY"] == SINGLE_TOKEN
+    assert "router=default" not in arguments
+    assert not any(argument.startswith("OMEGA_ROUTER_CATALOG") for argument in arguments)
+
+
+def test_interactive_two_model_start_hands_the_container_a_catalog_with_both_roles(tmp_path):
+    output = _run_interactive(tmp_path, _two_role_dialogue())
+
+    arguments = _docker_run_arguments(output)
+    environment = _environment_values(arguments)
+    assert json.loads(environment["OMEGA_ROUTER_CATALOG"]) == {
+        "routine": {
+            "provider": "OpenAIAPI",
+            "api_token_var": "OPENAIAPI_API_KEY",
+            "model": "routine-model",
+            "openaiapi_url": "http://stub.example:19101/v1",
+            "token": ROUTINE_TOKEN,
+        },
+        "premium": {
+            "provider": "OpenAI",
+            "api_token_var": "OPENAI_API_KEY",
+            "model": "premium-model",
+            "openaiapi_url": "",
+            "token": PREMIUM_TOKEN,
+        },
+    }
+    assert "router=default" in arguments
+    assert "embeddingprovider=OpenAI" in arguments
+    assert "router=none" not in arguments
+    assert not any(argument.startswith(("provider=", "model=", "openaiapi_url=")) for argument in arguments)
+    assert not any(name.endswith("_API_KEY") for name in environment)
+
+
+@pytest.mark.parametrize("dialogue, tokens", [
+    (_single_role_dialogue, [SINGLE_TOKEN]),
+    (_two_role_dialogue, [ROUTINE_TOKEN, PREMIUM_TOKEN]),
+], ids=["single-model", "two-models"])
+def test_interactive_start_exposes_tokens_only_as_values_of_dash_e(tmp_path, dialogue, tokens):
+    output = _run_interactive(tmp_path, dialogue())
+
+    arguments = _docker_run_arguments(output)
+    for token in tokens:
+        carriers = [
+            (previous, argument)
+            for previous, argument in zip([""] + arguments, arguments) if token in argument
+        ]
+        assert carriers and all(previous == "-e" for previous, _ in carriers)
+    outside_run = "\n".join(
+        line for line in output.splitlines()
+        if not (line.startswith("docker <run> ") and "<--name> <omega>" in line)
+    )
+    for token in tokens:
+        assert token not in outside_run

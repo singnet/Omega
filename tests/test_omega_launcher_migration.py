@@ -420,6 +420,33 @@ def test_missing_memory_import_does_not_replace_agent_container(docker_root):
     assert not _started_agent(docker_root)
 
 
+@pytest.mark.parametrize("export, import_archive", [
+    (False, False), (True, False), (False, True), (True, True),
+])
+def test_start_keeps_transfer_volume_separate_from_live_memory(docker_root, export, import_archive):
+    transfer = docker_root / "volumes" / "custom-archives"
+    options = ["--memory-transfer-volume", transfer.name]
+    if export:
+        options += ["--enable-memory-export"]
+    if import_archive:
+        transfer.mkdir()
+        (transfer / "memory.tar.gz").touch()
+        options += ["--memory-import", "memory.tar.gz", "--memory-mode", "append", "--only-history"]
+
+    result = _launcher(docker_root, "start", "-d", IMAGE, *options)
+
+    assert result.returncode == 0, result.stderr
+    run = next(call for call in _calls(docker_root) if call.startswith("run -d"))
+    mounts = (docker_root / "mounts" / "omega").read_text().splitlines()
+    assert mounts == (["omega-memory", transfer.name] if export or import_archive else ["omega-memory"])
+    assert transfer.exists() == (export or import_archive)
+    assert ("memoryExportEnabled=true" in run) == export
+    assert ("MEMORY_IMPORT_FILE=memory.tar.gz" in run) == import_archive
+    assert ("MEMORY_IMPORT_MODE=append" in run) == import_archive
+    assert ("MEMORY_IMPORT_NO_VECTOR=1" in run) == import_archive
+    assert run.count("ASI_API_KEY=test-token") == 1
+
+
 @pytest.mark.parametrize("command", ["memory-upload", "memory-download"])
 @pytest.mark.parametrize("image_state", ["cached", "missing", "pull-failed"])
 def test_archive_transfers_handle_image_availability(docker_root, command, image_state):
