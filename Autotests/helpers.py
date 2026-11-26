@@ -514,6 +514,9 @@ class Checker:
         label = {1: "FIRST TRY", 2: "AFTER CLARIFY", 0: "FAIL"}.get(level, str(level))
         print(f"       [GRADE] level={level} ({label})", flush=True)
 
+    def add_cleanup_dir(self, path):
+        self._cleanup_dirs.append(path)
+
     def add_cleanup_marker(self, marker):
         """Register an extra string to match in chromadb docs / history records
         during teardown. The default prompt tag is always added.
