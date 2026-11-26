@@ -11,17 +11,12 @@
 
 ;; Actual skills implementation
 
-(= (research-name-error $kind)
-   (strings-concat ("ERROR: invalid " $kind
-                    ". Use 1 to 128 characters, start with an ASCII letter or digit, "
-                    "and use only a-z, A-Z, 0-9, _, -, and . without consecutive dots (..).")))
-
 (= (load-research-dynamic-instructions $research-name $filename)
    (if (not (valid-file-or-folder-name $research-name))
-       (send (research-name-error "research name"))
+       (send (file-or-folder-name-error "research name"))
        (if (not (valid-file-or-folder-name $filename))
-           (send (research-name-error "filename"))
-           (let $result (py-call (fileio.read_research_instructions (pluginWorkflowMemoryDir) $research-name $filename))
+           (send (file-or-folder-name-error "filename"))
+           (let $result (py-call (fileio.read_research_instructions (memoryDirectory) (pluginWorkflowMemoryDir) $research-name $filename))
              (let $message (string_concat "" (car-atom (cdr-atom $result)))
                (if (== (car-atom $result) ok)
                  (progn
@@ -31,16 +26,16 @@
 
 ; Returning no value stops callers that compose this path with a filename.
 (= (researchDir)
-   (let $path (safe-subpath (pluginWorkflowMemoryDir) "research")
-     (get-existing-dir $path)))
+   (let $path (string_concat "" (py-call (fileio.research_directory (memoryDirectory) (pluginWorkflowMemoryDir))))
+     (if (== $path "") (empty) $path)))
 
 (= (research-start $research-name $topic)
    (if (valid-file-or-folder-name $research-name)
-       (send (string_concat "" (py-call (fileio.start_research (pluginWorkflowMemoryDir) $research-name $topic))))
-       (send (research-name-error "research name"))))
+       (send (string_concat "" (py-call (fileio.start_research (memoryDirectory) (pluginWorkflowMemoryDir) $research-name $topic))))
+       (send (file-or-folder-name-error "research name"))))
 
 (= (research-write-file $research-name $filename $content)
-   (py-call (fileio.write_research_file (pluginWorkflowMemoryDir) $research-name $filename $content)))
+   (py-call (fileio.write_research_file (memoryDirectory) (pluginWorkflowMemoryDir) $research-name $filename $content)))
 
 ;; update current step
 (= (research-step $research-name $step $result $next)
@@ -48,7 +43,7 @@
         (progn
             (send (strings-concat ("[" $research-name "] done: " $step)))
             (strings-concat ("Done: " $step)))
-        (send (research-name-error "research name"))
+        (send (file-or-folder-name-error "research name"))
      )
 )
 
@@ -60,7 +55,7 @@
               (send (strings-concat ("CHECKPOINT [" $research-name "]\n" $message "\n"
                              "Reply to continue.")))
               "Waiting for user")
-        (send (research-name-error "research name"))
+        (send (file-or-folder-name-error "research name"))
      )
 )
 
@@ -74,4 +69,4 @@
                   (send (strings-concat ("Research complete: " $research-name "\n" $location
                                          "\nWorkflow unloaded from context.")))
                   "Research complete, workflow unloaded")))
-       (send (research-name-error "research name"))))
+       (send (file-or-folder-name-error "research name"))))

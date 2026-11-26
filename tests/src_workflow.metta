@@ -90,14 +90,17 @@
 (= (invalid-workflow-rejected $name)
    (let $results (collapse (workflow-load-instructions $name))
      (let ((Error $_ $message)) $results
-       (contains-text $message "ERROR: invalid workflow name"))))
+       (and (contains-text $message "ERROR: invalid workflow name")
+            (contains-text $message "start with an ASCII letter or digit")))))
 
 !(test (invalid-workflow-rejected "./test-workflow") True)
 !(test (invalid-workflow-rejected "test-workflow;") True)
 !(test (get-state &workflow_active_name) "")
 
 !(change-state! &test-workspace (py-call (tempfile.TemporaryDirectory)))
-(= (pluginWorkflowMemoryDir) (py-call (.__enter__ (get-state &test-workspace))))
+(= (memoryDirectory) (py-call (.__enter__ (get-state &test-workspace))))
+(= (pluginWorkflowMemoryDir) (joinPath ((memoryDirectory) "workflow_space")))
+!(test (py-call (fileio.prepare_workflow_directory (memoryDirectory) (pluginWorkflowMemoryDir))) True)
 
 ;; Discovery also excludes invalid names when those directories exist.
 !(make-dirs (joinPath ((pluginWorkflowMemoryDir) "test-workflow;")))
@@ -181,6 +184,15 @@
 !(py-call (os.rename (researchDir) (joinPath ((pluginWorkflowMemoryDir) "saved-research"))))
 !(test (collapse (let $d (researchDir) (strings-concat ($d "/study/00_problem.md")))) ())
 !(py-call (os.symlink (pluginWorkflowMemoryDir) (joinPath ((pluginWorkflowMemoryDir) "research"))))
+!(test (collapse (researchDir)) ())
+
+;; A linked workflow_space is rejected even if its target lives inside memoryDirectory.
+!(let $target (joinPath ((memoryDirectory) "saved-workflow"))
+   (progn
+     (py-call (os.rename (pluginWorkflowMemoryDir) $target))
+     (py-call (os.symlink $target (pluginWorkflowMemoryDir)))))
+!(research-start "linked-workflow" "Rejected topic")
+!(test (contains-text (get-state &test-workflow-message) "ERROR: could not create research project directories") True)
 !(test (collapse (researchDir)) ())
 
 !(py-call (.cleanup (get-state &test-workspace)))

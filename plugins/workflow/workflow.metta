@@ -12,8 +12,7 @@
        (progn 
          (configure pluginWorkflowMemoryDir (joinPath ((memoryDirectory) workflow_space)))
          (log INFO "workflow-plugin" (strings-concat ("Creating working directory: " (pluginWorkflowMemoryDir))))
-         (let $rc (make-directory (pluginWorkflowMemoryDir)) ())
-         (if (exists-directory (pluginWorkflowMemoryDir))
+         (if (py-call (fileio.prepare_workflow_directory (memoryDirectory) (pluginWorkflowMemoryDir)))
            (progn
              (log INFO "workflow-plugin" "Adding plugin's skills")
              (add-skill workflow-load-instructions "Load an existing workflow instructions into the active context" (workflow_name))
@@ -21,7 +20,7 @@
              (add-skill workflow-refresh-list "Re-read available workflows from disk; use when a workflow was added or is missing from the list" ())
              (workflow-refresh-list)
              ())
-           $rc)))))
+           (Error (_loadOmegaPlugin) "Workflow working directory is unavailable. Set pluginWorkflowMemoryDir to a directory beneath memoryDirectory without symbolic links."))))))
 
 ;; ============ WORKFLOW LOADER ============
 
@@ -33,12 +32,17 @@
 (= (valid-file-or-folder-name $name)
    (py-call (fileio.validate_file_or_folder_name $name)))
 
+(= (file-or-folder-name-error $kind)
+   (strings-concat ("ERROR: invalid " $kind
+                    ". Use 1 to 128 characters, start with an ASCII letter or digit, "
+                    "and use only a-z, A-Z, 0-9, _, -, and . without consecutive dots (..).")))
+
 (= (instructionsDir) (get-existing-dir (pluginWorkflowInstructionsDir)))
 (= (workflow-load-instructions $name)
    (let $active (get-state &workflow_active_name)
      (if (== $active "")
-       (if (not (valid-file-or-folder-name  $name))
-         (Error (quote (workflow-load-instructions $name)) (strings-concat ("ERROR: invalid workflow name: " $name)))
+       (if (not (valid-file-or-folder-name $name))
+         (Error (quote (workflow-load-instructions $name)) (file-or-folder-name-error "workflow name"))
          (let $path (joinPath ((instructionsDir) $name "SKILL.md"))
            (if (not (exists-file $path))
              (Error (quote (workflow-load-instructions $name)) (strings-concat ("ERROR: skill file not found: " $path ". Try to call workflow-refresh-list")))
