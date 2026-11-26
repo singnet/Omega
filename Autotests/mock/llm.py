@@ -91,15 +91,18 @@ class LlmMockAgent:
         print('[LlmMockAgent] Mock ping request processed')
         return True
 
-    def _make_llm_response(self, calls: [(str, dict[str, str])]) -> LLMResponse:
+    def _make_llm_response(self, calls) -> LLMResponse:
         response = LLMResponse()
-        id = 0
-        for (func, args) in calls:
+        for index, call in enumerate(calls):
+            if len(call) == 2:
+                func, args = call
+                call_id = f"mockid#{index}"
+            else:
+                func, args, call_id = call
             response.add_tool_call(LLMToolCall()
                                    .with_name(func)
-                                   .with_id(f"mockid#{id}")
+                                   .with_id(call_id)
                                    .with_arguments(args))
-            id = id + 1
         return response
 
 

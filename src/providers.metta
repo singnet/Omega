@@ -42,3 +42,12 @@
 
 (= (llmResponseToSExpr $call)
    (py-call (providers.llmResponseToSExpr $call)))
+
+; sread returns the validated tool name as a string. Convert it to a single
+; dispatch symbol without parsing it again. Failed calls stay data.
+(= (toolCallCommand $call)
+   (if (== (car-atom $call) Error)
+       $call
+       (let $name (car-atom $call)
+         (progn (translatePredicate (atom_string $symbol $name))
+                (cons-atom $symbol (cdr-atom $call))))))
