@@ -91,8 +91,9 @@ Workflow plugin Omega configuration parameters:
   available workflows. Default value is `<project
   root>/plugins/workflow/instructions`
 - `pluginWorkflowMemoryDir` - path to the directory to keep workflow working
-  files when workflow is active. Default value is `<project
-  root>/memory/workflow_space`
+  files when workflow is active. It must be beneath `memoryDirectory`, with
+  no symbolic links between the memory root and the workflow directory.
+  The default is `<memoryDirectory>/workflow_space`.
 
 One can set this parameters passing them as a command line arguments. For
 example:

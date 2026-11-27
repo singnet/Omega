@@ -9,8 +9,7 @@ and creating a detailed execution plan. Once the user approves the plan,
 it replaces these instructions and you follow it step by step.
 ## Project Structure
 All projects live under `(let $d (researchDir) (strings-concat ($d "/<research-name>/")))`.
-(researchDir) is a tool that returns the directory where the research folders and files should be located
-The `research-start` tool creates the base folders.
+Call `research-start` to create the project folders. Once the research directory exists, `(researchDir)` returns its path.
 (researchDir)/<research-name>/
   topic.txt            # created by research-start
   00_problem.md        # research question, scope, metrics
@@ -25,14 +24,14 @@ Next are instructions and MeTTa  functions  that should be performed step by ste
 ### Step 1 — Define the problem
 - Call `(research-start <research-name>_in_quotes "topic")` to create project folders
 - Write research question, scope, success metrics, constraints:
-  `(let $d (researchDir) (write-file (strings-concat ($d "/<research-name>/00_problem.md")) "content"))`
+  `(research-write-file "<research-name>" "00_problem.md" "content")`
 - `(research-step <research-name>_in_quotes "problem-defined" "question: X metric: Y"
                   "search online for related methods and data sources")`
 ### Step 2 — Research and create plan
 - Search online for related methods and data sources:
   `(websearch "query")`
 - Save findings:
-  `(let $d (researchDir) (write-file (strings-concat ($d "/<research-name>/01_theory.md")) "content"))`
+  `(research-write-file "<research-name>" "01_theory.md" "content")`
 - `(research-step <research-name>_in_quotes "theory-saved" "sources: X methods: Y"
                   "create plan and present to user")`
 - Create the full execution plan using findings and the Plan Template below
@@ -43,7 +42,7 @@ Next are instructions and MeTTa  functions  that should be performed step by ste
 ### Step 3 — Plan approval
 - If user approves:
 save plan:
-  `(let $d (researchDir) (write-file (strings-concat ($d "/<research-name>/02_plan.md")) "approved plan text"))`
+  `(research-write-file "<research-name>" "02_plan.md" "approved plan text")`
   `(research-step <research-name>_in_quotes "plan-approved" "milestones A B C"
                   "follow plan from Milestone A")`
 IMPORTANT!!!: load plan to active &active_instructions variable:
@@ -58,8 +57,8 @@ The plan must be self-contained — after loading it replaces this file.
 ## Operating Rules
 - Work autonomously. Make your own decisions on implementation details.
 - Use `pin` to track current step between iterations.
-- All file paths must be built from `(researchDir)` via `let`: e.g. `(let $d (researchDir) (strings-concat ($d "/<research-name>/...")))`
-- Write code via `write-file`, run via `shell`. Never output code in `send`.
+- Pass project-relative paths to `research-write-file`. Use `(researchDir)` to locate the project for shell commands.
+- Write code via `research-write-file`, run via `shell`. Never output code in `send`.
 - Save seeds and versions in every script.
 - Store metrics as JSON in `runs/`.
 - Use `(research-step <research-name>_in_quotes "step" "result" "next")` after each milestone.
@@ -71,7 +70,7 @@ The plan must be self-contained — after loading it replaces this file.
 ## Milestone A — Data Ready + Baseline
 ### A1 — Prepare data and baseline
 - `<concrete data source and acquisition method>`
-- Write: `(let $d (researchDir) (write-file (strings-concat ($d "/<research-name>/src/baseline.py")) "code"))`
+- Write: `(research-write-file "<research-name>" "src/baseline.py" "code")`
   Script: load data, preprocess, simple model, save runs/baseline.json
 - Run: `(let $d (researchDir) (shell (strings-concat ("cd " $d "/<research-name> && python src/baseline.py"))))`
 - `(research-step <research-name>_in_quotes "data-ready" "N rows, baseline=X"
@@ -81,18 +80,18 @@ The plan must be self-contained — after loading it replaces this file.
 ## Milestone B — Experiments
 ### B1 — <experiment name>
 - Hypothesis: <what you expect>
-- Write: `(let $d (researchDir) (write-file (strings-concat ($d "/<research-name>/src/experiment_1.py")) "code"))`
+- Write: `(research-write-file "<research-name>" "src/experiment_1.py" "code")`
 - Run: `(let $d (researchDir) (shell (strings-concat ("cd " $d "/<research-name> && python src/experiment_1.py"))))`
-- Save: `(let $d (researchDir) (write-file (strings-concat ($d "/<research-name>/runs/exp1.json")) "metrics"))`
+- Save: `(research-write-file "<research-name>" "runs/exp1.json" "metrics")`
 - `(research-step <research-name>_in_quotes "experiment-1" "metric=Y" "next experiment")`
 ### B2 — <next experiment>
 ...
 ## Milestone C — Results + Conclusions
 ### C1 — Write results
-- `(let $d (researchDir) (write-file (strings-concat ($d "/<research-name>/05_results.md")) "content"))`
+- `(research-write-file "<research-name>" "05_results.md" "content")`
 - `(research-step <research-name>_in_quotes "results-written" "best: X" "write conclusions")`
 ### C2 — Conclusions
-- `(let $d (researchDir) (write-file (strings-concat ($d "/<research-name>/06_conclusions.md")) "content"))`
+- `(research-write-file "<research-name>" "06_conclusions.md" "content")`
 - `(research-step <research-name>_in_quotes "conclusions-done" "summary"
                   "call research-checkpoint")`
 - `(research-checkpoint <research-name>_in_quotes "Results ready. Next iteration? Proceed?")`

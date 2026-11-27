@@ -12,8 +12,7 @@
        (progn 
          (configure pluginWorkflowMemoryDir (joinPath ((memoryDirectory) workflow_space)))
          (log INFO "workflow-plugin" (strings-concat ("Creating working directory: " (pluginWorkflowMemoryDir))))
-         (let $rc (make-directory (pluginWorkflowMemoryDir)) ())
-         (if (exists-directory (pluginWorkflowMemoryDir))
+         (if (py-call (fileio.prepare_workflow_directory (memoryDirectory) (pluginWorkflowMemoryDir)))
            (progn
              (log INFO "workflow-plugin" "Adding plugin's skills")
              (add-skill workflow-load-instructions "Load an existing workflow instructions into the active context" (workflow_name))
@@ -21,7 +20,7 @@
              (add-skill workflow-refresh-list "Re-read available workflows from disk; use when a workflow was added or is missing from the list" ())
              (workflow-refresh-list)
              ())
-           $rc)))))
+           (Error (_loadOmegaPlugin) "Workflow working directory is unavailable. Set pluginWorkflowMemoryDir to a directory beneath memoryDirectory without symbolic links."))))))
 
 ;; ============ WORKFLOW LOADER ============
 
@@ -30,19 +29,13 @@
      $dir
      (empty)))
 
-;; Validate name
-; TODO: calling Python validation code is replaced by stub.
-; Can be returned back when https://github.com/trueagi-io/PeTTa/issues/196 is
-; fixed.
-(= (valid-file-or-folder-name $filename) True)
+(= (valid-file-or-folder-name $name)
+   (py-call (fileio.validate_file_or_folder_name $name)))
 
-;!(import! &self utils.py)
-
-;(= (valid-file-or-folder-name $filename)
-;   (if (== (strings-concat ("valid")) (py-call
-;   (utils.validate_file_or_folder_name(strings-concat ($filename)))))
-;       True
-;       False))
+(= (file-or-folder-name-error $kind)
+   (strings-concat ("ERROR: invalid " $kind
+                    ". Use 1 to 128 characters, start with an ASCII letter or digit, "
+                    "and use only a-z, A-Z, 0-9, _, -, and . without consecutive dots (..).")))
 
 (= (instructionsDir) (get-existing-dir (pluginWorkflowInstructionsDir)))
 
@@ -62,20 +55,21 @@
 (= (workflow-load-instructions $name)
    (let $active (get-state &workflow_active_name)
      (if (== $active "")
-       (if (not (listed-workflow (instructionsDir) $name))
-         (Error (quote (workflow-load-instructions $name)) "ERROR: invalid workflow name")
-         (let $path (joinPath ((instructionsDir) $name "SKILL.md"))
-           (if (not (exists-file $path))
-             (Error (quote (workflow-load-instructions $name)) (strings-concat ("ERROR: skill file not found: " $path ". Try to call workflow-refresh-list")))
-             (let $content (read-file $path)
-               (progn
-                 (log INFO "workflow-plugin" (strings-concat ("Loading workflow instructions for: " $name)))
-                 (add-prompt-extension workflow_active_instructions (active-instructions $content))
-                 (add-workflow-skills $name)
-                 (change-state! &workflow_active_name $name)
-                 (send (strings-concat ("Loaded workflow: " $name
-                                        ". Instructions active in context until completion.")))
-                 )))))
+       (if (not (valid-file-or-folder-name $name))
+         (Error (quote (workflow-load-instructions $name)) (file-or-folder-name-error "workflow name"))
+         (if (not (listed-workflow (instructionsDir) $name))
+           (Error (quote (workflow-load-instructions $name)) "ERROR: invalid workflow name")
+           (let $path (joinPath ((instructionsDir) $name "SKILL.md"))
+             (if (not (exists-file $path))
+               (Error (quote (workflow-load-instructions $name)) (strings-concat ("ERROR: skill file not found: " $path ". Try to call workflow-refresh-list")))
+               (let $content (read-file $path)
+                 (progn
+                   (log INFO "workflow-plugin" (strings-concat ("Loading workflow instructions for: " $name)))
+                   (add-prompt-extension workflow_active_instructions (active-instructions $content))
+                   (add-workflow-skills $name)
+                   (change-state! &workflow_active_name $name)
+                   (send (strings-concat ("Loaded workflow: " $name
+                                          ". Instructions active in context until completion.")))))))))
        (Error (quote (workflow-load-instructions $name)) (strings-concat ("ERROR: There is an active workflow: " $active ". Unload it before loading new one"))))))
 
 (= (workflow-unload-instructions)
@@ -155,7 +149,7 @@
           (let* (
                  ($fullpath (joinPath ($dir $first)))
                  ($rest     (filter-dirs $tail $dir)))
-            (if (or (== $first ".") (== $first ".."))
+            (if (not (valid-file-or-folder-name $first))
               $rest
               (if (and (exists-directory $fullpath) (not (workflow-symlink $fullpath)))
                 (cons-atom $first $rest)

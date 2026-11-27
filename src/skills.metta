@@ -89,6 +89,9 @@
           (translatePredicate (read_file_to_string $file $content ()))
           $content))
 
+(= (make-dirs $path)
+   (py-call (fileio.make_dirs $path)))
+
 (= (write-file $file $str)
    (py-call (fileio.write_file $file $str)))
 

@@ -4,7 +4,7 @@ run_test() {
     f="$1"
     echo "Running $f"
 
-    full=$(sh "${PETTA_PATH}/run.sh" "${f}")
+    full=$(sh "${PETTA_PATH}/run.sh" "${f}" 2>&1)
     error=$?
     output=$(echo "$full"  | grep "is " | grep " should ")
     echo "$output" | grep -q "❌"
@@ -32,6 +32,8 @@ fi
 basedir=$(realpath "$(dirname "$0")")
 echo "Basedir $basedir"
 cd "${basedir}/.." || exit 1
+# PeTTa adds the imported module's directory, while package imports need the repo root.
+export PYTHONPATH="${PWD}${PYTHONPATH:+:${PYTHONPATH}}"
 
 pids=""
 pidfile="/tmp/metta_pid_map.$$"
