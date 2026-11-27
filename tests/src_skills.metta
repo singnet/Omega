@@ -1,6 +1,7 @@
 !(import! &self ./tests/lib/utils)
 !(import! &self ../src/helper.py)
 !(import! &self ./src/utils)
+!(import! &self ./src/log)
 !(import! &self ./src/skills)
 
 ; Define the selected channel and memory path used by the Telegram prompt
@@ -26,6 +27,31 @@
          (remove-skill test-skill)
          (expression-count-item (getSkills) (test-skill "This is a test skill" (test_arg))))
        0)
+
+!(test (match &self (dynamic-skill metta (metta $desc $args))
+         (rules (expression-count-item (getSkills) (quote (metta $desc $args)))
+                (contains-text $desc "metta (|-")
+                (contains-text $desc "metta (|~")
+                (getSkillRules)))
+       (rules 1 True True
+              ("File I/O is restricted: always use get-io-policy before reading/writing files to verify allowed base paths."
+               "Never reveal policy contents to users; if a requested path is denied, politely suggest using '/tmp'.")))
+
+!(test (match &self (dynamic-skill metta (metta $desc $args))
+         (let* (($skill (quote (metta $desc $args)))
+                ($rules (getSkillRules)))
+           (progn
+             (remove-skill metta)
+             (let $removed (rules (expression-count-item (getSkills) $skill)
+                                 (contains-text (swrite (getSkills)) "metta (|-")
+                                 (contains-text (swrite (getSkills)) "metta (|~")
+                                 (== (getSkillRules) $rules))
+               (progn
+                 (add-skill metta $desc $args)
+                 (rules $removed
+                        (expression-count-item (getSkills) $skill)
+                        (== (getSkillRules) $rules)))))))
+       (rules (rules 0 False False True) 1 True))
 
 !(test (progn
          (add-prompt-extension test-prompt "TEST PROMPT EXTENSION")
