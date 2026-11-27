@@ -9,6 +9,7 @@ mock/test_edit_append_line_mock.py
 mock/test_edit_delete_line_mock.py
 mock/test_git_local_commit_mock.py
 mock/test_git_pull_public_mock.py
+mock/test_idle_nop_mock.py
 mock/test_io_policy_skill_mock.py
 mock/test_last_skill_results_visible_next_turn_mock.py
 mock/test_llm.py
@@ -29,11 +30,17 @@ mock/test_search_invalid_mock.py
 mock/test_search_weather_mock.py
 mock/test_skill_metta_mock.py
 mock/test_skill_pin_mock.py
+mock/test_call_id_number_overflow_mock.py
+mock/test_tool_call_field_boundaries_mock.py
+mock/test_tool_call_injection_e2e_mock.py
+mock/test_tool_call_injection_mock.py
 mock/test_tool_result_for_every_call_mock.py
 mock/test_transition_episodes_after_eviction_mock.py
 mock/test_transition_metta_to_remember_mock.py
 mock/test_transition_pin_to_remember_mock.py
 mock/test_workflow_plugin_mock.py
+mock/test_workflow_reload_tools_mock.py
+mock/test_workflow_traversal_mock.py
 mock_websocket/test_wschat_unit.py
 test_openai_runtime_embeddings.py
 test_prompt_grounding.py
@@ -48,4 +55,6 @@ unit/test_openai_responses.py
 unit/test_openclaw_unit.py
 unit/test_nginx_llm_timeouts.py
 unit/test_llm_timeout_message.py
+unit/test_llm_tools_request.py
 import_knowledge/test_import_knowledge.py
+llm_requests/test_empty_tool_calls_after_truncated_reply.py

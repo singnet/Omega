@@ -64,19 +64,19 @@ def test_non_string_argument_becomes_error_call_in_sexpr(value):
     request = LLMRequest().add_tool(_tool('foo', 'bar'))
     response = providers._validate_response(
         request, LLMResponse().add_tool_call(_call('call#0', 'foo', bar=value)))
-    assert llmResponseToSExpr(response).startswith('((call#0 (Error (foo "')
+    assert llmResponseToSExpr(response).startswith('(("call#0" (Error ("foo" "')
 
 
 def test_non_string_argument_is_escaped_in_error_sexpr():
     request = LLMRequest().add_tool(_tool('foo', 'bar'))
     response = providers._validate_response(
         request, LLMResponse().add_tool_call(_call('call#0', 'foo', bar=["a"])))
-    assert '(foo "[\\"a\\"]")' in llmResponseToSExpr(response)
+    assert '("foo" "[\\"a\\"]")' in llmResponseToSExpr(response)
 
 
 def test_error_that_is_not_a_string_is_converted_in_sexpr():
     call = _call('call#0', 'foo').with_error(ValueError("bad value"))
-    assert llmToolCallToSExpr(call) == '(call#0 (Error (foo) "bad value"))'
+    assert llmToolCallToSExpr(call) == '("call#0" (Error ("foo") "bad value"))'
 
 
 def test_llm_tool_call_to_sexpr():
@@ -87,7 +87,7 @@ def test_llm_tool_call_to_sexpr():
             .with_id('call#0')
             .add_argument('bar', 'test'))
     call.set_tool(tool)
-    assert llmToolCallToSExpr(call) == '(call#0 (foo "test"))'
+    assert llmToolCallToSExpr(call) == '("call#0" ("foo" "test"))'
 
 
 def test_llm_tool_call_to_sexpr_escape():
@@ -98,12 +98,12 @@ def test_llm_tool_call_to_sexpr_escape():
             .with_id('call#0')
             .add_argument('bar', 'test"\\'))
     call.set_tool(tool)
-    assert llmToolCallToSExpr(call) == '(call#0 (foo "test\\"\\\\"))'
+    assert llmToolCallToSExpr(call) == '("call#0" ("foo" "test\\"\\\\"))'
 
 
 def test_error_text_is_escaped_in_sexpr():
     call = _call('call#0', 'foo').with_error('Invalid \\uXXXX escape: "x"')
-    assert llmToolCallToSExpr(call) == '(call#0 (Error (foo) "Invalid \\\\uXXXX escape: \\"x\\""))'
+    assert llmToolCallToSExpr(call) == '("call#0" (Error ("foo") "Invalid \\\\uXXXX escape: \\"x\\""))'
 
 
 def test_get_tools_does_not_deduplicate_tools():

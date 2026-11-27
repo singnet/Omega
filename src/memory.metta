@@ -51,11 +51,22 @@
    (append-file-raw (library Omega ./memory/history.metta) (swrite $addition)))
 
 (= (remember $str)
-   (progn (py-call (lib_chromadb.remember $str (embed $str) (get_time_as_string)))
-          REMEMBER-SUCCESS))
+   (case (catch (py-call (lib_chromadb.remember $str (embed $str) (get_time_as_string))))
+     (((Error $type $details)
+       (Error remember
+         (string_concat
+           "Memory write failed. Do not ignore the user's request. Tell the user that the data was not stored. Do not claim to have remembered it. Details: "
+           (repr (Error $type $details)))))
+      ($result REMEMBER-SUCCESS))))
 
 (= (query $str)
-   (py-call (lib_chromadb.query (embed $str) (maxRecallItems))))
+   (case (catch (py-call (lib_chromadb.query (embed $str) (maxRecallItems))))
+     (((Error $type $details)
+       (Error query
+         (string_concat
+           "Memory query failed. Do not ignore the user's request. Tell the user that memory could not be searched. Details: "
+           (repr (Error $type $details)))))
+      ($result $result))))
 
 (= (episodes $time)
    (py-call (helper.around_time $time (maxEpisodeRecallLines))))

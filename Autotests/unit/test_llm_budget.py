@@ -2,7 +2,6 @@
 import importlib.util
 import logging
 import os
-import re
 import sys
 import types
 from types import SimpleNamespace as NS
@@ -26,19 +25,22 @@ def _exec(name, path, register):
     return module
 
 
+CONFIG_STUB = {}
+
+
 def _load_modules():
     openai_stub = types.ModuleType("openai")
     openai_stub.OpenAI = object
 
     config_stub = types.ModuleType("config")
-    config_stub.config_get_by_key = lambda key, default=None: default
+    config_stub.config_get_by_key = lambda key, default=None: CONFIG_STUB.get(key, default)
 
     stubs = {"openai": openai_stub, "config": config_stub}
     saved = {name: sys.modules.get(name) for name in list(stubs) + ["providers", "lib_llm_ext"]}
     sys.modules.update(stubs)
     try:
         loaded = {"providers": _exec("providers", os.path.join(_SRC_DIR, "providers.py"), True)}
-        for name in ("lib_llm_ext", "openrouter", "openai_provider", "asione"):
+        for name in ("lib_llm_ext", "openrouter", "openai_provider", "asione", "openaiapi"):
             file_name = "omega_openai.py" if name == "openai_provider" else f"{name}.py"
             loaded[name] = _exec(name, os.path.join(_PROVIDERS_DIR, file_name), name == "lib_llm_ext")
         return loaded
@@ -56,15 +58,24 @@ llm = _MODULES["lib_llm_ext"]
 openrouter = _MODULES["openrouter"]
 openai_provider = _MODULES["openai_provider"]
 asione = _MODULES["asione"]
+openaiapi = _MODULES["openaiapi"]
+IDLE_MESSAGE = "[NO NEW USER INPUT. CONTINUE AUTONOMOUS WORK.]"
 
+
+@pytest.fixture(autouse=True)
+def no_pending_limit_notice():
+    llm._limit_notice_pending = False
 SEND = (P.LLMTool().with_name("send").with_description("Send a message to the user")
         .add_parameter(P.LLMToolParameter().with_name("content")))
-ACCEPTED_CALL_ID = re.compile(r"[a-zA-Z0-9_-]{1,40}")
 
 
-def make_request(max_tokens=6000, reasoning="medium"):
+def make_request(
+    max_tokens=6000,
+    reasoning="medium",
+    content="Write an empty line to /tmp/paths.txt",
+):
     return P.llmRequest(P.llmRequestMessage("system", "You are an agent."),
-                        [P.llmRequestMessage("user", "Write an empty line to /tmp/paths.txt")],
+                        [P.llmRequestMessage("user", content)],
                         max_tokens, reasoning, [SEND])
 
 
@@ -145,6 +156,16 @@ def make_asione(create):
     return provider
 
 
+def make_registered_provider(create, monkeypatch, name="OpenAIAPI"):
+    registry = {}
+    monkeypatch.setattr(P, "registerLLMProvider", lambda name, provider: registry.__setitem__(name, provider))
+    openaiapi.loadOmegaPlugin()
+    provider = registry[name]
+    provider.start()
+    provider.delegate._client = NS(chat=NS(completions=NS(create=create)))
+    return provider
+
+
 def calls_of(response):
     return [(call.name, call.arguments) for call in response.calls]
 
@@ -153,7 +174,20 @@ def swallowed_errors(caplog):
     return [r for r in caplog.records if r.exc_info]
 
 
-FALLBACK = [("send", {"content": llm.LLM_EMPTY_RESPONSE_MESSAGE})]
+def assert_limit_notice(response):
+    assert response.calls == []
+    assert response.error is None
+    assert response.output_limit_reached is True
+    assert response.limit_notice == llm.LLM_OUTPUT_LIMIT_MARKER
+    assert llm.llmLimitNotice(response) == llm.LLM_EMPTY_RESPONSE_MESSAGE
+
+
+def assert_no_limit_notice(response):
+    assert response.calls == []
+    assert response.error is None
+    assert response.output_limit_reached is True
+    assert response.limit_notice == ""
+    assert llm.llmLimitNotice(response) == ""
 
 
 def test_normal_reply_is_returned_after_a_single_call():
@@ -165,7 +199,7 @@ def test_normal_reply_is_returned_after_a_single_call():
 
 def test_empty_reply_out_of_budget_is_explained():
     create = FakeCreate(chat_response(None, "length"))
-    assert calls_of(make_openrouter(create).chat(make_request())) == FALLBACK
+    assert_limit_notice(make_openrouter(create).chat(make_request()))
 
 
 def test_empty_reply_with_stop_is_not_blamed_on_the_budget(caplog):
@@ -176,9 +210,10 @@ def test_empty_reply_with_stop_is_not_blamed_on_the_budget(caplog):
     assert swallowed_errors(caplog) == []
 
 
-def test_openai_empty_reply_out_of_budget_is_explained():
-    create = FakeCreate(responses_response([reasoning_item()], "incomplete", "max_output_tokens"))
-    assert calls_of(make_openai(create).chat(make_request(max_tokens=120))) == FALLBACK
+@pytest.mark.parametrize("output", [None, [], [reasoning_item()]])
+def test_openai_empty_reply_out_of_budget_is_explained(output):
+    create = FakeCreate(responses_response(output, "incomplete", "max_output_tokens"))
+    assert_limit_notice(make_openai(create).chat(make_request(max_tokens=120)))
 
 
 def test_openai_empty_reply_without_incomplete_reason_returns_empty(caplog):
@@ -191,7 +226,67 @@ def test_openai_empty_reply_without_incomplete_reason_returns_empty(caplog):
 
 def test_asione_empty_reply_out_of_budget_is_explained():
     create = FakeCreate(chat_response(None, "length"))
-    assert calls_of(make_asione(create).chat(make_request())) == FALLBACK
+    assert_limit_notice(make_asione(create).chat(make_request()))
+
+
+@pytest.mark.parametrize("make, response", [
+    (make_openrouter, lambda: chat_response(None, "length")),
+    (make_asione, lambda: chat_response(None, "length")),
+    (make_openai, lambda: responses_response([], "incomplete", "max_output_tokens")),
+])
+@pytest.mark.parametrize("content", ["", IDLE_MESSAGE])
+def test_empty_reply_out_of_budget_without_a_user_message_sends_nothing(
+    make, response, content
+):
+    provider = make(FakeCreate(response()))
+    result = provider.chat(make_request(content=content))
+    assert_no_limit_notice(result)
+
+
+def test_limit_notice_comes_once_after_a_step_without_an_answer():
+    provider = make_openrouter(FakeCreate(
+        chat_response(
+            [tool_call("call_query", "query", '{"query": "hash maps"}')],
+            "length",
+        ),
+        chat_response(None, "length"),
+        chat_response(None, "length"),
+    ))
+    response = provider.chat(make_request())
+    assert calls_of(response) == [("query", {"query": "hash maps"})]
+    assert response.error is None
+    assert response.limit_notice == ""
+    assert llm.llmLimitNotice(response) == ""
+    assert_limit_notice(provider.chat(make_request(content=IDLE_MESSAGE)))
+    assert_no_limit_notice(provider.chat(make_request(content=IDLE_MESSAGE)))
+
+
+@pytest.mark.parametrize("preceding_calls", [
+    [],
+    [tool_call("call_query", "query", '{"query": "x"}')],
+], ids=["send", "query_then_send"])
+def test_limit_notice_is_skipped_once_the_user_got_an_answer(preceding_calls):
+    calls = preceding_calls + [
+        tool_call("call_send", "send", '{"content": "hi"}'),
+    ]
+    provider = make_openrouter(FakeCreate(
+        chat_response(calls, "tool_calls"),
+        chat_response(None, "length"),
+    ))
+    response = provider.chat(make_request())
+    expected = [("query", {"query": "x"})] if preceding_calls else []
+    assert calls_of(response) == expected + [("send", {"content": "hi"})]
+    assert response.error is None
+    assert llm.llmLimitNotice(response) == ""
+    assert_no_limit_notice(provider.chat(make_request(content=IDLE_MESSAGE)))
+
+
+def test_every_user_message_cut_by_the_limit_gets_its_own_notice():
+    provider = make_openrouter(FakeCreate(*(chat_response(None, "length") for _ in range(4))))
+    assert_limit_notice(provider.chat(make_request()))
+    assert_no_limit_notice(provider.chat(make_request(content=IDLE_MESSAGE)))
+    assert_limit_notice(provider.chat(make_request()))
+    assert_no_limit_notice(provider.chat(make_request(content=IDLE_MESSAGE)))
 
 
 @pytest.mark.parametrize("make, raw", [
@@ -200,10 +295,9 @@ def test_asione_empty_reply_out_of_budget_is_explained():
     (make_asione, chat_response(None, "length", response_id="chatcmpl-52715fd4-f334-454f-b192-9924424d61f3")),
     (make_openai, responses_response([reasoning_item()], "incomplete", "max_output_tokens")),
 ], ids=["anthropic", "openrouter", "asione", "openai"])
-def test_fallback_call_id_is_accepted_by_providers(make, raw):
+def test_limit_notice_is_returned_by_each_provider(make, raw):
     response = make(FakeCreate(raw)).chat(make_request())
-    assert calls_of(response) == FALLBACK
-    assert ACCEPTED_CALL_ID.fullmatch(response.calls[0].id)
+    assert_limit_notice(response)
 
 
 @pytest.mark.parametrize("effort, max_tokens, want_budget, want_enabled", [
@@ -230,6 +324,97 @@ def test_openrouter_reasoning_body(effort, want):
                                       completion_tokens=40, reasoning_tokens=30))
     make_openrouter(create).chat(make_request(reasoning=effort))
     assert create.calls[0]["extra_body"]["reasoning"] == want
+
+
+@pytest.mark.parametrize("effort", ["low", "medium", "high", "xhigh", "max", "none"])
+@pytest.mark.parametrize("name", ["OpenAIAPI", "ASICloud"])
+def test_openaiapi_forwards_reasoning_effort(monkeypatch, name, effort):
+    monkeypatch.setitem(CONFIG_STUB, "supportsReasoningEffort", True)
+    create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls"))
+    provider = make_registered_provider(create, monkeypatch, name)
+    request = make_request(reasoning=effort)
+    expected = llm.AIProvider.convert_request(provider.delegate, request)
+    expected["extra_body"] = {"reasoning_effort": effort}
+
+    provider.chat(request)
+
+    assert create.calls == [expected]
+
+
+@pytest.mark.parametrize("flag, want_sent", [
+    (False, False), ("false", False), ("False", False), (" off ", False),
+    ("0", False), (0, False), ("no", False), ("", False),
+    (None, False), ("yes", False), ("on", False), ("1", False), (1, False),
+    ("flase", False), (" true ", False),
+    (True, True), ("true", True), ("True", True), ("TRUE", True), ("TrUe", True),
+])
+@pytest.mark.parametrize("name", ["OpenAIAPI", "ASICloud"])
+def test_openaiapi_requires_explicit_true_reasoning_flag(monkeypatch, name, flag, want_sent):
+    monkeypatch.setitem(CONFIG_STUB, "supportsReasoningEffort", flag)
+    create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls"))
+    provider = make_registered_provider(create, monkeypatch, name)
+    request = make_request()
+    expected = llm.AIProvider.convert_request(provider.delegate, request)
+    if want_sent:
+        expected["extra_body"] = {"reasoning_effort": "medium"}
+
+    provider.chat(request)
+
+    assert create.calls == [expected]
+
+
+@pytest.mark.parametrize("name", ["OpenAIAPI", "ASICloud"])
+def test_openaiapi_preserves_request_when_flag_is_unset(monkeypatch, name):
+    create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls"))
+    provider = make_registered_provider(create, monkeypatch, name)
+    request = make_request()
+
+    provider.chat(request)
+
+    assert create.calls == [llm.AIProvider.convert_request(provider.delegate, request)]
+    assert "extra_body" not in create.calls[0]
+
+
+@pytest.mark.parametrize("effort", [None, ""])
+@pytest.mark.parametrize("name", ["OpenAIAPI", "ASICloud"])
+def test_openaiapi_omits_unset_reasoning_even_when_flag_is_on(monkeypatch, name, effort):
+    monkeypatch.setitem(CONFIG_STUB, "supportsReasoningEffort", True)
+    create = FakeCreate(chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls"))
+    provider = make_registered_provider(create, monkeypatch, name)
+    request = make_request(reasoning=effort)
+
+    provider.chat(request)
+
+    assert create.calls == [llm.AIProvider.convert_request(provider.delegate, request)]
+    assert "extra_body" not in create.calls[0]
+
+
+@pytest.mark.parametrize("name", ["base", "Anthropic", "OpenRouter", "OpenAI", "ASIOne"])
+@pytest.mark.parametrize("effort", ["medium", "none"])
+def test_reasoning_effort_flag_does_not_change_other_providers(monkeypatch, name, effort):
+    raw = chat_response([tool_call("call_1", "send", '{"content": "hi"}')], "tool_calls")
+    if name == "OpenAI":
+        raw = responses_response([function_call("fc_1", "send", '{"content": "hi"}')], "completed")
+    create = FakeCreate(raw, raw, raw)
+    if name == "Anthropic":
+        provider = make_registered_provider(create, monkeypatch, name)
+    else:
+        factory = {"base": make_anthropic, "OpenRouter": make_openrouter,
+                   "OpenAI": make_openai, "ASIOne": make_asione}[name]
+        provider = factory(create)
+    request = make_request(reasoning=effort)
+
+    provider.chat(request)
+    monkeypatch.setitem(CONFIG_STUB, "supportsReasoningEffort", True)
+    provider.chat(request)
+    monkeypatch.setitem(CONFIG_STUB, "supportsReasoningEffort", False)
+    provider.chat(request)
+
+    assert len(create.calls) == 3
+    assert create.calls[0] == create.calls[1] == create.calls[2]
+    assert "reasoning_effort" not in create.calls[1].get("extra_body", {})
+    if name in ("base", "Anthropic"):
+        assert "extra_body" not in create.calls[1]
 
 
 def test_usage_is_logged_at_info(caplog):

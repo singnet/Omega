@@ -5,7 +5,6 @@ import hashlib
 import threading
 from pathlib import Path
 import openai
-from   lib_llm_ext import initLocalEmbedding, useLocalEmbedding
 from src.logger import get_logger
 from config import config_get_by_key
 from embedding_models import embedding_model
@@ -49,7 +48,7 @@ def _configure_chroma_from_env():
 
 # --- Helpers -------------------------------------------------------------
 
-HEADING_RE = re.compile(r"^(#{1,4})\s+(.+)$", re.MULTILINE)
+HEADING_RE = re.compile(r"^(#{1,4})[ \t]+(.+)$", re.MULTILINE)
 
 
 def _resolve_knowledge_dir():
@@ -68,14 +67,34 @@ def _decode_metta(s):
 
 # --- Chunking ------------------------------------------------------------
 
-def _chunk_markdown(text, filename):
-    """Heading-aware markdown chunking with breadcrumb tracking."""
-    matches = list(HEADING_RE.finditer(text))
-    if not matches:
-        return [{"text": text.strip(), "breadcrumb": filename}]
+def _cut_to_limit(text, breadcrumb):
+    """Split text that is still over MAX_CHUNK_CHARS."""
+    pieces = []
+    text = text.strip()
+    while len(text) > MAX_CHUNK_CHARS:
+        window = text[:MAX_CHUNK_CHARS]
+        # Cut mid-token only when there is no whitespace.
+        cut = max(window.rfind("\n"), window.rfind(" "))
+        if cut <= 0:
+            cut = MAX_CHUNK_CHARS
+        head = text[:cut].strip()
+        if head:
+            pieces.append({"text": head, "breadcrumb": breadcrumb})
+        text = text[cut:].strip()
+    if text:
+        pieces.append({"text": text, "breadcrumb": breadcrumb})
+    return pieces
 
+
+def _sections_from_headings(text, filename, matches):
+    """Split on headings and merge sections under MIN_CHUNK_CHARS."""
     sections = []
     stack = {}  # level -> heading text
+
+    # Text before the first heading belongs to no section, so add it as one.
+    preamble = text[:matches[0].start()].strip()
+    if preamble:
+        sections.append({"text": preamble, "breadcrumb": filename, "heading": ""})
 
     for i, m in enumerate(matches):
         level = len(m.group(1))
@@ -105,7 +124,9 @@ def _chunk_markdown(text, filename):
     carry_bc = ""
     for s in sections:
         combined = (carry + "\n\n" + s["text"]).strip() if carry else s["text"]
-        bc = carry_bc or s["breadcrumb"]
+        # Only the preamble is breadcrumbed by filename alone, and it has no
+        # heading to contribute, so the section it merges into keeps its own.
+        bc = s["breadcrumb"] if carry_bc == filename else (carry_bc or s["breadcrumb"])
         if len(combined) < MIN_CHUNK_CHARS and s is not sections[-1]:
             carry = combined
             carry_bc = bc
@@ -119,8 +140,22 @@ def _chunk_markdown(text, filename):
         else:
             merged.append({"text": carry, "breadcrumb": carry_bc})
 
-    # Split large sections on paragraph boundaries
+    return merged
+
+
+def _chunk_markdown(text, filename):
+    """Heading-aware markdown chunking with breadcrumb tracking."""
+    matches = list(HEADING_RE.finditer(text))
+    if matches:
+        merged = _sections_from_headings(text, filename, matches)
+    else:
+        # No headings: one section, still goes through the size pass below.
+        logger.warning(f"{filename}: no headings, chunking on paragraphs")
+        merged = [{"text": text.strip(), "breadcrumb": filename}]
+
+    # Split large sections on paragraph boundaries, then on characters if needed.
     final = []
+    hard_cuts = 0
     for s in merged:
         if len(s["text"]) <= MAX_CHUNK_CHARS:
             final.append(s)
@@ -128,13 +163,21 @@ def _chunk_markdown(text, filename):
         paragraphs = s["text"].split("\n\n")
         chunk_text = ""
         for p in paragraphs:
-            if chunk_text and len(chunk_text) + len(p) > MAX_CHUNK_CHARS:
-                final.append({"text": chunk_text.strip(), "breadcrumb": s["breadcrumb"]})
+            # Count the "\n\n" join, else the chunk overshoots and leaves a fragment.
+            if chunk_text and len(chunk_text) + 2 + len(p) > MAX_CHUNK_CHARS:
+                pieces = _cut_to_limit(chunk_text, s["breadcrumb"])
+                hard_cuts += len(pieces) - 1
+                final.extend(pieces)
                 chunk_text = p
             else:
                 chunk_text = (chunk_text + "\n\n" + p).strip()
         if chunk_text.strip():
-            final.append({"text": chunk_text.strip(), "breadcrumb": s["breadcrumb"]})
+            pieces = _cut_to_limit(chunk_text, s["breadcrumb"])
+            hard_cuts += len(pieces) - 1
+            final.extend(pieces)
+
+    if hard_cuts:
+        logger.warning(f"{filename}: {hard_cuts} chunk(s) cut to MAX_CHUNK_CHARS")
 
     return final
 
@@ -180,6 +223,8 @@ def cloud_embed(text):
 
 def local_embed_batch(texts):
     """Embed a list of texts via lib_llm_ext local embeddings."""
+    from lib_llm_ext import initLocalEmbedding, useLocalEmbedding
+
     if isinstance(texts, str):
         texts = [texts]
 
@@ -192,6 +237,64 @@ def local_embed_batch(texts):
         useLocalEmbedding(text)
         for text in texts
     ]
+
+
+def get_current_embedding_profile():
+    """Return the current embedding provider and model."""
+    provider = str(config_get_by_key("embeddingprovider", "Local")).strip().casefold()
+    if provider == "local":
+        model = "intfloat/e5-large-v2"
+    else:
+        model = embedding_model(provider, config_get_by_key("embeddingModel", ""))
+    return {"provider": provider, "model": model}
+
+
+def get_existing_LTM_embedding_profile():
+    """Return the embedding provider and model stored in the existing LTM collection metadata"""
+    collection = _get_collection()
+    metadata = collection.metadata or {}
+    provider = metadata.get("omega_embedding_provider")
+    model = metadata.get("omega_embedding_model")
+    if not provider or not model:
+        return None
+    return {"provider": str(provider).casefold(), "model": model}
+
+
+def ensure_embedding_profile():
+    """Set the current profile on an empty collection with no dimension."""
+    collection = _get_collection()
+    # Chroma retains the dimension after the last record is deleted.
+    if collection.count() != 0 or collection.get_model().dimension is not None:
+        return
+    stored_metadata = collection.metadata or {}
+    profile = get_current_embedding_profile()
+    current_metadata = {
+        **stored_metadata,
+        "omega_embedding_provider": profile["provider"],
+        "omega_embedding_model": profile["model"],
+    }
+    if current_metadata != stored_metadata:
+        collection.modify(metadata=current_metadata)
+
+
+def check_embedding_profile():
+    """Ensure the embedding profile is set when possible and check compatibility."""
+    ensure_embedding_profile()
+    existing = get_existing_LTM_embedding_profile()
+    current = get_current_embedding_profile()
+
+    if existing is None:
+        logger.warning(
+            "Could not determine the memory embedding profile. "
+            "Make sure the configured provider and model match the original ones."
+        )
+    elif existing != current:
+        logger.warning(
+            "Memory embedding profile mismatch. "
+            f"Memory: provider={existing['provider']}, model={existing['model']}. "
+            f"Configured: provider={current['provider']}, model={current['model']}. "
+            "Memory operations may fail or return unreliable results."
+        )
 
 # --- Hash sentinel docs --------------------------------------------------
 
@@ -273,6 +376,7 @@ def _index_knowledge(embedding_selection):
     logger.info(f"Embedding type selected is {embedding_selection}")
 
     try:
+        check_embedding_profile()
         collection = _get_collection()
         knowledge_dir = _resolve_knowledge_dir()
 

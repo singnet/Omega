@@ -101,6 +101,10 @@ def test_responses_replay_keeps_local_fallback_call(modules):
     reasoning = dict(type="reasoning", id="rs_opaque", summary=[], encrypted_content="opaque")
     raw = NS(output=[output_item(reasoning)], incomplete_details=NS(reason="max_output_tokens"))
     response = modules.responses.convert_response(raw)
+    assert response.output_limit_reached is True
+    assert response.calls == []
+    response.add_tool_call(p.LLMToolCall().with_id("call_local").with_name("send")
+                          .with_arguments({"message": "Local notice"}))
     wire = modules.responses.convert_request(follow_up(p, response))
     assert wire["input"][1] == reasoning
     call = wire["input"][2]

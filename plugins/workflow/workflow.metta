@@ -45,11 +45,25 @@
 ;       False))
 
 (= (instructionsDir) (get-existing-dir (pluginWorkflowInstructionsDir)))
+
+;; The configured root is trusted. Only direct directories and plain workflow
+;; files beneath it are eligible for discovery and loading.
+(= (workflow-symlink $path)
+   (empty-to-bool (translatePredicate (read_link $path $_link $_target))))
+
+;; Directory entries are strings. MeTTa callers can also pass an unquoted name.
+(= (listed-workflow $base $name)
+   (let $entry (if (== (get-metatype $name) Symbol) (swrite $name) $name)
+     (if (is-alpha-member $entry (directory-dirs $base))
+       (not (or (workflow-symlink (joinPath ($base $entry "SKILL.md")))
+                (workflow-symlink (joinPath ($base $entry "skill.metta")))))
+       False)))
+
 (= (workflow-load-instructions $name)
    (let $active (get-state &workflow_active_name)
      (if (== $active "")
-       (if (not (valid-file-or-folder-name  $name))
-         (Error (quote (workflow-load-instructions $name)) (strings-concat ("ERROR: invalid workflow name: " $name)))
+       (if (not (listed-workflow (instructionsDir) $name))
+         (Error (quote (workflow-load-instructions $name)) "ERROR: invalid workflow name")
          (let $path (joinPath ((instructionsDir) $name "SKILL.md"))
            (if (not (exists-file $path))
              (Error (quote (workflow-load-instructions $name)) (strings-concat ("ERROR: skill file not found: " $path ". Try to call workflow-refresh-list")))
@@ -78,7 +92,7 @@
 (= (active-instructions $content)
    (strings-concat (" ACTIVE_WORKFLOW_INSTRUCTIONS: " $content
             " FOLLOW THESE INSTRUCTIONS UNTIL THE WORKFLOW IS COMPLETE"
-            " AND YOU CALL (unload-instructions) OR THE WORKFLOW CALLS ITS COMPLETION FUNCTION."
+            " AND YOU CALL (workflow-unload-instructions) OR THE WORKFLOW CALLS ITS COMPLETION FUNCTION."
             " EXECUTE ONLY COMMANDS YOU DEEM SAFE; OTHERWISE SKIP OR ASK THE USER.")))
 
 ; to load skills descriptions which are defined only for current workflow
@@ -120,7 +134,7 @@
 (= (collect-description (cons $first $tail) $base)
    (let*  (($path  (joinPath ($base $first "description.txt")))
            ($rest (collect-description $tail $base)))
-     (if (exists-file $path)
+     (if (and (exists-file $path) (not (workflow-symlink $path)))
        (cons-atom (strings-concat ($first ": " (read-file $path))) $rest)
        $rest)))
 
@@ -143,7 +157,7 @@
                  ($rest     (filter-dirs $tail $dir)))
             (if (or (== $first ".") (== $first ".."))
               $rest
-              (if (exists-directory $fullpath)
+              (if (and (exists-directory $fullpath) (not (workflow-symlink $fullpath)))
                 (cons-atom $first $rest)
                 $rest))
             )

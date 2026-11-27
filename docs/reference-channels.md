@@ -53,7 +53,7 @@ Telegram adapter using Bot API long polling.
 - `start_telegram(chat_id, allowed_chat_ids, poll_timeout)` — validates saved authorization state and starts the poll loop.
 - With authentication enabled, the owner authenticates with `auth <secret>` in a private DM. That DM becomes the default destination for startup, heartbeat, and other proactive messages and is restored from persisted owner state after restart.
 - The owner uses `/bind` in a group to add its chat ID to the runtime and persisted allowed-group sets. `/unbind` removes the current group; `/unbind <group_id>` performs the same operation from the owner's DM. Targeted forms such as `/bind@BotName` and `/unbind@BotName` are supported.
-- `TG_ALLOWED_CHAT_IDS` supplies initial operator-configured chat IDs. Runtime `/bind` additions and `/unbind` removals are persisted in `memory/.channel/authenticated-group.json`; the YAML file itself is never rewritten.
+- `TG_ALLOWED_CHAT_IDS` supplies initial operator-configured chat IDs. Docker stores runtime group bindings and the channel owner in the `omega-state` volume. Standalone runs without `GATEWAY_URL` use `memory/.channel/`.
 - Each inbound message is delivered to the agent as `[chat_id] [message_id] message`. Dequeueing does not depend on the model producing or successfully delivering a reply, so a no-response turn cannot freeze later inbound messages.
 - Outbound replies use the same `[chat_id] [message_id] message` envelope. An empty target falls back to the owner DM, and an empty message ID sends without Telegram reply metadata. Legacy plain outbound text also uses the owner-DM fallback.
 - Explicit LLM-generated targets are accepted only for the owner DM or a currently authorized group. Group chat IDs may be negative.
@@ -100,9 +100,9 @@ All frames are UTF-8 JSON objects with a `type` field; unknown types are logged 
 - Outbound messages produced while disconnected queue in a bounded outbox (100 entries) and flush after the next successful connect, before any new inbound traffic is processed.
 - Duplicate `user_message` frames (`seq <= last_seen_seq`, or already buffered) are dropped, so server replays after `resume` are idempotent.
 
-## `channels/websearch.py`
+## `src/websearch.py`
 
-Not a communication channel in the `send`/`receive` sense — this is the backend for the `search` skill. Exposes `search(query)`.
+Not a communication channel in the `send`/`receive` sense. This is the backend for the `websearch` tool and exposes `search(query, max_results=10)`.
 
 ## Adding a new channel
 
@@ -110,5 +110,5 @@ See [tutorial-04-adding-a-channel.md](./tutorial-04-adding-a-channel.md).
 
 ## Related reference
 
-- [reference-skills-communication.md](./reference-skills-communication.md) — the MeTTa surface (`send`, `receive`, `websearch`).
+- [reference-tools-communication.md](./reference-tools-communication.md) — the MeTTa surface (`send`, `receive`, `websearch`).
 - [reference-configuration.md](./reference-configuration.md) — channel parameters.

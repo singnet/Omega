@@ -39,7 +39,8 @@ export EMBEDDING_PROVIDER EMBEDDING_MODEL OPENAIAPI_URL MM_URL OPENCLAW_URL
 
 agent_su=(su --group nogroup nobody)
 
-su www-data -s /bin/sh -c "sh /opt/nginx/nginx.sh"
+install -d -o www-data -g www-data -m 0700 /var/lib/omega-state/channel
+su www-data -s /bin/sh -c "sh /opt/nginx/nginx.sh --auth-state"
 
 # Optional knowledge-base import
 if [[ "${IMPORT_KB_ON_START}" == "1" ]]; then

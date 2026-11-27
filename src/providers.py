@@ -191,6 +191,8 @@ class LLMResponse:
         self.calls: List[LLMToolCall] = []
         self.error = None
         self.provider_data = None
+        self.output_limit_reached = False
+        self.limit_notice = ""
 
     def add_tool_call(self, call: LLMToolCall):
         self.calls.append(call)
@@ -264,7 +266,11 @@ def llmProviderChat(request):
         return LLMResponse()
 
 def _validate_response(request: LLMRequest, response: LLMResponse) -> LLMResponse:
-    if not response.calls and not response.is_error():
+    if (
+        not response.calls
+        and not response.is_error()
+        and not response.output_limit_reached
+    ):
         return response.with_error("List of tool calls is empty")
 
     for call in response.calls:
@@ -346,25 +352,22 @@ def llmToolCallGetError(call: LLMToolCall):
 
 ESCAPE = str.maketrans({ '"': '\\"', '\\': '\\\\' })
 
-def llmToolCallToSExpr(call: LLMToolCall):
-    sexpr = f"({call.name} "
-    if not call.is_error():
-        for parameter in call.tool.parameters:
-            if parameter.name in call.arguments:
-                arg = call.arguments[parameter.name]
-                arg = arg.translate(ESCAPE)
-                sexpr = sexpr + f"\"{arg}\" "
-    else:
-        for arg in call.arguments.values():
-            if not isinstance(arg, str):
-                arg = json.dumps(arg, ensure_ascii=False)
-            arg = arg.translate(ESCAPE)
-            sexpr = sexpr + f"\"{arg}\" "
+def _metta_string(value):
+    return '"' + str(value).translate(ESCAPE) + '"'
 
-    sexpr = sexpr[:-1] + ")"
+def llmToolCallToSExpr(call: LLMToolCall):
     if call.is_error():
-        sexpr = f"(Error {sexpr} \"{str(call.error).translate(ESCAPE)}\")"
-    return f"({call.id} {sexpr})"
+        arguments = (arg if isinstance(arg, str) else json.dumps(arg, ensure_ascii=False)
+                     for arg in call.arguments.values())
+    else:
+        arguments = (call.arguments[p.name] for p in call.tool.parameters
+                     if p.name in call.arguments)
+
+    fields = [_metta_string(call.name), *map(_metta_string, arguments)]
+    command = "(" + " ".join(fields) + ")"
+    if call.is_error():
+        command = f"(Error {command} {_metta_string(call.error)})"
+    return f"({_metta_string(call.id)} {command})"
 
 def llmResponseToSExpr(response: LLMResponse) -> str:
     if response.is_error():

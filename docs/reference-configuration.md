@@ -21,7 +21,43 @@ This resolves the value through the Python configuration layer, using command-li
 | `provider` | `Anthropic` | LLM provider — `Anthropic`, `OpenAI`, `ASICloud`, or `ASIOne`. |
 | `maxOutputToken` | 6000 | Output cap passed to the provider. |
 | `reasoningMode` | `medium` | Reasoning-effort hint passed to the provider. |
+| `supportsReasoningEffort` | `false` | **OpenAIAPI and ASICloud:** opt in to forwarding `reasoningMode` as `reasoning_effort` when the backend/model supports that parameter. An absent or false flag preserves the previous request shape. Other providers, including Anthropic, are unaffected. |
 | `wakeupInterval` | 600 (seconds) | How long idle before the next scheduled wake-up. |
+| `showStartupVersion` | `true` | Send the Omega version to the communication channel on startup. Set to `false` in `config.yaml` to suppress this message; standard logging and the `version` skill are unaffected. |
+
+For `OpenAIAPI` and `ASICloud`, enable `supportsReasoningEffort` only after confirming that the
+selected backend/model accepts `reasoning_effort` and the requested effort level.
+With the flag enabled, `reasoningMode: low` sends `reasoning_effort: low`;
+`reasoningMode: "none"` sends the explicit `"none"` value rather than leaving the
+backend's default in effect. A null or empty `reasoningMode` omits the parameter.
+Whether a level reduces or disables thinking depends on the backend/model; the
+flag does not detect support or guarantee that an answer fits the output budget.
+
+For the ASICloud default model, `minimax/minimax-m3.1-flash`, use
+`supportsReasoningEffort: true` with `reasoningMode: low` to request the
+lowest documented effort. MiniMax lists `low`, `medium`, `high`, `xhigh`, and
+`max`. Its hosted API requires adaptive thinking and rejects `none`. With
+`supportsReasoningEffort: false`, ASICloud chooses its own default.
+[MiniMax model documentation](https://platform.minimax.io/docs/guides/text-generation#thinking)
+
+The flag is enabled only when the resolved configuration value is boolean `true`
+or the string `"true"` (case-insensitive, so `"True"` and `"TRUE"` also enable it).
+All other values disable it, including the strings `"yes"`, `"on"`, `"1"`,
+`" true "` (whitespace is not trimmed), and typos such
+as `"flase"`, as well as the number `1`. Use `true`/`false` in YAML. The existing
+YAML loader also converts unquoted `yes` and `on` to boolean `true` before this
+check; quoted `"yes"` and `"on"` remain strings and do not enable the flag.
+
+When launching through `scripts/omega start`, configure this flag in
+`config/config.yaml` inside the Docker image/container used by Omega. The
+launcher does not mount the host's configuration file, accept this flag as a CLI
+argument, or forward `OMEGA_supportsReasoningEffort` into Docker. The container
+entrypoint also removes that environment variable before starting Omega.
+
+For direct runtime launches that bypass the launcher and container entrypoint,
+the Python configuration layer accepts `supportsReasoningEffort=true` as a
+command-line override or `OMEGA_supportsReasoningEffort=true` in the environment.
+Use `false` instead of `true` to disable forwarding explicitly.
 
 ## Memory (`src/memory.metta`, `initMemory`)
 
@@ -29,7 +65,7 @@ This resolves the value through the Python configuration layer, using command-li
 |---|---|---|
 | `maxFeedback` | 50000 (chars) | Ceiling on a single tool call result text fed back into the prompt. |
 | `maxRecallItems` | 20 | Items returned by `query`. |
-| `maxEpisodeRecallLines` | 20 | Lines returned by `episodes`. |
+| `maxEpisodeRecallLines` | 20 | Lines `episodes` returns on each side of the closest timestamp, up to 41 lines in all. |
 | `maxHistory` | 30000 (chars) | Tail of `memory/history.metta` included in the prompt. |
 | `memoryDirectory` | `./repos/Omega/memory` | Directory containing persistent memory files such as `history.metta`. |
 | `chromaDbPath` | `./chroma_db` | ChromaDB persistence directory used for memory backup and restore. |
@@ -46,7 +82,62 @@ progressively in the runtime memory collection. Background errors are logged.
 
 Local model loading still happens before indexing and can delay cold startup.
 
+Keep the same embedding provider and model when reusing a memory collection.
+Changing either can make existing vectors incompatible: different dimensions
+cause writes and searches to fail, while models with the same dimensions can
+still produce incompatible vectors and unreliable search results.
+Use the launcher option `-e Local|OpenAI|ASICloud` or `EMBEDDING_PROVIDER`
+to select embeddings independently of the LLM provider.
+
+### Startup memory profile check
+
+Before starting the agent container, `scripts/omega` runs `ltm_precheck` against
+the persistent memory collection. If the collection is empty and Chroma reports
+no dimension, the precheck sets its profile to the configured provider and model
+before comparison, replacing any different or incomplete profile without a warning.
+Once Chroma has set the dimension, the precheck preserves the stored profile
+even after all records have been deleted. A matching provider and model produce
+no warning. A mismatch produces a warning showing the stored and configured
+profiles. If the stored profile is unknown or incomplete, the launcher warns
+that the original provider and model must be checked manually. The compatibility
+warning is based on the provider and model recorded in the profile.
+
+The same check runs during `rag.init_knowledge()`, including standalone startup,
+before checking for knowledge files. With the launcher, warnings can appear both
+in the launcher console and in the agent's configured logs.
+
+These warnings do not stop startup or convert existing vectors. If the check
+itself fails, the launcher reports that it could not complete the check and
+continues startup.
+
+For a new installation, Docker creates the missing `omega-memory` volume and
+the precheck creates the collection and records its profile before the first embedding is stored.
+This happens before the optional knowledge import (`IMPORT_KB_ON_START=1`).
+The knowledge importer does not validate the collection profile itself. If the
+precheck fails, recording a profile before that import is not guaranteed.
+
 ## Channels (`src/channels.metta`, `initChannels`)
+
+The Docker launcher mounts `omega-state` at `/var/lib/omega-state`. The proxy
+stores channel owners and authorized groups under `channel/`, accessible only to
+`www-data` and root. Bindings survive container recreation. On the first upgrade
+from file-based Docker authentication, bind the owner and groups again. The
+proxy ignores records from `omega-memory`, including imported archives.
+`scripts/omega clean` removes both live volumes and clears channel bindings.
+
+For `scripts/omega start`, `-s` takes precedence over `OMEGA_AUTH_SECRET`.
+When neither supplies a secret, the launcher generates a fresh one. The host
+operator can retrieve it with `docker exec omega printenv OMEGA_AUTH_SECRET`.
+Recreating a container with a new secret preserves its existing owner binding.
+
+For Telegram owner and group bindings, the proxy independently reads pending
+updates from the Telegram Bot API before the adapter acknowledges them. Group
+changes require a matching command from the stored owner for that group and the Telegram update ID. The proxy records the last
+applied update for each group to prevent an earlier command from undoing a later one.
+
+The launcher labels its state volume on creation. If an existing `omega-state`
+volume lacks this label, startup stops and `clean` preserves that volume.
+Back up or relocate its contents before freeing the name for a new state volume.
 
 | Parameter | Default | Meaning |
 |---|---|---|
@@ -56,7 +147,7 @@ Local model loading still happens before indexing and can delay cold startup.
 | `IRC_port` | 6667 | IRC port. |
 | `IRC_user` | `omega` | IRC nickname. |
 | `TG_CHAT_ID` | *(empty)* | Legacy single-chat bootstrap/fallback, primarily for authentication-disabled deployments. With authentication enabled, the authenticated owner's DM becomes the proactive-message default. |
-| `TG_ALLOWED_CHAT_IDS` | *(empty)* | Optional comma-separated initial allowed-chat set. The authenticated owner can add groups with `/bind` and remove them with `/unbind`; those changes are persisted in `memory/.channel/authenticated-group.json`, not written back to YAML. |
+| `TG_ALLOWED_CHAT_IDS` | *(empty)* | Optional comma-separated initial allowed-chat set. The authenticated owner can add groups with `/bind` and remove them with `/unbind`; Docker persists those changes in `omega-state`. Standalone runs use `memory/.channel/authenticated-group.json`. |
 | `TG_POLL_TIMEOUT` | 20 | Telegram long-poll timeout in seconds. |
 | `SL_CHANNEL_ID` | *(empty — auto-bind supported)* | Optional Slack channel ID where Omega reads/writes messages. Leave empty to auto-bind on first valid inbound auth/message. |
 | `SL_POLL_INTERVAL` | 60 | Slack poll interval in seconds (minimum effective value is 60). |

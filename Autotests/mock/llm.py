@@ -22,6 +22,7 @@ class LlmMockAgent:
         self._answers = {}
         self._rpc = Rpc(IPCClient(address))
         self._rpc.on_request('set_answer', lambda args: self.on_set_answer(args))
+        self._rpc.on_request('clear_answer', lambda args: self.on_clear_answer(args))
         self._rpc.on_request('ping', lambda args: self.on_ping(args))
         self._rpc.start()
 
@@ -79,19 +80,29 @@ class LlmMockAgent:
             self._answers[request] = response
             return True
 
+    def on_clear_answer(self, args):
+        with self._lock:
+            request = args['request']
+            print(f'[LlmMockAgent] Mock request cleared: "{request}"')
+            self._answers.pop(request, None)
+            return True
+
     def on_ping(self, args):
         print('[LlmMockAgent] Mock ping request processed')
         return True
 
-    def _make_llm_response(self, calls: [(str, dict[str, str])]) -> LLMResponse:
+    def _make_llm_response(self, calls) -> LLMResponse:
         response = LLMResponse()
-        id = 0
-        for (func, args) in calls:
+        for index, call in enumerate(calls):
+            if len(call) == 2:
+                func, args = call
+                call_id = f"mockid#{index}"
+            else:
+                func, args, call_id = call
             response.add_tool_call(LLMToolCall()
                                    .with_name(func)
-                                   .with_id(f"mockid#{id}")
+                                   .with_id(call_id)
                                    .with_arguments(args))
-            id = id + 1
         return response
 
 
@@ -108,6 +119,13 @@ class LlmMockController:
         result = self._rpc.request('set_answer', { 'request': request, 'response': response })
         if result.get(timeout) != True:
             print(f'[LlmMockController] Cannot set answer to the mock, error: {result.error()}')
+            return False
+        return True
+
+    def clear_answer(self, request, timeout=10):
+        result = self._rpc.request('clear_answer', { 'request': request })
+        if result.get(timeout) != True:
+            print(f'[LlmMockController] Cannot clear answer in the mock, error: {result.error()}')
             return False
         return True
 

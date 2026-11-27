@@ -85,12 +85,15 @@ Some rules are implemented but behave in unexpected ways. Know these before writ
 
 ## 4. Orchestration failures
 
-Measured across 4,500+ operational cycles, the top error categories are:
+A reply or a single call fails in these cases:
 
-1. **Commands not executed** (`NOTHING_WAS_DONE`) — the LLM produced output that was not a valid skill tuple.
-2. **Multi-command parsing failures.**
+1. The reply contains no tool calls (`List of tool calls is empty`).
+2. The call names a tool that is not registered (`Unknown tool`).
+3. The call lacks a parameter or passes a non-string value (`Call tool parameter is not set`, `Call tool parameter is not a string`).
+4. The arguments of the call are not valid JSON or not a JSON object (`Invalid tool arguments from model`, `Tool arguments must be a JSON object`).
+5. The request to the provider fails. An exception inside `AIProvider.chat` in `providers/lib_llm_ext.py` becomes a reply with the error text. A request that times out becomes a `send` call with a notice, and a second timeout in a row becomes the error `Timeout out more than once`. An exception that leaves `chat` makes `llmProviderChat` in `src/providers.py` return an empty reply, and the turn then runs no calls and records no error.
 
-These are **the most frequent failure mode in the entire system**, not occasional glitches.
+`_validate_response` in `src/providers.py` checks cases 1 to 3. In cases 2 to 4 only that call fails, and the other calls of the reply still run. In cases 1 and 5 the whole turn fails.
 
 ### Context-switching corruption
 
@@ -98,13 +101,13 @@ When a new human message arrives during autonomous work, the LLM attempts to sim
 
 ### Bandwidth constraint
 
-The 5-command-per-cycle limit means complex reasoning chains require 10–20 cycles. Budget accordingly.
+Each cycle runs the tool calls of one LLM reply, and no code limits their number. Long reasoning chains still span many cycles, so budget accordingly.
 
 ### State fragility
 
 Working memory depends on:
 
-- `pin` — volatile, single-slot, overwritten each cycle;
+- `pin` — notes kept only in the episodic trace, visible in `HISTORY` until newer entries push them out of the last `maxHistory` characters;
 - `/tmp` files — lost on restart.
 
 Anything you need to keep across sessions must go through `remember`.
@@ -156,7 +159,7 @@ Before trusting a conclusion:
 
 ## Empirical context
 
-The numbers on this page come from operational experience with **Max Botnick**, an Omega-hosted agent used by the project maintainers for internal reasoning experiments. Max ran **3,100+ continuous cycles minimum** (4,500+ cycles with full error instrumentation) and self-authored the whitepaper from which this documentation draws. The measurements are therefore Omega-on-Omega evaluations, with all the caveats that implies — they are indicative of the framework under realistic workloads but not a formal benchmark.
+The numbers on this page come from operational experience with **Max Botnick**, an Omega-hosted agent used by the project maintainers for internal reasoning experiments. Max ran **3,100+ continuous cycles minimum** and self-authored the whitepaper from which this documentation draws. The measurements are therefore Omega-on-Omega evaluations, with all the caveats that implies — they are indicative of the framework under realistic workloads but not a formal benchmark.
 
 ## See also
 

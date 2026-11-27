@@ -6,6 +6,7 @@
 (= (reasoningMode) (empty))
 (= (wakeupInterval) (empty))
 (= (memoryDirectory) (empty))
+(= (showStartupVersion) (empty))
 
 (= (initLoop)
    (progn (configure maxNewInputLoops 50) ;20
@@ -15,6 +16,7 @@
           (configure maxOutputToken 6000)
           (configure reasoningMode medium)
           (configure wakeupInterval 600) ;600=10 minutes
+          (configure showStartupVersion True)
           (configure memoryDirectory
                (joinPath ((py-call (helper.projectRootDirectory)) memory)))
           (change-state! &prevmsg "")
@@ -84,7 +86,9 @@
                                (initPlugins)
                                (initChannels)
                                (addTelegramPromptExtension)
-                               (commChannelSend (version))
+                               (if (showStartupVersion)
+                                   (commChannelSend (version))
+                                   ())
                                (llmProviderStart (provider)))
                         (change-state! &loops (- (get-state &loops) 1)))
           (let $prompt (getContext)
@@ -106,6 +110,8 @@
                                        ($_ (log INFO "loop" (REQUEST: (py-str ($request)))))
                                        ($response (llmProviderChat $request))
                                        ($_ (log INFO "loop" (RESPONSE: (py-str ($response)))))
+                                       ($notice (llmLimitNotice $response))
+                                       ($_ (if (> (string_length $notice) 0) (notify $notice) _))
                                        ($respstr (py-call (providers.llmResponseToSExpr $response)))
                                        ($resp (catch (sread $respstr)))
                                        ($_ (log INFO "loop" (RESPONSE: $resp)))
@@ -113,12 +119,19 @@
                                        ($_ (messagesClear))
                                        ($sexpr (if (HandleError (quote $resp) $error)
                                                  $error
-                                                 (progn (messagesAppend (llmResponseMessage $response))
+                                                 (progn (if (llmResponseIsEmpty $response)
+                                                      ()
+                                                      (messagesAppend (llmResponseMessage $response)))
                                                    (collapse
-                                                         (let ($callid $s) (superpose $resp)
+                                                         (let* ((($callid $raw) (superpose $resp))
+                                                                ($s (toolCallCommand $raw)))
                                                            (let $result
                                                              (if (HandleError (quote $s) $error) $error
-                                                               (let $rc (catch (let $R (collapse (eval $s)) (py-call (helper.normalize_string $R))))
+                                                               (let $rc (catch (let $R (collapse (eval $s))
+                                                                 (case $R
+                                                                   ((((Error $tool_error_cmd $tool_error_msg))
+                                                                     (Error $tool_error_cmd $tool_error_msg))
+                                                                    ($else (py-call (helper.normalize_string $R)))))))
                                                                  (if (HandleError $rc $error) $error (strings-concat ("SUCCESS, RETURN: " $rc)))))
                                                              (progn
                                                                ($_ (log INFO "loop" (COMMAND_RETURN: ((quote $s) $result))))

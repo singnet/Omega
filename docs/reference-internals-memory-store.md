@@ -4,9 +4,9 @@ Omega uses a **three-tier memory architecture**. Each tier has distinct semantic
 
 ## Overview
 
-| Tier | Skill | Persistence | Role |
+| Tier | Tool | Persistence | Role |
 |---|---|---|---|
-| 1. Working memory | `pin` | Single slot, overwritten per cycle, session-local | Task state — "what am I doing right now?" |
+| 1. Working memory | `pin` | Kept in `memory/history.metta`, visible in `HISTORY` until newer entries push it out of the last `maxHistory` characters | Task state — "what am I doing right now?" |
 | 2. Long-term embedding memory | `remember` / `query` | Persistent across sessions | Accumulated knowledge, semantic recall |
 | 3. AtomSpace | `(metta ...)` | Per-invocation (fresh AtomSpace each `\|-` call) | Formal reasoning over truth-valued atoms |
 
@@ -18,9 +18,9 @@ Omega uses a **three-tier memory architecture**. Each tier has distinct semantic
 Holds the agent's current task state: what it is doing, what step comes next, what intermediate results matter.
 
 ### Characteristics
-- **Limited, volatile, constantly updated.**
-- Each cycle can overwrite the previous pin.
-- Does **not** persist across sessions.
+- **Limited and constantly updated.**
+- A new pin does not replace the previous one. Each pin is part of the reply that `addToHistory` appends to `memory/history.metta`.
+- Pins stay in that file across restarts, but the agent sees a pin only while it is inside the last `maxHistory` characters, which `getHistory` returns as `HISTORY`.
 - Analogous to human working memory.
 
 ### Use it for
@@ -49,7 +49,37 @@ Each item is the triplet:
 - `atom` — the raw string, post-`string-safe` (escapes `"`, newlines, `'`).
 - `embedding` — vector from `embed $str`, dispatching on `embeddingprovider`:
   - `Local` → `lib_llm_ext.useLocalEmbedding`.
-  - `OpenAI` → `useGPTEmbedding`.
+  - Cloud providers → `rag.cloud_embed`.
+
+The embedding provider and model must remain compatible with those used to
+create the existing collection. Changing them can cause write and search errors
+or unreliable search results, even when vector dimensions match.
+
+### Collection embedding profile
+
+The collection metadata stores `omega_embedding_provider` and
+`omega_embedding_model`. In `src/rag.py`, `ensure_embedding_profile()` records
+the configured provider and model only when the collection is empty and Chroma
+has not yet set its dimension. In that case it replaces any
+different or incomplete profile while preserving other collection metadata.
+If the profile already matches, no metadata update is made. Once Chroma has set
+the dimension, the function preserves the existing metadata even if all records
+have been deleted. A missing or incomplete profile then remains unknown.
+
+`check_embedding_profile()` calls this function and then compares the stored
+and configured profiles. Both the launcher's `ltm_precheck` and
+`rag.init_knowledge()` call the shared check, before starting the agent container
+and before runtime knowledge indexing respectively. A matching profile produces
+no warning; an unknown or mismatching profile produces a warning without stopping
+startup or re-embedding stored vectors. Standalone startup runs the same check.
+When using the launcher, a warning can appear both in the launcher console and
+in the agent's configured logs.
+
+On a new volume, a successful precheck creates and labels the collection before
+the optional startup knowledge import. The importer reuses that collection
+without validating or overwriting its profile. A warning alone does not prevent an import with incompatible
+embeddings. See [startup memory profile check](reference-configuration.md#startup-memory-profile-check)
+for launcher behavior when the check fails.
 
 ### Write path
 
@@ -58,6 +88,9 @@ Each item is the triplet:
   → py-call (lib_chromadb.remember $str (embed $str) (get_time_as_string))
 ```
 
+Returns `REMEMBER-SUCCESS` after a successful write or a MeTTa `Error` if
+embedding or the write raises an exception.
+
 ### Semantic read
 
 ```
@@ -65,7 +98,9 @@ Each item is the triplet:
   → py-call (lib_chromadb.query (embed $str) (maxRecallItems))
 ```
 
-Returns the top-`k` items by embedding similarity. **Known issue:** query can miss relevant results when embedding similarity thresholds do not match the query phrasing.
+Returns the top-`k` items by embedding similarity, or a MeTTa `Error` if embedding
+or the search raises an exception. **Known issue:** query can miss relevant results
+when embedding similarity thresholds do not match the query phrasing.
 
 ### Time-window read
 
@@ -168,7 +203,7 @@ They are complementary, not overlapping. Long-term memory *feeds* the AtomSpace 
 
 ## See also
 
-- [reference-skills-memory.md](./reference-skills-memory.md) — user-facing surface.
+- [reference-tools-memory.md](./reference-tools-memory.md) — user-facing surface.
 - [reference-configuration.md](./reference-configuration.md) — memory tunables.
 - [introduction.md#the-hybrid-thesis](./introduction.md#the-hybrid-thesis) — why this layout exists.
 - [tutorial-01-teaching-memories.md](./tutorial-01-teaching-memories.md) — hands-on use.

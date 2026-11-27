@@ -40,9 +40,9 @@ http {
         }
 
         location /asicloud/ {
-            proxy_pass https://inference.asicloud.cudos.org/v1/;
+            proxy_pass https://llm.a.singularitycompute.com/v1/;
             proxy_set_header Authorization "Bearer ${ASI_API_KEY}";
-            proxy_set_header Host inference.asicloud.cudos.org;
+            proxy_set_header Host llm.a.singularitycompute.com;
             proxy_set_header Content-Type $content_type;
             proxy_ssl_server_name on;
             proxy_ssl_protocols TLSv1.2 TLSv1.3;
@@ -177,6 +177,14 @@ http {
         # Auth secret verification — agent sends candidate token, proxy compares.
         # After envsubst, ${OMEGA_AUTH_SECRET} becomes the literal secret.
         set $auth_secret_value "${OMEGA_AUTH_SECRET}";
+
+        location ~ ^/auth/(state|bind|group/(authorize|revoke))$ {
+            allow 127.0.0.1;
+            allow ::1;
+            deny all;
+            client_max_body_size 8k;
+            proxy_pass http://unix:/opt/nginx/auth-state.sock;
+        }
 
         location = /auth/status {
             default_type application/json;
