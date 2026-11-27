@@ -121,9 +121,7 @@
                                                  $error
                                                  (progn (if (llmResponseIsEmpty $response)
                                                       ()
-                                                      (messagesAppend (llmToolCallMessage role "assistant"
-                                                                                          calls (llmResponseCalls $response)
-                                                                                          content "[TOOL CALL]")))
+                                                      (messagesAppend (llmResponseMessage $response)))
                                                    (collapse
                                                          (let* ((($callid $raw) (superpose $resp))
                                                                 ($s (toolCallCommand $raw)))
